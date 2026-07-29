@@ -34,6 +34,17 @@ answers terminal queries — the real terminal does — and always has the same
 dimensions as the real terminal.
 _Avoid_: virtual terminal, headless terminal
 
+**Effective State**:
+The Agent State the Wrapper reports onward, arbitrated from two sources: the
+Shadow Terminal's screen signals and Hook Authority. Only the Wrapper computes
+it; the Daemon stores what it is told.
+_Avoid_: resolved state, final state
+
+**Hook Authority**:
+Agent State (or session identity) reported by an installed Integration's hooks,
+as opposed to derived from the screen. One input to Effective State.
+_Avoid_: hook state, integration state
+
 **Detection Manifest**:
 A per-agent TOML rule set (lifted from herdr) that classifies the Shadow
 Terminal's screen into an Agent State.

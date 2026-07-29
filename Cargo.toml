@@ -1,0 +1,49 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/gaze-protocol",
+    "crates/gaze-term",
+    "crates/gaze-detect",
+    "crates/gaze-integration",
+    "crates/gaze-daemon",
+    "crates/gaze-wrapper",
+    "crates/gaze-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "Apache-2.0"
+repository = "https://github.com/mme/gaze"
+homepage = "https://gaze.sh"
+
+[workspace.dependencies]
+gaze-protocol = { path = "crates/gaze-protocol" }
+gaze-term = { path = "crates/gaze-term" }
+gaze-detect = { path = "crates/gaze-detect" }
+gaze-integration = { path = "crates/gaze-integration" }
+gaze-daemon = { path = "crates/gaze-daemon" }
+gaze-wrapper = { path = "crates/gaze-wrapper" }
+
+clap = { version = "4.5", default-features = false, features = ["std", "help", "usage", "error-context"] }
+libc = "0.2"
+portable-pty = "0.9"
+regex = "1"
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = { version = "0.9", default-features = false, features = ["parse", "serde"] }
+
+# Detection and terminal emulation are regex/parser heavy: unoptimized builds of
+# these leaves make the shadow terminal noticeably slow in dev without costing
+# meaningful rebuild time, since they change only when re-vendored.
+[profile.dev.package.gaze-term]
+opt-level = 2
+[profile.dev.package.gaze-detect]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

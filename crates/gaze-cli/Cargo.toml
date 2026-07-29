@@ -1,0 +1,14 @@
+[package]
+name = "gaze-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "gaze"
+path = "src/main.rs"
+
+[dependencies]
+gaze-protocol = { workspace = true }
