@@ -15,9 +15,7 @@ use std::os::unix::net::UnixStream;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::Duration;
 
-use amon_protocol::{
-    paths, AgentEntry, AgentPatch, Hello, Method, Request, Role, PROTOCOL_VERSION,
-};
+use amon_protocol::{AgentEntry, AgentPatch, Hello, Method, Request, Role, PROTOCOL_VERSION};
 
 const FIRST_RETRY: Duration = Duration::from_millis(100);
 const MAX_RETRY: Duration = Duration::from_secs(30);
@@ -117,35 +115,12 @@ fn run(rx: mpsc::Receiver<Message>, version: String) {
     }
 }
 
-/// Connects, starting a daemon if none is listening. Races are settled by the
-/// socket itself: whoever binds first is the daemon and everyone else's
-/// connect succeeds against it.
+/// Connects, starting a daemon if none is listening. The connect-or-spawn
+/// primitive is shared with the CLI; the caller's backoff covers a daemon
+/// that never comes up.
 fn connect(version: &str) -> Option<Connection> {
-    if let Some(link) = Connection::open(version) {
-        return Some(link);
-    }
-    spawn_daemon();
-    // Give the new daemon a moment to bind before deciding it failed; the
-    // caller's backoff covers the case where it never does.
-    for _ in 0..20 {
-        std::thread::sleep(Duration::from_millis(25));
-        if let Some(link) = Connection::open(version) {
-            return Some(link);
-        }
-    }
-    None
-}
-
-fn spawn_daemon() {
-    let Ok(exe) = std::env::current_exe() else {
-        return;
-    };
-    let _ = std::process::Command::new(exe)
-        .arg("daemon")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
+    let stream = amon_protocol::connect_or_spawn_daemon()?;
+    Connection::open(stream, version)
 }
 
 struct Connection {
@@ -155,8 +130,7 @@ struct Connection {
 }
 
 impl Connection {
-    fn open(version: &str) -> Option<Self> {
-        let stream = UnixStream::connect(paths::daemon_socket()).ok()?;
+    fn open(stream: UnixStream, version: &str) -> Option<Self> {
         stream.set_read_timeout(Some(IO_TIMEOUT)).ok()?;
         stream.set_write_timeout(Some(IO_TIMEOUT)).ok()?;
         let reader = BufReader::new(stream.try_clone().ok()?);

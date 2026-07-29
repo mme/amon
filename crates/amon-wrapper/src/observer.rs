@@ -214,7 +214,7 @@ impl Observer {
         if title != self.last_title {
             self.last_title = title.clone();
             let mut patch = AgentPatch::new(&self.agent_id);
-            patch.title = title;
+            patch.title = Some(title);
             self.link.update(patch);
         }
 

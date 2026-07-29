@@ -67,6 +67,24 @@ fn detection_text_is_the_visible_tail_without_trailing_blanks() {
 }
 
 #[test]
+fn detection_reads_one_screen_not_the_scrollback() {
+    // herdr's detection window is the screen height; on a terminal shorter
+    // than that, reading extra scrollback rows would let manifests match
+    // output the user scrolled past long ago.
+    let mut shadow = ShadowTerminal::new(80, 5).expect("shadow terminal");
+    for line in 1..=8 {
+        shadow.feed(format!("line {line}\r\n").as_bytes());
+    }
+
+    let text = shadow.detection_text();
+    assert!(text.contains("line 8"), "{text:?}");
+    assert!(
+        !text.contains("line 3"),
+        "rows above the screen are scrollback, not screen: {text:?}"
+    );
+}
+
+#[test]
 fn control_sequences_are_interpreted_rather_than_echoed() {
     // A cleared line must not leave its old contents in the detection text,
     // or manifests would match on output the user can no longer see.

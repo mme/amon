@@ -10,7 +10,7 @@ use std::os::unix::net::UnixStream;
 use std::process::ExitCode;
 
 use amon_protocol::{
-    paths, AgentEntry, Hello, Method, Request, Response, Role, StatusResult, PROTOCOL_VERSION,
+    AgentEntry, Hello, Method, Request, Response, Role, StatusResult, PROTOCOL_VERSION,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -221,21 +221,9 @@ struct Client {
 
 impl Client {
     fn connect_or_start() -> Result<Self, Box<dyn std::error::Error>> {
-        if let Ok(client) = Self::connect() {
-            return Ok(client);
-        }
-        start_daemon()?;
-        for _ in 0..40 {
-            std::thread::sleep(std::time::Duration::from_millis(25));
-            if let Ok(client) = Self::connect() {
-                return Ok(client);
-            }
-        }
-        Err("could not reach or start the amon daemon".into())
-    }
-
-    fn connect() -> Result<Self, Box<dyn std::error::Error>> {
-        let stream = UnixStream::connect(paths::daemon_socket())?;
+        // The connect-or-spawn primitive is shared with the wrapper's link.
+        let stream = amon_protocol::connect_or_spawn_daemon()
+            .ok_or("could not reach or start the amon daemon")?;
         stream.set_read_timeout(Some(std::time::Duration::from_secs(5)))?;
         let reader = BufReader::new(stream.try_clone()?);
         let mut client = Self {
@@ -270,15 +258,4 @@ impl Client {
         }
         Ok(response.result)
     }
-}
-
-fn start_daemon() -> Result<(), Box<dyn std::error::Error>> {
-    let exe = std::env::current_exe()?;
-    std::process::Command::new(exe)
-        .arg("daemon")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()?;
-    Ok(())
 }

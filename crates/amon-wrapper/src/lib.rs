@@ -8,7 +8,7 @@
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::mpsc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use amon_protocol::{env as protocol_env, AgentEntry, AgentState};
 
@@ -126,22 +126,40 @@ pub fn run(launch: Launch) -> std::io::Result<i32> {
         .master
         .try_clone_reader()
         .map_err(std::io::Error::other)?;
-    let mut stdout = std::io::stdout();
-    let mut buffer = [0u8; 8192];
-    loop {
+
+    // Resizes are applied from their own thread because the reader below sits
+    // in a blocking read (restarted across signals): checking a flag there
+    // would leave a silent agent — and the user's screen — at the old size
+    // until the agent's next output byte. Polling the flag here keeps the PTY
+    // and the shadow in step with the real terminal within ~50ms regardless.
+    // The shadow must match the real terminal or detection reads a
+    // differently-wrapped screen than the user sees. The thread dies with the
+    // process; the wrapper's lifetime is the process's.
+    let master = pty.master;
+    let resize_signals = signals.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(50));
         if resized.swap(false, std::sync::atomic::Ordering::Relaxed) {
             let (cols, rows) = tty::window_size();
-            let _ = pty.master.resize(portable_pty::PtySize {
+            // The shadow is told before the PTY: the real terminal already
+            // has the new size, and anything the agent redraws in response to
+            // the ioctl below must not reach the observer ahead of the resize
+            // — output signals and this one land in the same ordered channel.
+            if resize_signals.send(Signal::Resize { cols, rows }).is_err() {
+                return;
+            }
+            let _ = master.resize(portable_pty::PtySize {
                 rows,
                 cols,
                 pixel_width: 0,
                 pixel_height: 0,
             });
-            // The shadow must match the real terminal or detection reads a
-            // differently-wrapped screen than the user sees.
-            let _ = signals.send(Signal::Resize { cols, rows });
         }
+    });
 
+    let mut stdout = std::io::stdout();
+    let mut buffer = [0u8; 8192];
+    loop {
         match reader.read(&mut buffer) {
             Ok(0) | Err(_) => break,
             Ok(read) => {

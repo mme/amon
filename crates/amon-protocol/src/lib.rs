@@ -15,6 +15,7 @@
 //! skips what it does not recognize.
 
 mod agent;
+mod connect;
 mod event;
 mod frame;
 mod method;
@@ -22,6 +23,7 @@ pub mod paths;
 mod schema;
 
 pub use agent::{AgentEntry, AgentPatch, AgentState};
+pub use connect::connect_or_spawn_daemon;
 pub use event::Event;
 pub use frame::{Error, ErrorCode, ParseError, Request, Response, ServerFrame};
 pub use method::{

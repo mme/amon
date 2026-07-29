@@ -85,11 +85,6 @@ impl Registry {
         agents
     }
 
-    pub fn is_empty(&self) -> bool {
-        let inner = self.lock();
-        inner.agents.is_empty() && inner.subscribers.is_empty()
-    }
-
     fn broadcast(inner: &mut Inner, event: Event) {
         // A subscriber whose channel is gone has disconnected; its connection
         // cleanup will run, but dropping it here keeps the map from growing.

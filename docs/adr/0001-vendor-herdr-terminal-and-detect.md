@@ -34,8 +34,8 @@ falls along an existing seam — those two files hold all of the module's
 dependencies on herdr's pane, layout, and input plumbing, while `state.rs` and
 `metadata.rs` need only `detect`, `agent_resume`, and `metadata_tokens`.
 
-`ShadowTerminal::detection_text` reproduces herdr's `ghostty_recent_text`
-exactly — same 24-row window, same per-row reads, same trailing-blank
+`ShadowTerminal::detection_text` reproduces herdr's `ghostty_detection_text`
+exactly — same screen-height window, same per-row reads, same trailing-blank
 trimming — because that string is what the manifests were written against.
 
 ## Consequence: hooks connect to the Wrapper, not the Daemon

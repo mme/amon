@@ -160,6 +160,34 @@ fn a_patch_changes_only_what_it_names() {
 }
 
 #[test]
+fn a_patch_can_clear_the_title() {
+    // An agent that stops setting a title must not leave its last one on
+    // display forever. Absent means "leave alone"; null means "clear".
+    let mut entry = entry();
+    let mut patch = AgentPatch::new("a1");
+    patch.title = Some(None);
+
+    assert!(patch.apply(&mut entry), "clearing is a change");
+    assert_eq!(entry.title, None);
+
+    // The distinction must survive the wire: null is not the same as absent.
+    let request = Request::new("req-8", Method::AgentUpdate(patch));
+    let line = request.to_line();
+    assert!(line.contains(r#""title":null"#), "{line:?}");
+    let Method::AgentUpdate(parsed) = Request::parse(line.trim()).unwrap().method else {
+        panic!("expected an update");
+    };
+    assert_eq!(parsed.title, Some(None), "null still means clear");
+
+    let untouched =
+        Request::parse(r#"{"id":"req-9","method":"agent.update","params":{"id":"a1"}}"#).unwrap();
+    let Method::AgentUpdate(absent) = untouched.method else {
+        panic!("expected an update");
+    };
+    assert_eq!(absent.title, None, "absent still means leave alone");
+}
+
+#[test]
 fn status_sorts_the_agents_that_need_a_human_first() {
     let mut states = [
         AgentState::Idle,

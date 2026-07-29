@@ -12,13 +12,8 @@ use libghostty_vt::fmt::Format;
 use libghostty_vt::selection::{FormatOptions, Selection};
 use libghostty_vt::terminal::{Options, Point, PointCoordinate, Terminal};
 
-/// How many rows of the buffer detection looks at, matching herdr's
-/// `DEFAULT_DETECTION_ROWS`. Manifest regions like `bottom_non_empty_lines(5)`
-/// are evaluated within this window.
-const DETECTION_ROWS: usize = 24;
-
-/// Scrollback kept behind the viewport. Detection only reads the last screenful
-/// or so, but a little history costs nothing and keeps reflow honest.
+/// Scrollback kept behind the viewport. Detection only reads the last
+/// screenful, but a little history costs nothing and keeps reflow honest.
 const MAX_SCROLLBACK: usize = 10_000;
 
 pub struct ShadowTerminal {
@@ -75,14 +70,16 @@ impl ShadowTerminal {
         }
     }
 
-    /// The text detection runs against: the last [`DETECTION_ROWS`] rows of the
-    /// buffer, read row by row, with trailing blank rows dropped.
+    /// The text detection runs against: the last screenful of the buffer —
+    /// one row per terminal row — read row by row, with trailing blank rows
+    /// dropped. Manifest regions like `bottom_non_empty_lines(5)` are
+    /// evaluated within this window.
     ///
-    /// This reproduces herdr's `ghostty_recent_text` — same window, same
-    /// per-row reads, same trailing newline — because the manifests were
-    /// written against exactly that string.
+    /// This reproduces herdr's `ghostty_detection_text` — same screen-height
+    /// window, same per-row reads, same trailing newline — because the
+    /// manifests were written against exactly that string.
     pub fn detection_text(&self) -> String {
-        let lines = DETECTION_ROWS.max(usize::from(self.rows));
+        let lines = usize::from(self.rows).max(1);
         let Ok(total_rows) = self.terminal.total_rows() else {
             return String::new();
         };

@@ -78,14 +78,30 @@ pub struct AgentPatch {
     pub state: Option<AgentState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_since: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
+    /// Two levels deep because "clear the title" has to be expressible: absent
+    /// means leave alone, `null` means clear, a string means set. An older
+    /// daemon reads `null` as absent and merely keeps the stale title.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_or_null"
+    )]
+    pub title: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_path: Option<String>,
+}
+
+/// A field that was present, whether or not it was `null`. `#[serde(default)]`
+/// covers the absent case, so together they tell apart absent, `null`, and set.
+fn present_or_null<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(Some)
 }
 
 impl AgentPatch {
@@ -105,8 +121,8 @@ impl AgentPatch {
         if let Some(state_since) = self.state_since {
             entry.state_since = state_since;
         }
-        if self.title.is_some() {
-            entry.title = self.title.clone();
+        if let Some(title) = &self.title {
+            entry.title = title.clone();
         }
         if let Some(agent) = &self.agent {
             entry.agent = agent.clone();

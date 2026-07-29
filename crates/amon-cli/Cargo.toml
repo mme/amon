@@ -20,5 +20,4 @@ amon-daemon = { workspace = true }
 amon-integration = { workspace = true }
 amon-protocol = { workspace = true }
 amon-wrapper = { workspace = true }
-portable-pty = { workspace = true }
 serde_json = { workspace = true }

@@ -25,7 +25,7 @@ impl Sandbox {
         static NEXT: AtomicU32 = AtomicU32::new(0);
         // Short by design: socket paths have to fit in sockaddr_un.
         let runtime = std::env::temp_dir().join(format!(
-            "gz{}-{}",
+            "wl{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));

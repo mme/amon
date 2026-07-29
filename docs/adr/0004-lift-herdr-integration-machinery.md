@@ -12,7 +12,7 @@ outdated notice to stderr before spawning an agent. The config-editing code is
 the hard, battle-tested part — reimplementing it would just re-earn herdr's
 bug fixes.
 
-All 16 targets are ported (env vars renamed `HERDR_*` → `AMON_*`, socket
+All 15 targets are ported (env vars renamed `HERDR_*` → `AMON_*`, socket
 methods renamed to the amon protocol); claude, codex, and pi are smoke-tested
 and declared supported, the rest are best-effort.
 

@@ -5,9 +5,10 @@ use crate::agent::{AgentEntry, AgentPatch, AgentState};
 
 /// What a peer is, declared in its [`Hello`].
 ///
-/// The daemon needs this to tell a wrapper (owns a registry entry for the life
-/// of the connection) from a subscriber (receives events) from a one-shot
-/// client like `amon status`.
+/// Declarative, not load-bearing: what a connection can do is decided by the
+/// methods it sends (`agent.register` claims an entry, `subscribe` starts the
+/// event stream), so the daemon does not branch on this. It exists for
+/// diagnostics and for future daemons that may want to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {

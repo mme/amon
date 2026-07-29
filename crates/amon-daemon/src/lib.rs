@@ -10,7 +10,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use amon_protocol::{
@@ -26,12 +26,22 @@ pub use registry::Registry;
 /// Runs the daemon until it is asked to shut down, taking the socket over from
 /// an older daemon if one holds it.
 pub fn run(version: String) -> std::io::Result<()> {
+    // Logs go to stderr: visible when the daemon runs in the foreground,
+    // discarded when a wrapper auto-started it against /dev/null.
+    let _ = tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .try_init();
+
     let socket = paths::daemon_socket();
     if let Some(parent) = socket.parent() {
         paths::ensure_private_dir(parent)?;
     }
 
     let listener = bind(&socket, &version)?;
+    // Remembered now so cleanup can tell "still our file" from "a successor's":
+    // the listener fd itself is no help, since fstat on a socket reports the
+    // anonymous sockfs inode, never the bound path's.
+    let bound_socket = socket_file_identity(&socket);
     manifests::refresh_periodically();
 
     let registry = Registry::new();
@@ -55,8 +65,23 @@ pub fn run(version: String) -> std::io::Result<()> {
         });
     }
 
-    let _ = std::fs::remove_file(&socket);
+    // Remove the socket file only if it is still this daemon's. During a
+    // takeover the successor unlinks the path and binds its own socket there;
+    // unlinking unconditionally would then delete the *new* daemon's socket,
+    // leaving it listening on an unreachable inode.
+    if bound_socket.is_some() && socket_file_identity(&socket) == bound_socket {
+        let _ = std::fs::remove_file(&socket);
+    }
     Ok(())
+}
+
+/// The (device, inode) of the socket *file*, which is what distinguishes the
+/// file this daemon bound from one a successor bound at the same path.
+fn socket_file_identity(socket: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+
+    let meta = std::fs::symlink_metadata(socket).ok()?;
+    Some((meta.dev(), meta.ino()))
 }
 
 /// Binds the daemon socket, replacing an older daemon if one answers.
@@ -161,6 +186,20 @@ fn is_newer(candidate: &str, running: &str) -> bool {
     parts(candidate) > parts(running)
 }
 
+/// One connection's write half, shared between the request/response loop and
+/// a subscriber's event pusher. The lock is what keeps an event from landing
+/// in the middle of a response line — both are newline-delimited JSON on the
+/// same stream.
+type SharedWriter = Arc<Mutex<UnixStream>>;
+
+fn write_line(writer: &SharedWriter, line: &str) -> std::io::Result<()> {
+    let mut stream = writer
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    stream.write_all(line.as_bytes())?;
+    stream.flush()
+}
+
 fn serve(
     connection: registry::ConnectionId,
     stream: UnixStream,
@@ -171,8 +210,8 @@ fn serve(
     let Ok(write_half) = stream.try_clone() else {
         return;
     };
+    let writer: SharedWriter = Arc::new(Mutex::new(write_half));
     let reader = BufReader::new(stream);
-    let mut writer = &write_half;
 
     for line in reader.lines().map_while(Result::ok) {
         if line.trim().is_empty() {
@@ -182,13 +221,12 @@ fn serve(
         let response = match Request::parse(&line) {
             Ok(request) => {
                 let id = request.id.clone();
-                match handle(connection, request, registry, version, &write_half) {
+                match handle(connection, request, registry, version, &writer) {
                     Outcome::Reply(reply) => reply(id),
                     Outcome::Shutdown => {
                         shutdown.store(true, Ordering::Relaxed);
                         let response = Response::ack(id);
-                        let _ = writer.write_all(response.to_line().as_bytes());
-                        let _ = writer.flush();
+                        let _ = write_line(&writer, &response.to_line());
                         // Wake the accept loop so it notices the flag.
                         let _ = UnixStream::connect(paths::daemon_socket());
                         return;
@@ -204,10 +242,9 @@ fn serve(
             Err(ParseError { id: None, error }) => Response::err("", error),
         };
 
-        if writer.write_all(response.to_line().as_bytes()).is_err() {
+        if write_line(&writer, &response.to_line()).is_err() {
             return;
         }
-        let _ = writer.flush();
     }
 }
 
@@ -223,7 +260,7 @@ fn handle(
     request: Request,
     registry: &Registry,
     version: &str,
-    stream: &UnixStream,
+    writer: &SharedWriter,
 ) -> Outcome {
     match request.method {
         Method::Hello(_) => {
@@ -261,9 +298,8 @@ fn handle(
         Method::Subscribe => {
             let (events, inbox) = std::sync::mpsc::channel();
             registry.subscribe(connection, events);
-            if let Ok(stream) = stream.try_clone() {
-                std::thread::spawn(move || push_events(stream, inbox));
-            }
+            let writer = writer.clone();
+            std::thread::spawn(move || push_events(writer, inbox));
             Outcome::Reply(Box::new(Response::ack))
         }
         Method::DaemonShutdown => Outcome::Shutdown,
@@ -282,16 +318,14 @@ fn handle(
     }
 }
 
-fn push_events(stream: UnixStream, inbox: std::sync::mpsc::Receiver<Event>) {
-    let mut stream = &stream;
+fn push_events(writer: SharedWriter, inbox: std::sync::mpsc::Receiver<Event>) {
     for event in inbox {
         let Ok(mut line) = serde_json::to_string(&event) else {
             continue;
         };
         line.push('\n');
-        if stream.write_all(line.as_bytes()).is_err() {
+        if write_line(&writer, &line).is_err() {
             return;
         }
-        let _ = stream.flush();
     }
 }

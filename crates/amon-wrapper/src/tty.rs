@@ -57,8 +57,8 @@ pub fn window_size() -> (u16, u16) {
 }
 
 /// Installs a SIGWINCH handler that just sets a flag. Signal handlers may only
-/// touch async-signal-safe state, so the actual resize happens on the main
-/// loop when it notices.
+/// touch async-signal-safe state, so the actual resize happens on the resize
+/// thread that polls this flag.
 pub fn watch_resizes() -> &'static std::sync::atomic::AtomicBool {
     use std::sync::atomic::AtomicBool;
     static RESIZED: AtomicBool = AtomicBool::new(false);

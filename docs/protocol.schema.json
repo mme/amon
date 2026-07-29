@@ -122,6 +122,7 @@
           ]
         },
         "title": {
+          "description": "Two levels deep because \"clear the title\" has to be expressible: absent\nmeans leave alone, `null` means clear, a string means set. An older\ndaemon reads `null` as absent and merely keeps the stale title.",
           "type": [
             "string",
             "null"
@@ -527,7 +528,7 @@
       "type": "object"
     },
     "Role": {
-      "description": "What a peer is, declared in its [`Hello`].\n\nThe daemon needs this to tell a wrapper (owns a registry entry for the life\nof the connection) from a subscriber (receives events) from a one-shot\nclient like `amon status`.",
+      "description": "What a peer is, declared in its [`Hello`].\n\nDeclarative, not load-bearing: what a connection can do is decided by the\nmethods it sends (`agent.register` claims an entry, `subscribe` starts the\nevent stream), so the daemon does not branch on this. It exists for\ndiagnostics and for future daemons that may want to.",
       "oneOf": [
         {
           "enum": [

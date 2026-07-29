@@ -212,6 +212,27 @@ fn a_wrapper_survives_the_daemon_being_killed() {
 }
 
 #[test]
+fn a_graceful_shutdown_removes_the_socket_file() {
+    let sandbox = Sandbox::new();
+    sandbox.run(&["status"]);
+    assert!(sandbox.daemon_socket().exists(), "daemon came up");
+
+    let mut client = Client::new(sandbox.connect());
+    client.send(r#"{"id":"1","method":"daemon.shutdown"}"#);
+    let _ = client.read_frame();
+
+    // The daemon acks before it unwinds, so give it a moment to finish.
+    let start = std::time::Instant::now();
+    while sandbox.daemon_socket().exists() {
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(5),
+            "the socket file must not be left behind"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+}
+
+#[test]
 fn status_says_so_when_nothing_is_running() {
     let sandbox = Sandbox::new();
 
