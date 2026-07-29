@@ -27,6 +27,24 @@ FILES=(
     "src/terminal/state.rs              crates/gaze-term/src/vendor/terminal/state.rs"
     "src/agent_resume.rs                crates/gaze-term/src/vendor/agent_resume.rs"
     "src/metadata_tokens.rs             crates/gaze-term/src/vendor/metadata_tokens.rs"
+    "src/integration/mod.rs             crates/gaze-integration/src/vendor/integration/mod.rs"
+    "src/integration/actions.rs         crates/gaze-integration/src/vendor/integration/actions.rs"
+    "src/integration/command.rs         crates/gaze-integration/src/vendor/integration/command.rs"
+    "src/integration/config_edit.rs     crates/gaze-integration/src/vendor/integration/config_edit.rs"
+    "src/integration/env.rs             crates/gaze-integration/src/vendor/integration/env.rs"
+    "src/integration/file_ops.rs        crates/gaze-integration/src/vendor/integration/file_ops.rs"
+    "src/integration/registry.rs        crates/gaze-integration/src/vendor/integration/registry.rs"
+    "src/integration/targets.rs         crates/gaze-integration/src/vendor/integration/targets.rs"
+    "src/integration/types.rs           crates/gaze-integration/src/vendor/integration/types.rs"
+    "src/integration/version.rs         crates/gaze-integration/src/vendor/integration/version.rs"
+    "src/integration/tests.rs           crates/gaze-integration/src/vendor/integration/tests.rs"
+)
+
+# Per-agent hook assets, copied with their directory layout. File names carry
+# the herdr brand too, so they are renamed alongside their contents — the
+# include_str! paths in targets.rs go through the same token map.
+ASSET_DIRS=(
+    "src/integration/assets              crates/gaze-integration/src/vendor/integration/assets"
 )
 
 # Whole directories copied verbatim (detection manifests are pure data).
@@ -57,6 +75,10 @@ rename_tokens() {
         -e 's|\bHerdr\b|Gaze|g' \
         -e 's|pane\.report_agent_session|agent.report_session|g' \
         -e 's|pane\.report_agent|agent.report_state|g' \
+        -e 's|PANE_ID|AGENT_ID|g' \
+        -e 's|pane_id|agent_id|g' \
+        -e 's|herdr|gaze|g' \
+        -e 's|HERDR|GAZE|g' \
         -e 's|@@CATALOG_HOST@@|herdr.dev|g'
 }
 
@@ -106,6 +128,21 @@ for entry in "${DIRS[@]}"; do
         name="$(basename "$file")"
         vendor_file "$upstream/$name" "$dest/$name" "#"
     done
+    echo "vendored $dest ($(find "$repo_root/$dest" -type f | wc -l) files)"
+done
+
+for entry in "${ASSET_DIRS[@]}"; do
+    read -r upstream dest <<<"$entry"
+    rm -rf "${repo_root:?}/$dest"
+    while IFS= read -r file; do
+        relative="${file#"$cache/$upstream/"}"
+        renamed="${relative//herdr-/gaze-}"
+        case "$renamed" in
+        *.js | *.ts) comment="//" ;;
+        *) comment="#" ;;
+        esac
+        vendor_file "$upstream/$relative" "$dest/$renamed" "$comment"
+    done < <(find "$cache/$upstream" -type f)
     echo "vendored $dest ($(find "$repo_root/$dest" -type f | wc -l) files)"
 done
 

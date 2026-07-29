@@ -4,8 +4,11 @@ default:
 build:
     cargo build --workspace
 
+# nextest, not `cargo test`: vendored tests mutate process-global env vars and
+# need a process per test. See .mise.toml.
 test:
-    cargo test --workspace
+    cargo nextest run --workspace --status-level fail
+    cargo test --workspace --doc
 
 lint:
     cargo clippy --workspace --all-targets -- -D warnings

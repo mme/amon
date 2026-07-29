@@ -923,7 +923,7 @@ mod tests {
                 "node.exe",
                 &[
                     "node.exe",
-                    "C:\\Users\\herdr\\AppData\\Roaming\\npm\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\cli.js",
+                    "C:\\Users\\gaze\\AppData\\Roaming\\npm\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\cli.js",
                 ],
             )],
         };
@@ -943,7 +943,7 @@ mod tests {
                 "node.exe",
                 &[
                     "node.exe",
-                    "C:\\Users\\herdr\\AppData\\Roaming\\npm\\node_modules\\@earendil-works\\pi-coding-agent\\scripts\\build.js",
+                    "C:\\Users\\gaze\\AppData\\Roaming\\npm\\node_modules\\@earendil-works\\pi-coding-agent\\scripts\\build.js",
                 ],
             )],
         };
@@ -963,7 +963,7 @@ mod tests {
                     "/D",
                     "/S",
                     "/C",
-                    "C:\\Users\\herdr\\AppData\\Roaming\\npm\\codex.cmd --model gpt-5",
+                    "C:\\Users\\gaze\\AppData\\Roaming\\npm\\codex.cmd --model gpt-5",
                 ],
             )],
         };
@@ -985,7 +985,7 @@ mod tests {
                     "powershell.exe",
                     "-NoProfile",
                     "-File",
-                    "C:\\Users\\herdr\\Documents\\PowerShell\\Scripts\\claude.ps1",
+                    "C:\\Users\\gaze\\Documents\\PowerShell\\Scripts\\claude.ps1",
                 ],
             )],
         };
@@ -996,7 +996,7 @@ mod tests {
         );
     }
 
-    // A plain shell pane launched with herdr's injected prompt integration
+    // A plain shell pane launched with gaze's injected prompt integration
     // must still classify as a shell, not an agent, even though its argv now
     // carries a -Command payload.
     #[test]
