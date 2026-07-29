@@ -28,12 +28,12 @@ $sessionId = if ($null -ne $payload -and -not [string]::IsNullOrWhiteSpace($payl
 try {
     if ($Action -eq "session") {
         if ([string]::IsNullOrWhiteSpace($sessionId)) { exit 0 }
-        & amon pane report-agent-session $env:AMON_AGENT_ID --source amon:kimi --agent kimi --agent-session-id $sessionId --session-start-source startup --seq $seq 2>$null | Out-Null
+        & amon hook report-agent-session $env:AMON_AGENT_ID --source amon:kimi --agent kimi --agent-session-id $sessionId --session-start-source startup --seq $seq 2>$null | Out-Null
     } else {
         if ([string]::IsNullOrWhiteSpace($sessionId)) {
-            & amon pane report-agent $env:AMON_AGENT_ID --source amon:kimi --agent kimi --state $Action --seq $seq 2>$null | Out-Null
+            & amon hook report-agent $env:AMON_AGENT_ID --source amon:kimi --agent kimi --state $Action --seq $seq 2>$null | Out-Null
         } else {
-            & amon pane report-agent $env:AMON_AGENT_ID --source amon:kimi --agent kimi --state $Action --agent-session-id $sessionId --seq $seq 2>$null | Out-Null
+            & amon hook report-agent $env:AMON_AGENT_ID --source amon:kimi --agent kimi --state $Action --agent-session-id $sessionId --seq $seq 2>$null | Out-Null
         }
     }
 } catch {

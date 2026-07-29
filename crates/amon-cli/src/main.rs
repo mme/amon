@@ -10,7 +10,8 @@ use std::os::unix::net::UnixStream;
 use std::process::ExitCode;
 
 use amon_protocol::{
-    AgentEntry, Hello, Method, Request, Response, Role, StatusResult, PROTOCOL_VERSION,
+    AgentEntry, AgentState, Hello, Method, ReportSession, ReportState, Request, Response, Role,
+    StatusResult, PROTOCOL_VERSION,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -36,6 +37,7 @@ fn main() -> ExitCode {
         "install" => run_install(&args[1..]),
         "uninstall" => run_uninstall(&args[1..]),
         "integrations" => run_integrations(),
+        "hook" => run_hook(&args[1..]),
         // Anything else names an agent to wrap, with the rest of argv as its.
         _ => return run_agent(&args),
     };
@@ -60,6 +62,7 @@ usage:
   amon uninstall <agent>     remove them
   amon integrations          which integrations are installed, and how current
   amon daemon                run the daemon in the foreground
+  amon hook <report> [...]   used by installed hooks to relay a report
 
 The daemon starts on demand, so you rarely need the last one.
 
@@ -184,6 +187,92 @@ fn known_agents() -> String {
         .map(amon_integration::target_label)
         .collect();
     format!("known agents: {}", names.join(", "))
+}
+
+/// `amon hook report-agent[-session] …` — the relay for hooks that cannot
+/// speak the socket protocol directly and shell out to the amon binary
+/// instead (herdr's `pane report-agent[-session]`, renamed by the token map).
+///
+/// Bad arguments fail loudly — only humans and broken assets produce them.
+/// Transport failures exit quietly: a hook runs inside someone's coding
+/// session, so a missing socket or a dead wrapper must cost nothing.
+fn run_hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    const USAGE: &str = "usage: amon hook report-agent|report-agent-session <agent-id> \
+        --source <source> --agent <agent> --seq <n> \
+        [--state idle|working|blocked|unknown] [--agent-session-id <id>] \
+        [--agent-session-path <path>] [--session-start-source <source>]";
+
+    let (verb, rest) = args.split_first().ok_or(USAGE)?;
+    let (agent_id, mut rest) = rest.split_first().ok_or(USAGE)?;
+
+    let mut source = None;
+    let mut agent = None;
+    let mut seq = None;
+    let mut state = None;
+    let mut session_id = None;
+    let mut session_path = None;
+    let mut start_source = None;
+    while let Some((flag, tail)) = rest.split_first() {
+        let (value, tail) = tail.split_first().ok_or(USAGE)?;
+        rest = tail;
+        match flag.as_str() {
+            "--source" => source = Some(value.clone()),
+            "--agent" => agent = Some(value.clone()),
+            "--seq" => seq = Some(value.parse::<u64>()?),
+            "--state" => {
+                state = Some(match value.as_str() {
+                    "idle" => AgentState::Idle,
+                    "working" => AgentState::Working,
+                    "blocked" => AgentState::Blocked,
+                    "unknown" => AgentState::Unknown,
+                    other => return Err(format!("unknown state: {other}\n{USAGE}").into()),
+                })
+            }
+            "--agent-session-id" => session_id = Some(value.clone()),
+            "--agent-session-path" => session_path = Some(value.clone()),
+            "--session-start-source" => start_source = Some(value.clone()),
+            _ => return Err(USAGE.into()),
+        }
+    }
+
+    let method = match verb.as_str() {
+        "report-agent-session" => Method::AgentReportSession(ReportSession {
+            agent_id: agent_id.clone(),
+            source: source.ok_or(USAGE)?,
+            agent: agent.ok_or(USAGE)?,
+            seq: seq.ok_or(USAGE)?,
+            agent_session_id: session_id.ok_or(USAGE)?,
+            agent_session_path: session_path,
+            session_start_source: start_source,
+        }),
+        "report-agent" => Method::AgentReportState(ReportState {
+            agent_id: agent_id.clone(),
+            source: source.ok_or(USAGE)?,
+            agent: agent.ok_or(USAGE)?,
+            state: state.ok_or(USAGE)?,
+            seq: seq.ok_or(USAGE)?,
+            agent_session_id: session_id,
+        }),
+        _ => return Err(USAGE.into()),
+    };
+
+    let Some(socket) = std::env::var_os(amon_protocol::env::SOCKET_PATH) else {
+        return Ok(());
+    };
+    let Ok(stream) = UnixStream::connect(socket) else {
+        return Ok(());
+    };
+    let timeout = Some(std::time::Duration::from_secs(2));
+    let _ = stream.set_read_timeout(timeout);
+    let _ = stream.set_write_timeout(timeout);
+    let request = Request::new("hook-1", method);
+    let mut writer = &stream;
+    if writer.write_all(request.to_line().as_bytes()).is_ok() {
+        let _ = writer.flush();
+        let mut line = String::new();
+        let _ = BufReader::new(stream).read_line(&mut line);
+    }
+    Ok(())
 }
 
 fn run_integrations() -> Result<(), Box<dyn std::error::Error>> {

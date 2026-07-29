@@ -15,7 +15,10 @@ mechanically instead:
 2. **The herdr → amon rename is a deterministic token map** applied while
    copying upstream into `crates/`: `HERDR_`→`AMON_`, `herdr`→`amon` in
    filenames and identifiers, `pane.report_agent`→`agent.report_state`,
-   `pane.report_agent_session`→`agent.report_session`. Generated files carry a
+   `pane.report_agent_session`→`agent.report_session`, and — in hook assets
+   only — the CLI verb `pane`→`hook`, because the assets that cannot speak the
+   socket shell out to `amon hook report-agent-session` where herdr's shell
+   out to `herdr pane …`. Generated files carry a
    "generated from herdr `<commit>` `<path>`; do not edit" header. The rename is
    mandatory, not cosmetic: distinct env var names and hook filenames are what
    let amon and herdr be installed on the same machine.

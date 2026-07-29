@@ -182,6 +182,167 @@ sleep 5
 }
 
 #[test]
+fn a_state_reports_session_id_also_reaches_the_registry() {
+    let sandbox = Sandbox::new();
+    // Hooks stamp the session id on every state report; if the one-shot
+    // session report is missed, identity must still arrive this way.
+    let agent = sandbox.fake_agent(
+        "claude",
+        r#"#!/bin/sh
+printf '{"id":"h1","method":"agent.report_state","params":{"agent_id":"%s","source":"amon:claude","agent":"claude","state":"working","seq":1,"agent_session_id":"sess-from-state"}}\n' "$AMON_AGENT_ID" \
+  | timeout 5 socat - "UNIX-CONNECT:$AMON_SOCKET_PATH" >/dev/null 2>&1
+sleep 5
+"#,
+    );
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    sandbox.wait_for_status("the state report's session id", |agents| {
+        agent_named(agents, "claude")
+            .is_some_and(|agent| agent["agent_session_id"] == serde_json::json!("sess-from-state"))
+    });
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn the_hook_subcommand_relays_a_session_report() {
+    // What qodercli's installed hook (and the PowerShell ones) actually run:
+    // `amon hook report-agent-session …` with the wrapper's environment.
+    use std::os::unix::net::UnixListener;
+    use amon_protocol::{Method, Request, Response};
+
+    let sandbox = Sandbox::new();
+    let socket = sandbox.runtime_path("hook.sock");
+    let listener = UnixListener::bind(&socket).expect("bind wrapper socket");
+    let collector = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("hook connects");
+        let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
+        let mut line = String::new();
+        std::io::BufRead::read_line(&mut reader, &mut line).expect("one frame");
+        let mut write = &stream;
+        let _ = std::io::Write::write_all(&mut write, Response::ack("hook-1").to_line().as_bytes());
+        line
+    });
+
+    let status = std::process::Command::new(harness::AMON)
+        .args([
+            "hook",
+            "report-agent-session",
+            "agent-under-test",
+            "--source",
+            "amon:qodercli",
+            "--agent",
+            "qodercli",
+            "--agent-session-id",
+            "q-session-1",
+            "--seq",
+            "7",
+        ])
+        .env(amon_protocol::env::AMON_ENV, "1")
+        .env(amon_protocol::env::SOCKET_PATH, &socket)
+        .env(amon_protocol::env::AGENT_ID, "agent-under-test")
+        .status()
+        .expect("amon runs");
+    assert!(status.success(), "the relay must never fail a hook");
+
+    let line = collector.join().expect("collector");
+    let request = Request::parse(line.trim()).expect("the wrapper can parse this frame");
+    let Method::AgentReportSession(report) = request.method else {
+        panic!("expected a session report, got {}", request.method.name());
+    };
+    assert_eq!(report.agent_id, "agent-under-test");
+    assert_eq!(report.source, "amon:qodercli");
+    assert_eq!(report.agent, "qodercli");
+    assert_eq!(report.agent_session_id, "q-session-1");
+    assert_eq!(report.seq, 7);
+}
+
+#[test]
+fn the_hook_subcommand_relays_a_state_report() {
+    // kimi's hook reports state transitions through the CLI relay too.
+    use std::os::unix::net::UnixListener;
+    use amon_protocol::{Method, Request, Response};
+
+    let sandbox = Sandbox::new();
+    let socket = sandbox.runtime_path("hook-state.sock");
+    let listener = UnixListener::bind(&socket).expect("bind wrapper socket");
+    let collector = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("hook connects");
+        let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
+        let mut line = String::new();
+        std::io::BufRead::read_line(&mut reader, &mut line).expect("one frame");
+        let mut write = &stream;
+        let _ = std::io::Write::write_all(&mut write, Response::ack("hook-1").to_line().as_bytes());
+        line
+    });
+
+    let status = std::process::Command::new(harness::AMON)
+        .args([
+            "hook",
+            "report-agent",
+            "agent-under-test",
+            "--source",
+            "amon:kimi",
+            "--agent",
+            "kimi",
+            "--state",
+            "working",
+            "--agent-session-id",
+            "k-session-1",
+            "--seq",
+            "9",
+        ])
+        .env(amon_protocol::env::AMON_ENV, "1")
+        .env(amon_protocol::env::SOCKET_PATH, &socket)
+        .env(amon_protocol::env::AGENT_ID, "agent-under-test")
+        .status()
+        .expect("amon runs");
+    assert!(status.success(), "the relay must never fail a hook");
+
+    let line = collector.join().expect("collector");
+    let request = Request::parse(line.trim()).expect("the wrapper can parse this frame");
+    let Method::AgentReportState(report) = request.method else {
+        panic!("expected a state report, got {}", request.method.name());
+    };
+    assert_eq!(report.agent, "kimi");
+    assert_eq!(report.state, amon_protocol::AgentState::Working);
+    assert_eq!(report.agent_session_id.as_deref(), Some("k-session-1"));
+    assert_eq!(report.seq, 9);
+}
+
+#[test]
+fn the_hook_subcommand_is_silent_when_amon_is_not_wrapping() {
+    // Without the wrapper's environment the relay must cost the agent nothing:
+    // no output, no failure — the same contract the hook scripts themselves keep.
+    let output = std::process::Command::new(harness::AMON)
+        .args([
+            "hook",
+            "report-agent-session",
+            "a1",
+            "--source",
+            "amon:qodercli",
+            "--agent",
+            "qodercli",
+            "--agent-session-id",
+            "q1",
+            "--seq",
+            "1",
+        ])
+        .env_remove(amon_protocol::env::AMON_ENV)
+        .env_remove(amon_protocol::env::SOCKET_PATH)
+        .env_remove(amon_protocol::env::AGENT_ID)
+        .output()
+        .expect("amon runs");
+
+    assert!(output.status.success());
+    assert!(
+        output.stdout.is_empty() && output.stderr.is_empty(),
+        "{output:?}"
+    );
+}
+
+#[test]
 fn a_wrapper_survives_the_daemon_being_killed() {
     let sandbox = Sandbox::new();
     let agent = sandbox.fake_agent("claude", "#!/bin/sh\necho hi\nsleep 20\n");

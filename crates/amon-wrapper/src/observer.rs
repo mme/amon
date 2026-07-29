@@ -37,6 +37,9 @@ pub enum Signal {
         agent: String,
         state: AgentState,
         seq: Option<u64>,
+        /// Hooks stamp the session id on state reports too, so identity
+        /// survives even when the one-shot session report was missed.
+        session_id: Option<String>,
     },
     /// An integration hook reported which session the agent is in.
     HookSession {
@@ -149,7 +152,13 @@ impl Observer {
                 agent,
                 state,
                 seq,
+                session_id,
             } => {
+                // The authority is scoped to the reported session, as herdr
+                // scopes it, so a report from a finished session cannot
+                // outvote the screen after a `--resume` or `/clear`.
+                let session_ref =
+                    amon_term::session_ref_from_report(&source, &agent, session_id.clone(), None);
                 // `set_hook_authority_at` is the real entry point; the
                 // shorter `set_hook_authority` upstream is a test convenience.
                 let change = self.state.set_hook_authority_at(
@@ -157,12 +166,19 @@ impl Observer {
                     agent,
                     to_detect_state(state),
                     None,
-                    None,
+                    session_ref,
                     seq,
                     Instant::now(),
                 );
                 if change.is_some() {
                     self.publish();
+                }
+                // Identity rides on state reports too: if the one-shot session
+                // report was missed, the next state report heals the entry.
+                if let Some(session_id) = session_id {
+                    let mut patch = AgentPatch::new(&self.agent_id);
+                    patch.agent_session_id = Some(session_id);
+                    self.link.update(patch);
                 }
             }
             Signal::HookSession {

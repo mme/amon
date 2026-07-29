@@ -54,4 +54,4 @@ if ([string]::IsNullOrWhiteSpace($sessionId)) {
 if ([string]::IsNullOrWhiteSpace($sessionId)) { exit 0 }
 
 $seq = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-& amon pane report-agent-session $env:AMON_AGENT_ID --source amon:copilot --agent copilot --agent-session-id $sessionId --seq $seq 2>$null | Out-Null
+& amon hook report-agent-session $env:AMON_AGENT_ID --source amon:copilot --agent copilot --agent-session-id $sessionId --seq $seq 2>$null | Out-Null

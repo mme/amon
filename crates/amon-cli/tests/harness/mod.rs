@@ -86,6 +86,12 @@ impl Sandbox {
         self.runtime.join("amon/amond.sock")
     }
 
+    /// A path inside this sandbox's runtime directory — short enough for a
+    /// unix socket, cleaned up with the sandbox.
+    pub fn runtime_path(&self, name: &str) -> PathBuf {
+        self.runtime.join(name)
+    }
+
     /// Connects to the daemon the way any other client would.
     pub fn connect(&self) -> UnixStream {
         let start = Instant::now();

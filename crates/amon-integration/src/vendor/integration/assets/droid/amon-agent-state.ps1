@@ -26,6 +26,6 @@ if ($null -eq $payload -or [string]::IsNullOrWhiteSpace($payload.session_id)) { 
 
 $seq = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 try {
-    & amon pane report-agent-session $env:AMON_AGENT_ID --source amon:droid --agent droid --agent-session-id $payload.session_id --seq $seq 2>$null | Out-Null
+    & amon hook report-agent-session $env:AMON_AGENT_ID --source amon:droid --agent droid --agent-session-id $payload.session_id --seq $seq 2>$null | Out-Null
 } catch {
 }

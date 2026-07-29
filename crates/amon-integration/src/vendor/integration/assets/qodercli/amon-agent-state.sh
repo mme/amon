@@ -29,7 +29,7 @@ try:
         raise ValueError
     subprocess.run(
         [
-            "amon", "pane", "report-agent-session", os.environ["AMON_AGENT_ID"],
+            "amon", "hook", "report-agent-session", os.environ["AMON_AGENT_ID"],
             "--source", "amon:qodercli", "--agent", "qodercli",
             "--agent-session-id", session_id, "--seq", str(time.time_ns()),
         ],

@@ -97,6 +97,7 @@ fn handle(request: Request, signals: &Sender<Signal>) {
                 agent: report.agent,
                 state: report.state,
                 seq: Some(report.seq),
+                session_id: report.agent_session_id,
             });
         }
         Method::AgentReportSession(report) => {

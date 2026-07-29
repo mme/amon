@@ -32,7 +32,7 @@ if (-not [string]::IsNullOrWhiteSpace($env:CODEX_THREAD_ID) -and $env:CODEX_THRE
 $seq = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 try {
     $args = @(
-        "pane",
+        "hook",
         "report-agent-session",
         $env:AMON_AGENT_ID,
         "--source",

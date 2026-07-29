@@ -82,6 +82,17 @@ rename_tokens() {
         -e 's|@@CATALOG_HOST@@|herdr.dev|g'
 }
 
+# Hook assets additionally rename herdr's CLI verb: hooks that cannot speak
+# the socket protocol shell out to `herdr pane report-agent[-session]`, which
+# in amon is `amon hook report-agent[-session]`. Matched as the invocation
+# forms the assets actually contain (inline and argv-array), never as a bare
+# word — `pane` also appears in prose comments, which must survive.
+rename_asset_tokens() {
+    rename_tokens | sed \
+        -e 's|amon pane report-agent|amon hook report-agent|g' \
+        -e 's|"pane",|"hook",|g'
+}
+
 header() {
     local upstream="$1" comment="$2"
     cat <<EOF
@@ -94,7 +105,7 @@ EOF
 }
 
 vendor_file() {
-    local upstream="$1" dest="$2" comment="$3"
+    local upstream="$1" dest="$2" comment="$3" filter="${4:-rename_tokens}"
     mkdir -p "$(dirname "$repo_root/$dest")"
     {
         # A shebang only works on the first line, and hook assets are executed
@@ -103,10 +114,10 @@ vendor_file() {
         if head -n1 "$cache/$upstream" | grep -q '^#!'; then
             head -n1 "$cache/$upstream"
             header "$upstream" "$comment"
-            tail -n +2 "$cache/$upstream" | rename_tokens
+            tail -n +2 "$cache/$upstream" | "$filter"
         else
             header "$upstream" "$comment"
-            rename_tokens <"$cache/$upstream"
+            "$filter" <"$cache/$upstream"
         fi
     } >"$repo_root/$dest"
 }
@@ -150,7 +161,7 @@ for entry in "${ASSET_DIRS[@]}"; do
         *.js | *.ts) comment="//" ;;
         *) comment="#" ;;
         esac
-        vendor_file "$upstream/$relative" "$dest/$renamed" "$comment"
+        vendor_file "$upstream/$relative" "$dest/$renamed" "$comment" rename_asset_tokens
     done < <(find "$cache/$upstream" -type f)
     echo "vendored $dest ($(find "$repo_root/$dest" -type f | wc -l) files)"
 done

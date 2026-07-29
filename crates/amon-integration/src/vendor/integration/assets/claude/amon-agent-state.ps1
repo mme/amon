@@ -31,7 +31,7 @@ if ([string]::IsNullOrWhiteSpace($sessionId)) { exit 0 }
 $seq = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 try {
     $args = @(
-        "pane",
+        "hook",
         "report-agent-session",
         $env:AMON_AGENT_ID,
         "--source",
