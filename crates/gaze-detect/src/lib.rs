@@ -39,3 +39,17 @@ pub use detect::{
     agent_label, detect_agent, detect_agent_with_osc, identify_agent, parse_agent_label, Agent,
     AgentDetection, AgentState,
 };
+
+/// Refreshing the bundled manifests from the catalog.
+///
+/// The vendored updater is crate-private, and re-exporting it would mean
+/// patching upstream. Since gaze's only caller is the daemon, a small wrapper
+/// here is cheaper than a patch and keeps ADR-0005's rule intact.
+pub mod manifests {
+    /// Fetches the catalog and installs any manifests newer than what is on
+    /// disk, returning how many were replaced. Manifests requiring a newer
+    /// engine than this build are refused by the updater.
+    pub fn check_and_update() -> Result<usize, String> {
+        crate::detect::manifest_update::check_and_update().map(|output| output.updated.len())
+    }
+}

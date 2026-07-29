@@ -1,5 +1,6 @@
 [package]
 name = "gaze-cli"
+description = "Run coding agents behind a lens"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,4 +12,8 @@ name = "gaze"
 path = "src/main.rs"
 
 [dependencies]
+gaze-daemon = { workspace = true }
+gaze-integration = { workspace = true }
 gaze-protocol = { workspace = true }
+gaze-wrapper = { workspace = true }
+serde_json = { workspace = true }

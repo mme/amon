@@ -74,12 +74,22 @@ dependencies = [
 name = "gaze-cli"
 version = "0.1.0"
 dependencies = [
+ "gaze-daemon",
+ "gaze-integration",
  "gaze-protocol",
+ "gaze-wrapper",
+ "serde_json",
 ]
 
 [[package]]
 name = "gaze-daemon"
 version = "0.1.0"
+dependencies = [
+ "gaze-detect",
+ "gaze-protocol",
+ "serde_json",
+ "tracing",
+]
 
 [[package]]
 name = "gaze-detect"
@@ -111,6 +121,7 @@ dependencies = [
 name = "gaze-protocol"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "schemars",
  "serde",
  "serde_json",
@@ -129,6 +140,14 @@ dependencies = [
 [[package]]
 name = "gaze-wrapper"
 version = "0.1.0"
+dependencies = [
+ "gaze-detect",
+ "gaze-protocol",
+ "gaze-term",
+ "libc",
+ "libghostty-vt",
+ "portable-pty",
+]
 
 [[package]]
 name = "hashbrown"

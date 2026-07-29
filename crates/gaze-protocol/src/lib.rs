@@ -18,6 +18,7 @@ mod agent;
 mod event;
 mod frame;
 mod method;
+pub mod paths;
 mod schema;
 
 pub use agent::{AgentEntry, AgentPatch, AgentState};
