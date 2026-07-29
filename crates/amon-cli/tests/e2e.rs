@@ -206,6 +206,127 @@ sleep 5
 }
 
 #[test]
+fn a_stale_state_report_cannot_regress_the_session_id() {
+    let sandbox = Sandbox::new();
+    // A delayed report from an older session arrives after a newer one; the
+    // state machine rejects it, and the registry must not regress either.
+    let agent = sandbox.fake_agent(
+        "claude",
+        r#"#!/bin/sh
+{
+  printf '{"id":"h1","method":"agent.report_state","params":{"agent_id":"%s","source":"amon:claude","agent":"claude","state":"working","seq":2,"agent_session_id":"sess-b"}}\n' "$AMON_AGENT_ID"
+  printf '{"id":"h2","method":"agent.report_state","params":{"agent_id":"%s","source":"amon:claude","agent":"claude","state":"working","seq":1,"agent_session_id":"sess-a"}}\n' "$AMON_AGENT_ID"
+} | timeout 5 socat - "UNIX-CONNECT:$AMON_SOCKET_PATH" >/dev/null 2>&1
+sleep 6
+"#,
+    );
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    sandbox.wait_for_status("the newer session id", |agents| {
+        agent_named(agents, "claude")
+            .is_some_and(|agent| agent["agent_session_id"] == serde_json::json!("sess-b"))
+    });
+    // Give the stale report every chance to have been processed, then make
+    // sure it changed nothing.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let agents = sandbox.status_json();
+    let entry = agent_named(agents.as_array().unwrap_or(&vec![]), "claude").expect("registered");
+    assert_eq!(entry["agent_session_id"], serde_json::json!("sess-b"));
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn an_identity_less_state_report_does_not_starve_a_session_report() {
+    let sandbox = Sandbox::new();
+    // A state report without a session id must not advance identity ordering:
+    // the session report that lost the race still carries the only identity.
+    let agent = sandbox.fake_agent(
+        "claude",
+        r#"#!/bin/sh
+{
+  printf '{"id":"h1","method":"agent.report_state","params":{"agent_id":"%s","source":"amon:claude","agent":"claude","state":"working","seq":5}}\n' "$AMON_AGENT_ID"
+  printf '{"id":"h2","method":"agent.report_session","params":{"agent_id":"%s","source":"amon:claude","agent":"claude","seq":4,"agent_session_id":"sess-late","agent_session_path":"/tmp/late.jsonl"}}\n' "$AMON_AGENT_ID"
+} | timeout 5 socat - "UNIX-CONNECT:$AMON_SOCKET_PATH" >/dev/null 2>&1
+sleep 6
+"#,
+    );
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    let agents = sandbox.wait_for_status("the late session report's identity", |agents| {
+        agent_named(agents, "claude")
+            .is_some_and(|agent| agent["agent_session_id"] == serde_json::json!("sess-late"))
+    });
+    let entry = agent_named(&agents, "claude").expect("registered");
+    assert_eq!(
+        entry["agent_session_path"],
+        serde_json::json!("/tmp/late.jsonl")
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn a_session_report_fills_the_path_for_the_current_session() {
+    let sandbox = Sandbox::new();
+    // The state report won the race and already set the id; the session
+    // report for the same session must still land its path, whatever its seq.
+    let agent = sandbox.fake_agent(
+        "claude",
+        r#"#!/bin/sh
+{
+  printf '{"id":"h1","method":"agent.report_state","params":{"agent_id":"%s","source":"amon:claude","agent":"claude","state":"working","seq":2,"agent_session_id":"sess-b"}}\n' "$AMON_AGENT_ID"
+  printf '{"id":"h2","method":"agent.report_session","params":{"agent_id":"%s","source":"amon:claude","agent":"claude","seq":1,"agent_session_id":"sess-b","agent_session_path":"/tmp/b.jsonl"}}\n' "$AMON_AGENT_ID"
+} | timeout 5 socat - "UNIX-CONNECT:$AMON_SOCKET_PATH" >/dev/null 2>&1
+sleep 6
+"#,
+    );
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    sandbox.wait_for_status("the session path to be filled in", |agents| {
+        agent_named(agents, "claude").is_some_and(|agent| {
+            agent["agent_session_id"] == serde_json::json!("sess-b")
+                && agent["agent_session_path"] == serde_json::json!("/tmp/b.jsonl")
+        })
+    });
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn a_session_report_reanchors_state_detection_to_the_new_session() {
+    let sandbox = Sandbox::new();
+    // The same process switches sessions (as `/clear` or `--resume` does):
+    // state reported for the new session must be accepted, not rejected
+    // because the machine is still anchored to the old one.
+    let agent = sandbox.fake_agent(
+        "claude",
+        r#"#!/bin/sh
+{
+  printf '{"id":"h1","method":"agent.report_state","params":{"agent_id":"%s","source":"amon:claude","agent":"claude","state":"working","seq":1,"agent_session_id":"sess-a"}}\n' "$AMON_AGENT_ID"
+  printf '{"id":"h2","method":"agent.report_session","params":{"agent_id":"%s","source":"amon:claude","agent":"claude","seq":2,"agent_session_id":"sess-b","session_start_source":"clear"}}\n' "$AMON_AGENT_ID"
+  printf '{"id":"h3","method":"agent.report_state","params":{"agent_id":"%s","source":"amon:claude","agent":"claude","state":"blocked","seq":3,"agent_session_id":"sess-b"}}\n' "$AMON_AGENT_ID"
+} | timeout 5 socat - "UNIX-CONNECT:$AMON_SOCKET_PATH" >/dev/null 2>&1
+sleep 6
+"#,
+    );
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    sandbox.wait_for_status("the new session's state to win", |agents| {
+        agent_named(agents, "claude").is_some_and(|agent| {
+            state_of(&agent) == "blocked"
+                && agent["agent_session_id"] == serde_json::json!("sess-b")
+        })
+    });
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
 fn the_hook_subcommand_relays_a_session_report() {
     // What qodercli's installed hook (and the PowerShell ones) actually run:
     // `amon hook report-agent-session …` with the wrapper's environment.

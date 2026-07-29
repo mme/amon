@@ -29,8 +29,9 @@ pub(crate) use amon_detect::detect;
 
 mod shadow;
 
-// The wrapper builds a session ref from hook reports the same way herdr does,
-// so hook authority is scoped to the session that reported it.
-pub use agent_resume::{session_ref_from_report, AgentSessionRef};
+// The wrapper builds session refs and start sources from hook reports the
+// same way herdr does, so hook authority is scoped to the session that
+// reported it and session reports reanchor the state machine.
+pub use agent_resume::{normalize_session_start_source, session_ref_from_report, AgentSessionRef};
 pub use shadow::ShadowTerminal;
 pub use terminal::{EffectiveStateChange, TerminalId, TerminalState, TerminalStateMutation};

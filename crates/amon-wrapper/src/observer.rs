@@ -47,6 +47,10 @@ pub enum Signal {
         agent: String,
         session_id: String,
         session_path: Option<String>,
+        seq: Option<u64>,
+        /// `startup`, `resume`, `new`, … — what began this session, when the
+        /// hook knows.
+        session_start_source: Option<String>,
     },
     AgentExited,
 }
@@ -61,6 +65,17 @@ pub struct Observer {
     last_title: Option<String>,
     dirty: bool,
     last_detection: Instant,
+    /// Newest identity-carrying report sequence seen per hook source. Tracked
+    /// separately from arbitration: the state machine may buffer a valid
+    /// report (also returning `None`), so its verdict cannot tell a stale
+    /// report from a merely deferred one. Only reports that carry a session
+    /// id advance this — an identity-less state report must not starve a
+    /// later-arriving session report.
+    identity_seqs: std::collections::HashMap<String, u64>,
+    /// The session id last patched into the registry. A session report for
+    /// this same session may always add metadata (the path), whatever its
+    /// sequence — only a *different* session needs to prove it is newer.
+    last_session_id: Option<String>,
 }
 
 /// Starts the observer on its own thread.
@@ -109,6 +124,8 @@ impl Observer {
             last_title: None,
             dirty: false,
             last_detection: Instant::now(),
+            identity_seqs: std::collections::HashMap::new(),
+            last_session_id: None,
         })
     }
 
@@ -154,11 +171,24 @@ impl Observer {
                 seq,
                 session_id,
             } => {
+                // Identity rides on state reports too: if the one-shot session
+                // report was missed, the next state report heals the entry.
+                // Ordered by the source's own sequence so a delayed report
+                // from an older session cannot regress the registry.
+                if let Some(session_id) = session_id.clone() {
+                    if self.identity_report_is_fresh(&source, seq) {
+                        self.last_session_id = Some(session_id.clone());
+                        let mut patch = AgentPatch::new(&self.agent_id);
+                        patch.agent_session_id = Some(session_id);
+                        self.link.update(patch);
+                    }
+                }
+
                 // The authority is scoped to the reported session, as herdr
                 // scopes it, so a report from a finished session cannot
                 // outvote the screen after a `--resume` or `/clear`.
                 let session_ref =
-                    amon_term::session_ref_from_report(&source, &agent, session_id.clone(), None);
+                    amon_term::session_ref_from_report(&source, &agent, session_id, None);
                 // `set_hook_authority_at` is the real entry point; the
                 // shorter `set_hook_authority` upstream is a test convenience.
                 let change = self.state.set_hook_authority_at(
@@ -173,32 +203,75 @@ impl Observer {
                 if change.is_some() {
                     self.publish();
                 }
-                // Identity rides on state reports too: if the one-shot session
-                // report was missed, the next state report heals the entry.
-                if let Some(session_id) = session_id {
-                    let mut patch = AgentPatch::new(&self.agent_id);
-                    patch.agent_session_id = Some(session_id);
-                    self.link.update(patch);
-                }
             }
             Signal::HookSession {
                 source,
                 agent,
                 session_id,
                 session_path,
+                seq,
+                session_start_source,
             } => {
-                // Session identity is metadata, not state: a hook telling us
-                // which session it is in says nothing about whether the agent
-                // is busy, so the arbitrated state is left alone.
-                let mut patch = AgentPatch::new(&self.agent_id);
-                patch.agent = Some(agent);
-                patch.agent_session_id = Some(session_id);
-                patch.agent_session_path = session_path;
-                let _ = source;
-                self.link.update(patch);
+                // A dedicated session report is authoritative for identity —
+                // regardless of what arbitration makes of it — but still only
+                // in its source's own order, so a delayed report cannot roll
+                // identity back. A report for the *current* session always
+                // applies: state reports never carry the path, so this is how
+                // it gets filled in even when the session report lost the race.
+                let same_session = self.last_session_id.as_deref() == Some(session_id.as_str());
+                if self.identity_report_is_fresh(&source, seq) || same_session {
+                    self.last_session_id = Some(session_id.clone());
+                    let mut patch = AgentPatch::new(&self.agent_id);
+                    patch.agent = Some(agent.clone());
+                    patch.agent_session_id = Some(session_id.clone());
+                    patch.agent_session_path = session_path.clone();
+                    self.link.update(patch);
+                }
+
+                // The state machine is reanchored to the new session, as herdr
+                // does on its session-report path: authority is session-scoped,
+                // so without this a mid-process session change (`--resume`, a
+                // fresh session in the same process) would leave the machine
+                // anchored to the old session and rejecting the new one's
+                // state reports.
+                let session_ref = amon_term::session_ref_from_report(
+                    &source,
+                    &agent,
+                    Some(session_id),
+                    session_path,
+                );
+                let change = self.state.set_agent_session_ref_for_session_start(
+                    source,
+                    agent,
+                    session_ref,
+                    seq,
+                    amon_term::normalize_session_start_source(session_start_source),
+                );
+                if change.is_some() {
+                    self.publish();
+                }
             }
             Signal::AgentExited => {
                 self.dirty = true;
+            }
+        }
+    }
+
+    /// Whether a report is the newest its source has sent, recording it if so.
+    /// Reports without a sequence are taken as-is.
+    fn identity_report_is_fresh(&mut self, source: &str, seq: Option<u64>) -> bool {
+        let Some(seq) = seq else {
+            return true;
+        };
+        match self.identity_seqs.get_mut(source) {
+            Some(latest) if *latest >= seq => false,
+            Some(latest) => {
+                *latest = seq;
+                true
+            }
+            None => {
+                self.identity_seqs.insert(source.to_string(), seq);
+                true
             }
         }
     }

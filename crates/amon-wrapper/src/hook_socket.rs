@@ -106,6 +106,8 @@ fn handle(request: Request, signals: &Sender<Signal>) {
                 agent: report.agent,
                 session_id: report.agent_session_id,
                 session_path: report.agent_session_path,
+                seq: Some(report.seq),
+                session_start_source: report.session_start_source,
             });
         }
         // Everything else belongs to the daemon's socket, not this one.
