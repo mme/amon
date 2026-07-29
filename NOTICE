@@ -1,0 +1,17 @@
+gaze
+Copyright 2026 Markus Ecker
+
+This product includes software developed as part of herdr
+(https://github.com/ogulcancelik/herdr), Copyright Ogulcan Celik,
+licensed under the Apache License, Version 2.0.
+
+Portions of the following crates are derived from herdr at commit
+514e4465ee33d4d81682d06ee2934483982a54ed:
+
+  - crates/gaze-term         (from herdr src/terminal/)
+  - crates/gaze-detect       (from herdr src/detect/, incl. agent manifests)
+  - crates/gaze-integration  (from herdr src/integration/, incl. hook assets)
+
+Files derived from herdr carry an origin header stating the source path and
+the modifications made. Detection manifest updates are fetched, by default,
+from herdr's public catalog at https://herdr.dev/agent-detection/.
