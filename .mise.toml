@@ -1,0 +1,4 @@
+[tools]
+# Ghostty's VT library builds with zig and pins this exact version; the
+# libghostty-vt crate's build fails loudly on anything else.
+zig = "0.15.2"

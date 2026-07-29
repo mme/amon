@@ -1,5 +1,6 @@
 [package]
 name = "gaze-term"
+description = "Shadow terminal and agent state arbitration, vendored from herdr"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,3 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+gaze-detect = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+libghostty-vt = "0.2.1"
