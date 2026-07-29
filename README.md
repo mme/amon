@@ -1,42 +1,42 @@
-# gaze
+# amon
 
-Run your coding agents behind a lens:
+Know what every coding agent you are running is doing:
 
 ```sh
-gaze claude          # wrap any agent — output passes through untouched
-gaze codex --resume
-gaze status          # what's blocked, working, or idle right now?
-gaze install claude  # optional per-agent hooks, for richer session data
+amon claude          # wrap any agent — output passes through untouched
+amon codex --resume
+amon status          # what's blocked, working, or idle right now?
+amon install claude  # optional per-agent hooks, for richer session data
 ```
 
-`gaze` runs an agent in a PTY and passes its output through unchanged, keeping
+`amon` runs an agent in a PTY and passes its output through unchanged, keeping
 a copy for a headless *shadow terminal* it uses to detect whether the agent is
 working, idle, or blocked waiting for you. It reports that to a per-user daemon
 (started on demand) which keeps a live registry of every wrapped agent and
 pushes events to subscribers over a unix socket.
 
 ```
-$ gaze status
-claude   blocked    4m  ~/Projects/gaze.sh
+$ amon status
+claude   blocked    4m  ~/Projects/amon.sh
 codex    working   12s  ~/Projects/scriptcast
 claude   idle       3m  ~/Work/api
 ```
 
-The agent cannot tell gaze is there: gaze answers no terminal queries, injects
+The agent cannot tell amon is there: amon answers no terminal queries, injects
 nothing into the stream, and keeps the shadow terminal the same size as your
 real one. If the daemon is missing, wedged, or killed, the agent keeps running
 — observability never interrupts your session.
 
 ## Subscribing
 
-The daemon speaks newline-delimited JSON over `$XDG_RUNTIME_DIR/gaze/gazed.sock`.
+The daemon speaks newline-delimited JSON over `$XDG_RUNTIME_DIR/amon/amond.sock`.
 Any language can watch state changes live:
 
 ```sh
 { echo '{"id":"1","method":"hello","params":{"role":"subscriber","protocol":1,"version":"cli"}}'
   echo '{"id":"2","method":"subscribe"}'
   cat
-} | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/gaze/gazed.sock
+} | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/amon/amond.sock
 ```
 
 The wire format is documented in [docs/protocol.schema.json](./docs/protocol.schema.json),

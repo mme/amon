@@ -1,19 +1,19 @@
-# Gaze
+# Amon
 
-Gaze wraps the execution of AI coding agents (`gaze claude …`) and reports their
-live state to a central per-user daemon (`gazed`), which tracks all connected
+Amon wraps the execution of AI coding agents (`amon claude …`) and reports their
+live state to a central per-user daemon (`amond`), which tracks all connected
 agents and notifies subscribers. Detection and install machinery is lifted from
 [herdr](https://github.com/ogulcancelik/herdr) (Apache-2.0, attributed).
 
 ## Language
 
 **Wrapper**:
-The `gaze` process that spawns one agent inside a PTY, passes its I/O through
+The `amon` process that spawns one agent inside a PTY, passes its I/O through
 unmodified, and observes it.
 _Avoid_: launcher, runner
 
 **Daemon**:
-The single per-user `gazed` process that keeps the registry of connected agents.
+The single per-user `amond` process that keeps the registry of connected agents.
 Started on demand by any Wrapper if not already running.
 _Avoid_: server, hub
 
@@ -25,7 +25,7 @@ herdr's agent registry.
 The detected condition of a wrapped agent: `Idle` (finished, prompt visible),
 `Working` (actively processing), `Blocked` (needs human input), `Unknown`
 (unrecognized program). Terminology inherited from herdr.
-_Avoid_: status (reserved for the `gaze status` command), busy, waiting
+_Avoid_: status (reserved for the `amon status` command), busy, waiting
 
 **Shadow Terminal**:
 An in-process terminal emulator (herdr's, lifted byte-for-byte) that consumes a
@@ -51,7 +51,7 @@ Terminal's screen into an Agent State.
 _Avoid_: pattern file, rules file
 
 **Integration**:
-The per-agent install artifact written by `gaze install <agent>` (hook scripts,
+The per-agent install artifact written by `amon install <agent>` (hook scripts,
 config edits) that lets the agent itself report session events to the Daemon.
 _Avoid_: plugin, extension
 

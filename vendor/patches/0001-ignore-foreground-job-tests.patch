@@ -1,12 +1,12 @@
-diff --git i/crates/gaze-detect/src/vendor/detect/mod.rs w/crates/gaze-detect/src/vendor/detect/mod.rs
+diff --git i/crates/amon-detect/src/vendor/detect/mod.rs w/crates/amon-detect/src/vendor/detect/mod.rs
 index ec499b1..e5e6bc3 100644
---- i/crates/gaze-detect/src/vendor/detect/mod.rs
-+++ w/crates/gaze-detect/src/vendor/detect/mod.rs
+--- i/crates/amon-detect/src/vendor/detect/mod.rs
++++ w/crates/amon-detect/src/vendor/detect/mod.rs
 @@ -1183,6 +1183,7 @@ mod tests {
  
      #[cfg(target_os = "linux")]
      #[test]
-+    #[ignore = "gaze stubs out foreground process scanning; it identifies agents from argv"]
++    #[ignore = "amon stubs out foreground process scanning; it identifies agents from argv"]
      fn foreground_job_detects_sleep() {
          use portable_pty::CommandBuilder;
  
@@ -14,7 +14,7 @@ index ec499b1..e5e6bc3 100644
  
      #[cfg(target_os = "linux")]
      #[test]
-+    #[ignore = "gaze stubs out foreground process scanning; it identifies agents from argv"]
++    #[ignore = "amon stubs out foreground process scanning; it identifies agents from argv"]
      fn foreground_job_detects_shell_running_command() {
          use portable_pty::CommandBuilder;
          use std::io::Write;
@@ -22,7 +22,7 @@ index ec499b1..e5e6bc3 100644
  
      #[cfg(target_os = "linux")]
      #[test]
-+    #[ignore = "gaze stubs out foreground process scanning; it identifies agents from argv"]
++    #[ignore = "amon stubs out foreground process scanning; it identifies agents from argv"]
      fn foreground_job_detects_agent_behind_shell_wrapper() {
          use portable_pty::CommandBuilder;
  

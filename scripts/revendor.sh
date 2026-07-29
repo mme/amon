@@ -10,46 +10,46 @@ HERDR_REPO="https://github.com/ogulcancelik/herdr"
 HERDR_COMMIT="514e4465ee33d4d81682d06ee2934483982a54ed"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cache="${GAZE_VENDOR_CACHE:-${TMPDIR:-/tmp}/gaze-vendor-herdr}"
+cache="${AMON_VENDOR_CACHE:-${TMPDIR:-/tmp}/amon-vendor-herdr}"
 patches="$repo_root/vendor/patches"
 
 # upstream path -> destination, relative to the repo root. The multiplexer's
-# own pane/runtime plumbing is deliberately absent: gaze spawns its own PTY and
+# own pane/runtime plumbing is deliberately absent: amon spawns its own PTY and
 # only needs the state machine.
 FILES=(
-    "src/detect/mod.rs                  crates/gaze-detect/src/vendor/detect/mod.rs"
-    "src/detect/manifest.rs             crates/gaze-detect/src/vendor/detect/manifest.rs"
-    "src/detect/manifest_update.rs      crates/gaze-detect/src/vendor/detect/manifest_update.rs"
-    "src/detect/manifest/tests.rs       crates/gaze-detect/src/vendor/detect/manifest/tests.rs"
-    "src/terminal/id.rs                 crates/gaze-term/src/vendor/terminal/id.rs"
-    "src/terminal/title.rs              crates/gaze-term/src/vendor/terminal/title.rs"
-    "src/terminal/metadata.rs           crates/gaze-term/src/vendor/terminal/metadata.rs"
-    "src/terminal/state.rs              crates/gaze-term/src/vendor/terminal/state.rs"
-    "src/agent_resume.rs                crates/gaze-term/src/vendor/agent_resume.rs"
-    "src/metadata_tokens.rs             crates/gaze-term/src/vendor/metadata_tokens.rs"
-    "src/integration/mod.rs             crates/gaze-integration/src/vendor/integration/mod.rs"
-    "src/integration/actions.rs         crates/gaze-integration/src/vendor/integration/actions.rs"
-    "src/integration/command.rs         crates/gaze-integration/src/vendor/integration/command.rs"
-    "src/integration/config_edit.rs     crates/gaze-integration/src/vendor/integration/config_edit.rs"
-    "src/integration/env.rs             crates/gaze-integration/src/vendor/integration/env.rs"
-    "src/integration/file_ops.rs        crates/gaze-integration/src/vendor/integration/file_ops.rs"
-    "src/integration/registry.rs        crates/gaze-integration/src/vendor/integration/registry.rs"
-    "src/integration/targets.rs         crates/gaze-integration/src/vendor/integration/targets.rs"
-    "src/integration/types.rs           crates/gaze-integration/src/vendor/integration/types.rs"
-    "src/integration/version.rs         crates/gaze-integration/src/vendor/integration/version.rs"
-    "src/integration/tests.rs           crates/gaze-integration/src/vendor/integration/tests.rs"
+    "src/detect/mod.rs                  crates/amon-detect/src/vendor/detect/mod.rs"
+    "src/detect/manifest.rs             crates/amon-detect/src/vendor/detect/manifest.rs"
+    "src/detect/manifest_update.rs      crates/amon-detect/src/vendor/detect/manifest_update.rs"
+    "src/detect/manifest/tests.rs       crates/amon-detect/src/vendor/detect/manifest/tests.rs"
+    "src/terminal/id.rs                 crates/amon-term/src/vendor/terminal/id.rs"
+    "src/terminal/title.rs              crates/amon-term/src/vendor/terminal/title.rs"
+    "src/terminal/metadata.rs           crates/amon-term/src/vendor/terminal/metadata.rs"
+    "src/terminal/state.rs              crates/amon-term/src/vendor/terminal/state.rs"
+    "src/agent_resume.rs                crates/amon-term/src/vendor/agent_resume.rs"
+    "src/metadata_tokens.rs             crates/amon-term/src/vendor/metadata_tokens.rs"
+    "src/integration/mod.rs             crates/amon-integration/src/vendor/integration/mod.rs"
+    "src/integration/actions.rs         crates/amon-integration/src/vendor/integration/actions.rs"
+    "src/integration/command.rs         crates/amon-integration/src/vendor/integration/command.rs"
+    "src/integration/config_edit.rs     crates/amon-integration/src/vendor/integration/config_edit.rs"
+    "src/integration/env.rs             crates/amon-integration/src/vendor/integration/env.rs"
+    "src/integration/file_ops.rs        crates/amon-integration/src/vendor/integration/file_ops.rs"
+    "src/integration/registry.rs        crates/amon-integration/src/vendor/integration/registry.rs"
+    "src/integration/targets.rs         crates/amon-integration/src/vendor/integration/targets.rs"
+    "src/integration/types.rs           crates/amon-integration/src/vendor/integration/types.rs"
+    "src/integration/version.rs         crates/amon-integration/src/vendor/integration/version.rs"
+    "src/integration/tests.rs           crates/amon-integration/src/vendor/integration/tests.rs"
 )
 
 # Per-agent hook assets, copied with their directory layout. File names carry
 # the herdr brand too, so they are renamed alongside their contents — the
 # include_str! paths in targets.rs go through the same token map.
 ASSET_DIRS=(
-    "src/integration/assets              crates/gaze-integration/src/vendor/integration/assets"
+    "src/integration/assets              crates/amon-integration/src/vendor/integration/assets"
 )
 
 # Whole directories copied verbatim (detection manifests are pure data).
 DIRS=(
-    "src/detect/manifests                crates/gaze-detect/src/vendor/detect/manifests"
+    "src/detect/manifests                crates/amon-detect/src/vendor/detect/manifests"
 )
 
 fetch() {
@@ -61,24 +61,24 @@ fetch() {
     git -C "$cache" checkout --quiet "$HERDR_COMMIT"
 }
 
-# The herdr -> gaze token map (ADR-0005). Order matters, and herdr.dev is
-# deliberately preserved: gaze pulls detection manifests from herdr's own
+# The herdr -> amon token map (ADR-0005). Order matters, and herdr.dev is
+# deliberately preserved: amon pulls detection manifests from herdr's own
 # catalog (ADR-0003).
 rename_tokens() {
     sed -e 's|herdr\.dev|@@CATALOG_HOST@@|g' \
-        -e 's|"herdr:|"gaze:|g' \
-        -e 's|HERDR_|GAZE_|g' \
-        -e 's|herdr-agent-state|gaze-agent-state|g' \
-        -e 's|herdr-manifest-|gaze-manifest-|g' \
-        -e 's|herdr-detect-|gaze-detect-|g' \
-        -e 's|herdr_|gaze_|g' \
-        -e 's|\bHerdr\b|Gaze|g' \
+        -e 's|"herdr:|"amon:|g' \
+        -e 's|HERDR_|AMON_|g' \
+        -e 's|herdr-agent-state|amon-agent-state|g' \
+        -e 's|herdr-manifest-|amon-manifest-|g' \
+        -e 's|herdr-detect-|amon-detect-|g' \
+        -e 's|herdr_|amon_|g' \
+        -e 's|\bHerdr\b|Amon|g' \
         -e 's|pane\.report_agent_session|agent.report_session|g' \
         -e 's|pane\.report_agent|agent.report_state|g' \
         -e 's|PANE_ID|AGENT_ID|g' \
         -e 's|pane_id|agent_id|g' \
-        -e 's|herdr|gaze|g' \
-        -e 's|HERDR|GAZE|g' \
+        -e 's|herdr|amon|g' \
+        -e 's|HERDR|AMON|g' \
         -e 's|@@CATALOG_HOST@@|herdr.dev|g'
 }
 
@@ -145,7 +145,7 @@ for entry in "${ASSET_DIRS[@]}"; do
     rm -rf "${repo_root:?}/$dest"
     while IFS= read -r file; do
         relative="${file#"$cache/$upstream/"}"
-        renamed="${relative//herdr-/gaze-}"
+        renamed="${relative//herdr-/amon-}"
         case "$renamed" in
         *.js | *.ts) comment="//" ;;
         *) comment="#" ;;

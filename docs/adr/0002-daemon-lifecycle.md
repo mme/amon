@@ -1,8 +1,8 @@
 # Daemon lingers, upgrades kill the old daemon, registry is connection-scoped
 
-`gazed` (the `gaze daemon` subcommand of the single `gaze` binary) is
-auto-started by every gaze command and then lingers until explicitly killed —
-no refcounting, no idle shutdown. A newer gaze version finding an older daemon
+`amond` (the `amon daemon` subcommand of the single `amon` binary) is
+auto-started by every amon command and then lingers until explicitly killed —
+no refcounting, no idle shutdown. A newer amon version finding an older daemon
 shuts it down and takes over. The registry is purely a reflection of live
 wrapper connections: an agent disappears the instant its wrapper's connection
 drops, and nothing is persisted across daemon restarts.

@@ -1,4 +1,4 @@
-gaze
+amon
 Copyright 2026 Markus Ecker
 
 This product includes software developed as part of herdr
@@ -8,12 +8,12 @@ licensed under the Apache License, Version 2.0.
 Portions of the following crates are derived from herdr at commit
 514e4465ee33d4d81682d06ee2934483982a54ed:
 
-  - crates/gaze-detect       (from herdr src/detect/, incl. agent manifests)
-  - crates/gaze-term         (from herdr src/terminal/, src/agent_resume.rs,
+  - crates/amon-detect       (from herdr src/detect/, incl. agent manifests)
+  - crates/amon-term         (from herdr src/terminal/, src/agent_resume.rs,
                               src/metadata_tokens.rs)
-  - crates/gaze-integration  (from herdr src/integration/, incl. hook assets)
+  - crates/amon-integration  (from herdr src/integration/, incl. hook assets)
 
-Terminal emulation is not herdr's: gaze links libghostty-vt, the Ghostty
+Terminal emulation is not herdr's: amon links libghostty-vt, the Ghostty
 terminal emulation library, Copyright (c) 2024 Mitchell Hashimoto and Ghostty
 contributors, licensed under the MIT License — the same library herdr uses.
 

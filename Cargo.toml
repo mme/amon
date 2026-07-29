@@ -1,13 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/gaze-protocol",
-    "crates/gaze-term",
-    "crates/gaze-detect",
-    "crates/gaze-integration",
-    "crates/gaze-daemon",
-    "crates/gaze-wrapper",
-    "crates/gaze-cli",
+    "crates/amon-protocol",
+    "crates/amon-term",
+    "crates/amon-detect",
+    "crates/amon-integration",
+    "crates/amon-daemon",
+    "crates/amon-wrapper",
+    "crates/amon-cli",
 ]
 
 [workspace.package]
@@ -15,16 +15,16 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
 license = "Apache-2.0"
-repository = "https://github.com/mme/gaze"
-homepage = "https://gaze.sh"
+repository = "https://github.com/mme/amon"
+homepage = "https://amon.sh"
 
 [workspace.dependencies]
-gaze-protocol = { path = "crates/gaze-protocol" }
-gaze-term = { path = "crates/gaze-term" }
-gaze-detect = { path = "crates/gaze-detect" }
-gaze-integration = { path = "crates/gaze-integration" }
-gaze-daemon = { path = "crates/gaze-daemon" }
-gaze-wrapper = { path = "crates/gaze-wrapper" }
+amon-protocol = { path = "crates/amon-protocol" }
+amon-term = { path = "crates/amon-term" }
+amon-detect = { path = "crates/amon-detect" }
+amon-integration = { path = "crates/amon-integration" }
+amon-daemon = { path = "crates/amon-daemon" }
+amon-wrapper = { path = "crates/amon-wrapper" }
 
 clap = { version = "4.5", default-features = false, features = ["std", "help", "usage", "error-context"] }
 libc = "0.2"
@@ -40,9 +40,9 @@ toml = "0.8"
 # Detection and terminal emulation are regex/parser heavy: unoptimized builds of
 # these leaves make the shadow terminal noticeably slow in dev without costing
 # meaningful rebuild time, since they change only when re-vendored.
-[profile.dev.package.gaze-term]
+[profile.dev.package.amon-term]
 opt-level = 2
-[profile.dev.package.gaze-detect]
+[profile.dev.package.amon-detect]
 opt-level = 2
 
 [profile.release]
