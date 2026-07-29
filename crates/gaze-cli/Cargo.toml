@@ -11,9 +11,14 @@ repository.workspace = true
 name = "gaze"
 path = "src/main.rs"
 
+[dev-dependencies]
+portable-pty = { workspace = true }
+serde_json = { workspace = true }
+
 [dependencies]
 gaze-daemon = { workspace = true }
 gaze-integration = { workspace = true }
 gaze-protocol = { workspace = true }
 gaze-wrapper = { workspace = true }
+portable-pty = { workspace = true }
 serde_json = { workspace = true }

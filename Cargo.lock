@@ -78,6 +78,7 @@ dependencies = [
  "gaze-integration",
  "gaze-protocol",
  "gaze-wrapper",
+ "portable-pty",
  "serde_json",
 ]
 

@@ -94,15 +94,31 @@ pub fn run(launch: Launch) -> std::io::Result<i32> {
 
     // stdin -> agent. Detached: it blocks on the user's keyboard, and there is
     // nothing to wait for once the agent is gone.
-    let mut pty_writer = pty.master.take_writer().map_err(std::io::Error::other)?;
+    //
+    // The writer is shared rather than moved because dropping it makes
+    // portable-pty synthesize a newline and EOF into the PTY. Running out of
+    // input is not the user pressing ^D: the echoed newline would appear in
+    // the agent's output, and the ^D could make the agent quit. A terminal
+    // whose input ends simply stops delivering input, so gaze does the same
+    // and keeps the writer alive until the agent is gone.
+    let pty_writer = std::sync::Arc::new(std::sync::Mutex::new(
+        pty.master.take_writer().map_err(std::io::Error::other)?,
+    ));
+    let stdin_writer = pty_writer.clone();
     std::thread::spawn(move || {
         let mut stdin = std::io::stdin();
         let mut buffer = [0u8; 4096];
         while let Ok(read) = stdin.read(&mut buffer) {
-            if read == 0 || pty_writer.write_all(&buffer[..read]).is_err() {
+            if read == 0 {
                 return;
             }
-            let _ = pty_writer.flush();
+            let Ok(mut writer) = stdin_writer.lock() else {
+                return;
+            };
+            if writer.write_all(&buffer[..read]).is_err() {
+                return;
+            }
+            let _ = writer.flush();
         }
     });
 

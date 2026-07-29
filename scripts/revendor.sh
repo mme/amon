@@ -97,8 +97,17 @@ vendor_file() {
     local upstream="$1" dest="$2" comment="$3"
     mkdir -p "$(dirname "$repo_root/$dest")"
     {
-        header "$upstream" "$comment"
-        rename_tokens <"$cache/$upstream"
+        # A shebang only works on the first line, and hook assets are executed
+        # directly by their agents — so the provenance header goes after it,
+        # never before.
+        if head -n1 "$cache/$upstream" | grep -q '^#!'; then
+            head -n1 "$cache/$upstream"
+            header "$upstream" "$comment"
+            tail -n +2 "$cache/$upstream" | rename_tokens
+        else
+            header "$upstream" "$comment"
+            rename_tokens <"$cache/$upstream"
+        fi
     } >"$repo_root/$dest"
 }
 
