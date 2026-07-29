@@ -3,28 +3,74 @@
 Run your coding agents behind a lens:
 
 ```sh
-gaze claude          # wrap any agent — passthrough is byte-for-byte
+gaze claude          # wrap any agent — output passes through untouched
 gaze codex --resume
-gaze status          # what's Idle, Working, or Blocked right now?
-gaze install claude  # optional per-agent integration hooks
+gaze status          # what's blocked, working, or idle right now?
+gaze install claude  # optional per-agent hooks, for richer session data
 ```
 
-`gaze` wraps an AI coding agent in a PTY, detects its live state (Idle /
-Working / Blocked) via a shadow terminal, and reports it to a per-user daemon
-(`gaze daemon`, auto-started) that keeps a registry of all connected agents
-and pushes live events to subscribers over a unix socket.
+`gaze` runs an agent in a PTY and passes its output through unchanged, keeping
+a copy for a headless *shadow terminal* it uses to detect whether the agent is
+working, idle, or blocked waiting for you. It reports that to a per-user daemon
+(started on demand) which keeps a live registry of every wrapped agent and
+pushes events to subscribers over a unix socket.
 
-See [CONTEXT.md](./CONTEXT.md) for the project language and
-[docs/adr/](./docs/adr/) for the architecture decisions.
+```
+$ gaze status
+claude   blocked    4m  ~/Projects/gaze.sh
+codex    working   12s  ~/Projects/scriptcast
+claude   idle       3m  ~/Work/api
+```
+
+The agent cannot tell gaze is there: gaze answers no terminal queries, injects
+nothing into the stream, and keeps the shadow terminal the same size as your
+real one. If the daemon is missing, wedged, or killed, the agent keeps running
+— observability never interrupts your session.
+
+## Subscribing
+
+The daemon speaks newline-delimited JSON over `$XDG_RUNTIME_DIR/gaze/gazed.sock`.
+Any language can watch state changes live:
+
+```sh
+{ echo '{"id":"1","method":"hello","params":{"role":"subscriber","protocol":1,"version":"cli"}}'
+  echo '{"id":"2","method":"subscribe"}'
+  cat
+} | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/gaze/gazed.sock
+```
+
+The wire format is documented in [docs/protocol.schema.json](./docs/protocol.schema.json),
+generated from the Rust types and checked by a test.
+
+## Building
+
+Needs a Rust toolchain, plus **Zig 0.15.2** — the shadow terminal is Ghostty's
+emulator, which builds from Zig source. With [mise](https://mise.jdx.dev) both
+are pinned in `.mise.toml`:
+
+```sh
+mise install
+just build
+just test        # cargo-nextest; the vendored tests need a process per test
+```
 
 ## Credit
 
-Gaze's terminal emulation, agent state detection (and its manifests), and the
-per-agent integration install machinery are derived from
-[herdr](https://github.com/ogulcancelik/herdr) by Ogulcan Celik
-(Apache-2.0) — an excellent agent multiplexer you should check out. Detection
-manifests self-update from herdr's public catalog. See [NOTICE](./NOTICE) for
-details.
+Agent state detection (and its manifests), the terminal state machine, and the
+per-agent hook installer are derived from
+[herdr](https://github.com/ogulcancelik/herdr) by Ogulcan Celik (Apache-2.0) —
+an excellent agent multiplexer worth using in its own right. Detection
+manifests also refresh from herdr's public catalog. Terminal emulation is
+[libghostty-vt](https://github.com/ghostty-org/ghostty) (MIT).
+
+Vendored code is never hand-edited: `just revendor` re-derives it from a pinned
+herdr commit. See [NOTICE](./NOTICE) and [ADR-0005](./docs/adr/0005-vendored-code-is-never-hand-edited.md).
+
+## Design
+
+[CONTEXT.md](./CONTEXT.md) defines the project's language.
+[docs/adr/](./docs/adr/) records the decisions that are hard to reverse — what
+is vendored and why, the daemon's lifecycle, and where hooks connect.
 
 ## License
 
