@@ -436,8 +436,8 @@ sleep 6
 fn the_hook_subcommand_relays_a_session_report() {
     // What qodercli's installed hook (and the PowerShell ones) actually run:
     // `amon hook report-agent-session …` with the wrapper's environment.
-    use std::os::unix::net::UnixListener;
     use amon_protocol::{Method, Request, Response};
+    use std::os::unix::net::UnixListener;
 
     let sandbox = Sandbox::new();
     let socket = sandbox.runtime_path("hook.sock");
@@ -488,8 +488,8 @@ fn the_hook_subcommand_relays_a_session_report() {
 #[test]
 fn the_hook_subcommand_relays_a_state_report() {
     // kimi's hook reports state transitions through the CLI relay too.
-    use std::os::unix::net::UnixListener;
     use amon_protocol::{Method, Request, Response};
+    use std::os::unix::net::UnixListener;
 
     let sandbox = Sandbox::new();
     let socket = sandbox.runtime_path("hook-state.sock");

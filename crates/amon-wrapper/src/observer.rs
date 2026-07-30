@@ -97,9 +97,7 @@ pub fn spawn(
         move || match Observer::new(agent_id, agent, cwd, cols, rows, link) {
             Ok(observer) => observer.run(signals),
             Err(error) => {
-                eprintln!(
-                    "amon: shadow terminal unavailable, state will not be reported: {error}"
-                );
+                eprintln!("amon: shadow terminal unavailable, state will not be reported: {error}");
             }
         },
     )

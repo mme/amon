@@ -459,8 +459,7 @@ mod tests {
 
         assert!(session_ref_from_report("amon:pi", "pi", Some("bad\nid".into()), None).is_none());
         assert!(
-            session_ref_from_report("amon:pi", "pi", None, Some("relative.jsonl".into()))
-                .is_none()
+            session_ref_from_report("amon:pi", "pi", None, Some("relative.jsonl".into())).is_none()
         );
         assert!(session_ref_from_report("custom:pi", "pi", Some("pi-id".into()), None).is_none());
 
@@ -590,12 +589,8 @@ mod tests {
         let codex_plan = plan("amon:codex", "codex", &AgentSessionRef::id(id).unwrap()).unwrap();
         assert_eq!(codex_plan.argv, vec!["codex", "resume", id]);
 
-        let copilot_plan = plan(
-            "amon:copilot",
-            "copilot",
-            &AgentSessionRef::id(id).unwrap(),
-        )
-        .unwrap();
+        let copilot_plan =
+            plan("amon:copilot", "copilot", &AgentSessionRef::id(id).unwrap()).unwrap();
         assert_eq!(copilot_plan.argv, vec!["copilot", "--resume=abc; rm -rf /"]);
 
         let devin_plan = plan("amon:devin", "devin", &AgentSessionRef::id(id).unwrap()).unwrap();

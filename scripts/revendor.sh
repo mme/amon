@@ -168,5 +168,12 @@ done
 
 apply_patches
 
+# The token map does not preserve line width — `herdr` is five characters and
+# `amon` four — so lines that upstream had already wrapped can now fit on one.
+# rustfmt is part of the pipeline rather than a hand-edit (ADR-0005): it runs
+# last, after the patches, whose context is therefore still upstream-shaped.
+cargo fmt --manifest-path "$repo_root/Cargo.toml" --all
+echo "formatted"
+
 echo
 echo "vendored from herdr @ ${HERDR_COMMIT}"

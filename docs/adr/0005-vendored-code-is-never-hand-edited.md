@@ -27,7 +27,10 @@ mechanically instead:
    time instead of being silently dropped.
 4. **`just revendor`** clones herdr at a pinned commit, applies the token map
    and patches, builds, tests, and shows the diff. Upgrading is one command
-   plus a diff review.
+   plus a diff review. A `cargo fmt` pass closes it out, because the token map
+   does not preserve line width — `amon` is a character shorter than `herdr`,
+   so lines upstream had wrapped can now fit on one. It runs after the patches,
+   whose context therefore stays upstream-shaped.
 
 ## Consequences
 

@@ -11,11 +11,11 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
 use amon_protocol::{
     AgentEntry, AgentState, Hello, Method, ReportSession, ReportState, Request, Response, Role,
     StatusResult, PROTOCOL_VERSION,
 };
+use clap::{Parser, Subcommand};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 

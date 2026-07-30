@@ -4288,10 +4288,7 @@ mod tests {
         );
 
         assert!(mutation.is_none());
-        assert_eq!(
-            terminal.hook_report_sequences.get("amon:claude"),
-            Some(&21)
-        );
+        assert_eq!(terminal.hook_report_sequences.get("amon:claude"), Some(&21));
         assert_eq!(
             terminal
                 .persisted_agent_session

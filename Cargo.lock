@@ -12,6 +12,89 @@ dependencies = [
 ]
 
 [[package]]
+name = "amon-cli"
+version = "0.1.0"
+dependencies = [
+ "amon-daemon",
+ "amon-integration",
+ "amon-protocol",
+ "amon-wrapper",
+ "clap",
+ "libc",
+ "portable-pty",
+ "serde_json",
+]
+
+[[package]]
+name = "amon-daemon"
+version = "0.1.0"
+dependencies = [
+ "amon-detect",
+ "amon-protocol",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "amon-detect"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "portable-pty",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
+ "tracing",
+]
+
+[[package]]
+name = "amon-integration"
+version = "0.1.0"
+dependencies = [
+ "amon-protocol",
+ "portable-pty",
+ "serde",
+ "serde_json",
+ "toml",
+ "tracing",
+]
+
+[[package]]
+name = "amon-protocol"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "amon-term"
+version = "0.1.0"
+dependencies = [
+ "amon-detect",
+ "libghostty-vt",
+ "schemars",
+ "serde",
+]
+
+[[package]]
+name = "amon-wrapper"
+version = "0.1.0"
+dependencies = [
+ "amon-detect",
+ "amon-protocol",
+ "amon-term",
+ "libc",
+ "libghostty-vt",
+ "portable-pty",
+]
+
+[[package]]
 name = "anstream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -673,89 +756,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "amon-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "libc",
- "portable-pty",
- "serde_json",
- "amon-daemon",
- "amon-integration",
- "amon-protocol",
- "amon-wrapper",
-]
-
-[[package]]
-name = "amon-daemon"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "tracing",
- "tracing-subscriber",
- "amon-detect",
- "amon-protocol",
-]
-
-[[package]]
-name = "amon-detect"
-version = "0.1.0"
-dependencies = [
- "libc",
- "portable-pty",
- "regex",
- "serde",
- "serde_json",
- "tokio",
- "toml",
- "tracing",
-]
-
-[[package]]
-name = "amon-integration"
-version = "0.1.0"
-dependencies = [
- "portable-pty",
- "serde",
- "serde_json",
- "toml",
- "tracing",
- "amon-protocol",
-]
-
-[[package]]
-name = "amon-protocol"
-version = "0.1.0"
-dependencies = [
- "libc",
- "schemars",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "amon-term"
-version = "0.1.0"
-dependencies = [
- "libghostty-vt",
- "schemars",
- "serde",
- "amon-detect",
-]
-
-[[package]]
-name = "amon-wrapper"
-version = "0.1.0"
-dependencies = [
- "libc",
- "libghostty-vt",
- "portable-pty",
- "amon-detect",
- "amon-protocol",
- "amon-term",
-]
 
 [[package]]
 name = "winapi"
