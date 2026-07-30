@@ -26,6 +26,7 @@ amon-integration = { path = "crates/amon-integration" }
 amon-daemon = { path = "crates/amon-daemon" }
 amon-wrapper = { path = "crates/amon-wrapper" }
 
+clap = { version = "4.5", features = ["derive"] }
 libc = "0.2"
 portable-pty = "0.9"
 regex = "1"

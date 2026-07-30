@@ -44,10 +44,27 @@ fn install_into(
 /// it sent to the socket.
 fn capture_hook_frames(hook: &Path, args: &[&str], stdin_json: &str, socket: &Path) -> Vec<String> {
     let listener = UnixListener::bind(socket).expect("bind hook socket");
+    listener.set_nonblocking(true).expect("nonblocking accept");
 
     let collector = std::thread::spawn(move || {
+        // A hook that legitimately reports nothing never connects; a bounded
+        // accept keeps that from hanging the suite.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let mut frames = Vec::new();
-        if let Ok((stream, _)) = listener.accept() {
+        let stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break Some(stream),
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    if std::time::Instant::now() >= deadline {
+                        break None;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+                Err(_) => break None,
+            }
+        };
+        if let Some(stream) = stream {
+            let _ = stream.set_nonblocking(false);
             for line in BufReader::new(stream).lines().map_while(Result::ok) {
                 if !line.trim().is_empty() {
                     frames.push(line);
@@ -63,6 +80,10 @@ fn capture_hook_frames(hook: &Path, args: &[&str], stdin_json: &str, socket: &Pa
         .env(amon_protocol::env::AMON_ENV, "1")
         .env(amon_protocol::env::SOCKET_PATH, socket)
         .env(amon_protocol::env::AGENT_ID, "agent-under-test")
+        // The developer's own environment must not leak into the hook under
+        // test: with an ambient CODEX_THREAD_ID, the codex hook rightly
+        // suppresses its report and the test would starve.
+        .env_remove("CODEX_THREAD_ID")
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())

@@ -56,6 +56,46 @@ pub fn window_size() -> (u16, u16) {
     (size.ws_col, size.ws_row)
 }
 
+/// Forwards signals aimed at amon to the agent instead. Someone killing the
+/// visible pid means "stop the agent"; without this, amon would die first
+/// and the agent would see a collapsing PTY (SIGHUP) rather than the signal
+/// that was actually sent — and amon's cleanup would never run. With it, the
+/// agent exits, the wrapper unwinds normally, and the caller sees amon die
+/// of the same signal (via the re-raise in the CLI).
+pub mod forward {
+    use std::sync::atomic::{AtomicI32, Ordering};
+
+    static TARGET: AtomicI32 = AtomicI32::new(0);
+
+    extern "C" fn handle(signal: libc::c_int) {
+        let pid = TARGET.load(Ordering::Relaxed);
+        if pid > 0 {
+            // kill(2) is async-signal-safe; nothing else happens here.
+            unsafe { libc::kill(pid, signal) };
+        }
+    }
+
+    /// Starts forwarding SIGTERM, SIGINT, and SIGHUP to `pid`.
+    pub fn arm(pid: u32) {
+        TARGET.store(pid as i32, Ordering::Relaxed);
+        unsafe {
+            let mut action: libc::sigaction = std::mem::zeroed();
+            action.sa_sigaction = handle as extern "C" fn(libc::c_int) as usize;
+            libc::sigemptyset(&mut action.sa_mask);
+            // SA_RESTART: the output reader must keep draining the PTY.
+            action.sa_flags = libc::SA_RESTART;
+            for signal in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP] {
+                libc::sigaction(signal, &action, std::ptr::null_mut());
+            }
+        }
+    }
+
+    /// Stops forwarding — the agent is reaped, and its pid may be reused.
+    pub fn disarm() {
+        TARGET.store(0, Ordering::Relaxed);
+    }
+}
+
 /// Installs a SIGWINCH handler that just sets a flag. Signal handlers may only
 /// touch async-signal-safe state, so the actual resize happens on the resize
 /// thread that polls this flag.

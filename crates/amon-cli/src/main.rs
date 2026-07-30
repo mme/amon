@@ -1,14 +1,17 @@
 //! `amon` — run a coding agent and hear back from it.
 //!
-//! Argument handling is deliberately hand-rolled rather than derived: `amon
-//! claude --help` must give the agent its `--help`, not amon's, and everything
-//! after the agent's name belongs to the agent. A parser that knew about flags
-//! would have to be told to stop knowing.
+//! The CLI is clap with external subcommands: any first token that is not a
+//! amon subcommand names an agent to wrap, and everything after that token
+//! belongs to the agent verbatim — `amon claude --help` gives the agent its
+//! `--help`, not amon's (ADR-0006). Amon's own subcommands are strict:
+//! unknown flags are errors, not noise.
 
+use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::process::ExitCode;
 
+use clap::{Parser, Subcommand};
 use amon_protocol::{
     AgentEntry, AgentState, Hello, Method, ReportSession, ReportState, Request, Response, Role,
     StatusResult, PROTOCOL_VERSION,
@@ -16,30 +19,120 @@ use amon_protocol::{
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let Some(command) = args.first().map(String::as_str) else {
-        print_help();
-        return ExitCode::from(2);
-    };
+const AFTER_HELP: &str = "\
+Anything that is not a subcommand above names an agent to wrap:
+  amon <agent> [args...]     everything after the agent's name is the agent's
 
-    let result = match command {
-        "--help" | "-h" | "help" => {
-            print_help();
-            return ExitCode::SUCCESS;
-        }
-        "--version" | "-V" => {
-            println!("amon {VERSION}");
-            return ExitCode::SUCCESS;
-        }
-        "daemon" => run_daemon(),
-        "status" => run_status(&args[1..]),
-        "install" => run_install(&args[1..]),
-        "uninstall" => run_uninstall(&args[1..]),
-        "integrations" => run_integrations(),
-        "hook" => run_hook(&args[1..]),
-        // Anything else names an agent to wrap, with the rest of argv as its.
-        _ => return run_agent(&args),
+The daemon starts on demand, so you rarely need `amon daemon`.
+
+Detection, hook installation and manifests are derived from herdr
+(https://github.com/ogulcancelik/herdr), Apache-2.0.";
+
+#[derive(Parser)]
+#[command(
+    name = "amon",
+    version,
+    about = "Run coding agents and hear back from them",
+    after_help = AFTER_HELP,
+    arg_required_else_help = true
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// What every connected agent is doing
+    Status {
+        /// Machine-readable output
+        #[arg(long)]
+        json: bool,
+    },
+    /// Install an agent's integration hooks, for richer session data
+    Install {
+        /// Agent to install for, e.g. `claude`
+        agent: String,
+    },
+    /// Remove an agent's integration hooks
+    Uninstall {
+        /// Agent to uninstall from
+        agent: String,
+    },
+    /// Which integrations are installed, and how current
+    Integrations,
+    /// Run the daemon in the foreground
+    Daemon,
+    /// Relay an installed hook's report to its wrapper (used by hook scripts)
+    #[command(subcommand)]
+    Hook(HookReport),
+    /// Anything else wraps an agent; everything after its name is the agent's
+    /// — verbatim, including bytes that are not UTF-8 (ADR-0006).
+    #[command(external_subcommand)]
+    Agent(Vec<OsString>),
+}
+
+#[derive(Subcommand)]
+enum HookReport {
+    /// Report which session the agent is in
+    #[command(name = "report-agent-session")]
+    Session {
+        /// The `AMON_AGENT_ID` the hook was given
+        agent_id: String,
+        #[arg(long)]
+        source: String,
+        #[arg(long)]
+        agent: String,
+        #[arg(long)]
+        seq: u64,
+        #[arg(long)]
+        agent_session_id: String,
+        #[arg(long)]
+        agent_session_path: Option<String>,
+        #[arg(long)]
+        session_start_source: Option<String>,
+    },
+    /// Report the agent's state
+    #[command(name = "report-agent")]
+    State {
+        /// The `AMON_AGENT_ID` the hook was given
+        agent_id: String,
+        #[arg(long)]
+        source: String,
+        #[arg(long)]
+        agent: String,
+        #[arg(long, value_parser = parse_state)]
+        state: AgentState,
+        #[arg(long)]
+        seq: u64,
+        #[arg(long)]
+        agent_session_id: Option<String>,
+    },
+}
+
+fn parse_state(value: &str) -> Result<AgentState, String> {
+    match value {
+        "idle" => Ok(AgentState::Idle),
+        "working" => Ok(AgentState::Working),
+        "blocked" => Ok(AgentState::Blocked),
+        "unknown" => Ok(AgentState::Unknown),
+        other => Err(format!(
+            "unknown state: {other} (expected idle, working, blocked, or unknown)"
+        )),
+    }
+}
+
+fn main() -> ExitCode {
+    let cli = Cli::parse();
+
+    let result = match cli.command {
+        Command::Agent(argv) => return run_agent(&argv),
+        Command::Status { json } => run_status(json),
+        Command::Install { agent } => run_install(&agent),
+        Command::Uninstall { agent } => run_uninstall(&agent),
+        Command::Integrations => run_integrations(),
+        Command::Daemon => run_daemon(),
+        Command::Hook(report) => run_hook(report),
     };
 
     match result {
@@ -51,27 +144,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn print_help() {
-    println!(
-        "amon {VERSION} — run coding agents and hear back from them
-
-usage:
-  amon <agent> [args...]     wrap an agent; everything after it is the agent's
-  amon status [--json]       what every connected agent is doing
-  amon install <agent>       install this agent's integration hooks
-  amon uninstall <agent>     remove them
-  amon integrations          which integrations are installed, and how current
-  amon daemon                run the daemon in the foreground
-  amon hook <report> [...]   used by installed hooks to relay a report
-
-The daemon starts on demand, so you rarely need the last one.
-
-Detection, hook installation and manifests are derived from herdr
-(https://github.com/ogulcancelik/herdr), Apache-2.0."
-    );
-}
-
-fn run_agent(argv: &[String]) -> ExitCode {
+fn run_agent(argv: &[OsString]) -> ExitCode {
     // A nudge, never a block: an outdated hook still works, it just knows less.
     if let Some(notice) = amon_integration::outdated_notice(&agent_name(&argv[0])) {
         eprintln!("{notice}");
@@ -81,7 +154,22 @@ fn run_agent(argv: &[String]) -> ExitCode {
         argv: argv.to_vec(),
         version: VERSION.to_string(),
     }) {
-        Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
+        Ok(amon_wrapper::AgentExit::Code(code)) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
+        // Die the way the agent died: a caller watching amon must see the
+        // same signal death it would have seen without amon in the middle.
+        Ok(amon_wrapper::AgentExit::Signal(signal)) => {
+            unsafe {
+                let mut mask: libc::sigset_t = std::mem::zeroed();
+                libc::sigemptyset(&mut mask);
+                libc::sigaddset(&mut mask, signal);
+                libc::sigprocmask(libc::SIG_UNBLOCK, &mask, std::ptr::null_mut());
+                libc::signal(signal, libc::SIG_DFL);
+                libc::raise(signal);
+            }
+            // Only reachable if the signal did not kill us; fall back to the
+            // shell convention for signal deaths.
+            ExitCode::from(128u8.wrapping_add(signal as u8))
+        }
         Err(error) => {
             eprintln!("amon: {error}");
             ExitCode::FAILURE
@@ -89,8 +177,12 @@ fn run_agent(argv: &[String]) -> ExitCode {
     }
 }
 
-fn agent_name(program: &str) -> String {
-    program.rsplit('/').next().unwrap_or(program).to_string()
+fn agent_name(program: &std::ffi::OsStr) -> String {
+    std::path::Path::new(program)
+        .file_name()
+        .unwrap_or(program)
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
@@ -98,8 +190,7 @@ fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_status(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let json = args.iter().any(|arg| arg == "--json");
+fn run_status(json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let agents = fetch_status()?;
 
     if json {
@@ -154,16 +245,16 @@ fn fetch_status() -> Result<Vec<AgentEntry>, Box<dyn std::error::Error>> {
     Ok(status.agents)
 }
 
-fn run_install(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let target = require_target(args, "install")?;
+fn run_install(agent: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let target = require_target(agent)?;
     for message in amon_integration::install(target)? {
         println!("{message}");
     }
     Ok(())
 }
 
-fn run_uninstall(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let target = require_target(args, "uninstall")?;
+fn run_uninstall(agent: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let target = require_target(agent)?;
     for message in amon_integration::uninstall(target)? {
         println!("{message}");
     }
@@ -171,12 +262,8 @@ fn run_uninstall(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn require_target(
-    args: &[String],
-    action: &str,
+    name: &str,
 ) -> Result<amon_integration::IntegrationTarget, Box<dyn std::error::Error>> {
-    let Some(name) = args.first() else {
-        return Err(format!("usage: amon {action} <agent>\n{}", known_agents()).into());
-    };
     amon_integration::parse_target(name)
         .ok_or_else(|| format!("unknown agent: {name}\n{}", known_agents()).into())
 }
@@ -187,92 +274,6 @@ fn known_agents() -> String {
         .map(amon_integration::target_label)
         .collect();
     format!("known agents: {}", names.join(", "))
-}
-
-/// `amon hook report-agent[-session] …` — the relay for hooks that cannot
-/// speak the socket protocol directly and shell out to the amon binary
-/// instead (herdr's `pane report-agent[-session]`, renamed by the token map).
-///
-/// Bad arguments fail loudly — only humans and broken assets produce them.
-/// Transport failures exit quietly: a hook runs inside someone's coding
-/// session, so a missing socket or a dead wrapper must cost nothing.
-fn run_hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    const USAGE: &str = "usage: amon hook report-agent|report-agent-session <agent-id> \
-        --source <source> --agent <agent> --seq <n> \
-        [--state idle|working|blocked|unknown] [--agent-session-id <id>] \
-        [--agent-session-path <path>] [--session-start-source <source>]";
-
-    let (verb, rest) = args.split_first().ok_or(USAGE)?;
-    let (agent_id, mut rest) = rest.split_first().ok_or(USAGE)?;
-
-    let mut source = None;
-    let mut agent = None;
-    let mut seq = None;
-    let mut state = None;
-    let mut session_id = None;
-    let mut session_path = None;
-    let mut start_source = None;
-    while let Some((flag, tail)) = rest.split_first() {
-        let (value, tail) = tail.split_first().ok_or(USAGE)?;
-        rest = tail;
-        match flag.as_str() {
-            "--source" => source = Some(value.clone()),
-            "--agent" => agent = Some(value.clone()),
-            "--seq" => seq = Some(value.parse::<u64>()?),
-            "--state" => {
-                state = Some(match value.as_str() {
-                    "idle" => AgentState::Idle,
-                    "working" => AgentState::Working,
-                    "blocked" => AgentState::Blocked,
-                    "unknown" => AgentState::Unknown,
-                    other => return Err(format!("unknown state: {other}\n{USAGE}").into()),
-                })
-            }
-            "--agent-session-id" => session_id = Some(value.clone()),
-            "--agent-session-path" => session_path = Some(value.clone()),
-            "--session-start-source" => start_source = Some(value.clone()),
-            _ => return Err(USAGE.into()),
-        }
-    }
-
-    let method = match verb.as_str() {
-        "report-agent-session" => Method::AgentReportSession(ReportSession {
-            agent_id: agent_id.clone(),
-            source: source.ok_or(USAGE)?,
-            agent: agent.ok_or(USAGE)?,
-            seq: seq.ok_or(USAGE)?,
-            agent_session_id: session_id.ok_or(USAGE)?,
-            agent_session_path: session_path,
-            session_start_source: start_source,
-        }),
-        "report-agent" => Method::AgentReportState(ReportState {
-            agent_id: agent_id.clone(),
-            source: source.ok_or(USAGE)?,
-            agent: agent.ok_or(USAGE)?,
-            state: state.ok_or(USAGE)?,
-            seq: seq.ok_or(USAGE)?,
-            agent_session_id: session_id,
-        }),
-        _ => return Err(USAGE.into()),
-    };
-
-    let Some(socket) = std::env::var_os(amon_protocol::env::SOCKET_PATH) else {
-        return Ok(());
-    };
-    let Ok(stream) = UnixStream::connect(socket) else {
-        return Ok(());
-    };
-    let timeout = Some(std::time::Duration::from_secs(2));
-    let _ = stream.set_read_timeout(timeout);
-    let _ = stream.set_write_timeout(timeout);
-    let request = Request::new("hook-1", method);
-    let mut writer = &stream;
-    if writer.write_all(request.to_line().as_bytes()).is_ok() {
-        let _ = writer.flush();
-        let mut line = String::new();
-        let _ = BufReader::new(stream).read_line(&mut line);
-    }
-    Ok(())
 }
 
 fn run_integrations() -> Result<(), Box<dyn std::error::Error>> {
@@ -297,6 +298,68 @@ fn run_integrations() -> Result<(), Box<dyn std::error::Error>> {
             state,
             status.path.display()
         );
+    }
+    Ok(())
+}
+
+/// The relay for hooks that cannot speak the socket protocol directly and
+/// shell out to the amon binary instead (herdr's `pane report-agent[-session]`,
+/// renamed by the token map).
+///
+/// Argument errors fail loudly via clap — only humans and broken assets
+/// produce them. Transport failures exit quietly: a hook runs inside someone's
+/// coding session, so a missing socket or a dead wrapper must cost nothing.
+fn run_hook(report: HookReport) -> Result<(), Box<dyn std::error::Error>> {
+    let method = match report {
+        HookReport::Session {
+            agent_id,
+            source,
+            agent,
+            seq,
+            agent_session_id,
+            agent_session_path,
+            session_start_source,
+        } => Method::AgentReportSession(ReportSession {
+            agent_id,
+            source,
+            agent,
+            seq,
+            agent_session_id,
+            agent_session_path,
+            session_start_source,
+        }),
+        HookReport::State {
+            agent_id,
+            source,
+            agent,
+            state,
+            seq,
+            agent_session_id,
+        } => Method::AgentReportState(ReportState {
+            agent_id,
+            source,
+            agent,
+            state,
+            seq,
+            agent_session_id,
+        }),
+    };
+
+    let Some(socket) = std::env::var_os(amon_protocol::env::SOCKET_PATH) else {
+        return Ok(());
+    };
+    let Ok(stream) = UnixStream::connect(socket) else {
+        return Ok(());
+    };
+    let timeout = Some(std::time::Duration::from_secs(2));
+    let _ = stream.set_read_timeout(timeout);
+    let _ = stream.set_write_timeout(timeout);
+    let request = Request::new("hook-1", method);
+    let mut writer = &stream;
+    if writer.write_all(request.to_line().as_bytes()).is_ok() {
+        let _ = writer.flush();
+        let mut line = String::new();
+        let _ = BufReader::new(stream).read_line(&mut line);
     }
     Ok(())
 }

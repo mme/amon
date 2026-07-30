@@ -64,6 +64,112 @@ fn arguments_after_the_agent_belong_to_the_agent() {
 }
 
 #[test]
+fn a_signal_death_is_reproduced_not_translated() {
+    use std::os::unix::process::ExitStatusExt;
+
+    let sandbox = Sandbox::new();
+    // The agent dies of SIGTERM (15). Bare, the caller would see a signal
+    // death; through amon it must see exactly the same, not exit code 1.
+    let agent = sandbox.fake_agent("claude", "#!/bin/sh\nkill -TERM $$\n");
+
+    let output = sandbox.run(&[&path_str(&agent)]);
+
+    assert_eq!(
+        output.status.signal(),
+        Some(15),
+        "amon must die the way the agent died: {:?}",
+        output.status
+    );
+}
+
+#[test]
+fn non_utf8_argv_reaches_the_agent_byte_exact() {
+    use std::os::unix::ffi::OsStrExt;
+
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", "#!/bin/sh\nprintf 'got:%s.' \"$1\"\n");
+
+    // Valid Unix argv, invalid UTF-8. Bare execve passes it through; so must
+    // amon (ADR-0006: the agent's argv is opaque).
+    let arg = std::ffi::OsStr::from_bytes(b"bad-\xff-arg");
+    let mut command = sandbox.command(&[]);
+    command.arg(&agent).arg(arg);
+    let output = command.output().expect("amon runs");
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = &output.stdout;
+    assert!(
+        stdout
+            .windows(b"got:bad-\xff-arg.".len())
+            .any(|window| window == b"got:bad-\xff-arg."),
+        "the agent must receive the exact bytes: {stdout:?}"
+    );
+}
+
+#[test]
+fn a_signal_to_amon_is_forwarded_to_the_agent() {
+    let sandbox = Sandbox::new();
+    // The agent proves it received SIGTERM (not the SIGHUP of a collapsing
+    // PTY) by exiting 7. The background sleep sheds its PTY fds so the exit
+    // is seen promptly.
+    let agent = sandbox.fake_agent(
+        "claude",
+        "#!/bin/sh\ntrap 'exit 7' TERM\nsleep 20 </dev/null >/dev/null 2>&1 &\nwait $!\n",
+    );
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+    sandbox.wait_for_status("the agent to register", |agents| {
+        agent_named(agents, "claude").is_some()
+    });
+
+    // Kill *amon*, the only pid a user sees.
+    let _ = std::process::Command::new("kill")
+        .args(["-TERM", &child.id().to_string()])
+        .status();
+
+    let status = child.wait().expect("amon exits");
+    assert_eq!(
+        status.code(),
+        Some(7),
+        "the agent's TERM handler ran, and its exit is amon's: {status:?}"
+    );
+
+    // The wrapper went through its normal shutdown, so its hook socket is gone.
+    let leftovers = std::fs::read_dir(sandbox.runtime_path("amon/agents"))
+        .map(|entries| entries.flatten().count())
+        .unwrap_or(0);
+    assert_eq!(leftovers, 0, "the hook socket must be unlinked on exit");
+}
+
+#[test]
+fn an_equal_version_daemon_is_reported_truthfully() {
+    let sandbox = Sandbox::new();
+    sandbox.run(&["status"]);
+
+    let output = sandbox.run(&["daemon"]);
+
+    assert!(!output.status.success());
+    let stderr = read_to_string(&output.stderr[..]);
+    assert!(
+        stderr.contains("same or newer"),
+        "an equal-version daemon must not be called newer: {stderr}"
+    );
+}
+
+#[test]
+fn amons_own_subcommands_reject_unknown_flags() {
+    let sandbox = Sandbox::new();
+
+    // A typo like `--josn` must fail loudly, not silently print the default.
+    let output = sandbox.run(&["status", "--definitely-bogus"]);
+
+    assert!(
+        !output.status.success(),
+        "unknown flags on amon's own subcommands are errors: {:?}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[test]
 fn a_running_agent_is_visible_in_status() {
     let sandbox = Sandbox::new();
     let agent = sandbox.fake_agent("claude", WORKING_THEN_IDLE);

@@ -97,7 +97,7 @@ fn bind(socket: &Path, version: &str) -> std::io::Result<UnixListener> {
 
     match ask_existing_daemon_to_exit(socket, version) {
         DaemonAtSocket::Newer => Err(std::io::Error::other(
-            "a newer amon daemon is already running",
+            "a amon daemon of the same or newer version is already running",
         )),
         // Either it agreed to exit, or nothing was listening and the socket
         // file is a leftover from a daemon that was killed.

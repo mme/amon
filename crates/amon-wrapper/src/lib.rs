@@ -22,13 +22,23 @@ pub use observer::Signal;
 /// How the agent was invoked.
 pub struct Launch {
     /// The agent's own argv, program first, exactly as the user typed it.
-    pub argv: Vec<String>,
+    /// `OsString`, not `String`: execve fidelity includes bytes that are not
+    /// UTF-8 (ADR-0006). Telemetry copies are lossy — JSON cannot carry them.
+    pub argv: Vec<std::ffi::OsString>,
     /// Version string this build reports to the daemon.
     pub version: String,
 }
 
-/// Runs the agent to completion and returns its exit code.
-pub fn run(launch: Launch) -> std::io::Result<i32> {
+/// How the agent ended. A signal death is reported as the signal, not folded
+/// into an exit code: the caller reproduces it so that running an agent under
+/// amon ends indistinguishably from running it bare.
+pub enum AgentExit {
+    Code(i32),
+    Signal(i32),
+}
+
+/// Runs the agent to completion and returns how it ended.
+pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     let (program, args) = launch
         .argv
         .split_first()
@@ -71,7 +81,13 @@ pub fn run(launch: Launch) -> std::io::Result<i32> {
     // agent exits, instead of hanging because amon still holds it open.
     drop(pty.slave);
 
-    let agent_label = program.rsplit('/').next().unwrap_or(program).to_string();
+    // Signals sent to amon mean "stop the agent" — forward them so the agent
+    // sees the real signal and the wrapper still unwinds normally.
+    if let Some(pid) = child.process_id() {
+        tty::forward::arm(pid);
+    }
+
+    let agent_label = agent_label(program);
     let agent = amon_detect::parse_agent_label(&agent_label);
     link.register(AgentEntry {
         id: agent_id.clone(),
@@ -80,7 +96,11 @@ pub fn run(launch: Launch) -> std::io::Result<i32> {
         state_since: now_millis(),
         cwd: cwd.to_string_lossy().into_owned(),
         pid: child.process_id().unwrap_or(0),
-        args: launch.argv.clone(),
+        args: launch
+            .argv
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect(),
         hostname: hostname(),
         started_at: now_millis(),
         title: None,
@@ -174,14 +194,59 @@ pub fn run(launch: Launch) -> std::io::Result<i32> {
         }
     }
 
-    let status = child.wait().map_err(std::io::Error::other)?;
+    let exit = wait_for_agent(&mut child);
+    tty::forward::disarm();
     let _ = signals.send(Signal::AgentExited);
     drop(signals);
     let _ = observer_thread.join();
     drop(raw);
     drop(hook_socket);
 
-    Ok(status.exit_code() as i32)
+    Ok(exit)
+}
+
+/// Reaps the agent and reports how it ended.
+///
+/// This calls `waitpid` directly rather than portable-pty's `wait`, which
+/// stringifies the signal (via `strsignal`) and reports exit code 1 for any
+/// signal death — losing exactly the information the caller needs to die the
+/// same way.
+fn wait_for_agent(child: &mut Box<dyn portable_pty::Child + Send + Sync>) -> AgentExit {
+    if let Some(pid) = child.process_id() {
+        let mut status: libc::c_int = 0;
+        loop {
+            let reaped = unsafe { libc::waitpid(pid as libc::pid_t, &mut status, 0) };
+            if reaped == pid as libc::pid_t {
+                if libc::WIFSIGNALED(status) {
+                    return AgentExit::Signal(libc::WTERMSIG(status));
+                }
+                if libc::WIFEXITED(status) {
+                    return AgentExit::Code(libc::WEXITSTATUS(status));
+                }
+                // Neither exited nor signalled (stopped?): keep waiting.
+                continue;
+            }
+            if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            break;
+        }
+    }
+    // No pid, or someone else reaped it: portable-pty's summary is all there is.
+    match child.wait() {
+        Ok(status) => AgentExit::Code(status.exit_code() as i32),
+        Err(_) => AgentExit::Code(1),
+    }
+}
+
+/// The agent's display label: the program's file name, lossily decoded. Only
+/// the exec path needs the exact bytes; names are for humans and manifests.
+fn agent_label(program: &std::ffi::OsStr) -> String {
+    std::path::Path::new(program)
+        .file_name()
+        .unwrap_or(program)
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// Identifies this wrapper's agent everywhere: the registry entry, the hook
