@@ -38,6 +38,9 @@ impl Sandbox {
         let mut command = Command::new(AMON);
         command.args(args);
         command.env("XDG_RUNTIME_DIR", &self.runtime);
+        // Detection must see this build's bundled manifests, not whatever
+        // remote manifest cache the developer's machine has accumulated.
+        command.env("XDG_STATE_HOME", self.runtime.join("state"));
         command
     }
 

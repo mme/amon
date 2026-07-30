@@ -7,6 +7,17 @@ use amon_detect::{detect_agent_with_osc, Agent, AgentState};
 use amon_term::ShadowTerminal;
 
 fn shadow_of(output: &[&str]) -> ShadowTerminal {
+    // Detection layers cached remote manifests over the bundled ones, and this
+    // machine may have a cache. Point the state dir somewhere empty so tests
+    // exercise exactly what this build ships.
+    // SAFETY: single-threaded test process; nextest gives each test its own.
+    unsafe {
+        std::env::set_var(
+            "XDG_STATE_HOME",
+            std::env::temp_dir().join("amon-shadow-tests"),
+        )
+    };
+
     let mut shadow = ShadowTerminal::new(80, 24).expect("shadow terminal");
     for chunk in output {
         shadow.feed(chunk.as_bytes());
@@ -42,6 +53,40 @@ fn a_selection_form_reads_as_blocked() {
         "❯ 1. Yes\r\n",
         "  2. No\r\n",
         "enter to select · esc to cancel · ↑/↓ to navigate\r\n",
+    ]);
+
+    assert_eq!(state_of(&shadow), AgentState::Blocked);
+}
+
+#[test]
+fn a_codex_trust_dialog_reads_as_blocked() {
+    // The first thing codex shows in a new directory. It needs a human, so
+    // reporting it as idle hides exactly the situation `blocked` exists for
+    // (vendor/patches/0003).
+    let shadow = shadow_of(&[
+        "You are running Codex in /tmp/scratch\r\n",
+        "\r\n",
+        "Do you trust the contents of this directory?\r\n",
+        "❯ 1. Yes, continue\r\n",
+        "  2. No, quit\r\n",
+    ]);
+
+    let detection = detect_agent_with_osc(
+        Some(Agent::Codex),
+        &shadow.detection_text(),
+        shadow.title().as_deref().unwrap_or_default(),
+        "",
+    );
+    assert_eq!(detection.state, AgentState::Blocked);
+}
+
+#[test]
+fn a_claude_trust_dialog_reads_as_blocked() {
+    let shadow = shadow_of(&[
+        "Do you trust the files in this folder?\r\n",
+        "/tmp/scratch\r\n",
+        "❯ 1. Yes, proceed\r\n",
+        "  2. No, exit\r\n",
     ]);
 
     assert_eq!(state_of(&shadow), AgentState::Blocked);
