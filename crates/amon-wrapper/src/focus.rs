@@ -169,12 +169,26 @@ impl ModeScanner {
             return;
         }
 
+        // A C0 control inside a sequence is executed on the spot and leaves
+        // the sequence itself still in progress — a newline between `ESC (`
+        // and its designator does not complete the charset selection.
+        if matches!(byte, 0x00..=0x17 | 0x19 | 0x1c..=0x1f)
+            && matches!(
+                self.state,
+                State::Escape | State::EscapeIntermediate | State::Csi
+            )
+        {
+            return;
+        }
+
         match self.state {
             State::Ground => match byte {
-                // A multi-byte character owes continuations before it is whole.
-                0xc0..=0xdf => self.continuations = 1,
+                // A multi-byte character owes continuations before it is
+                // whole. Only the leads that can begin a valid character
+                // count: the rest are noise that must not hold up a write.
+                0xc2..=0xdf => self.continuations = 1,
                 0xe0..=0xef => self.continuations = 2,
-                0xf0..=0xf7 => self.continuations = 3,
+                0xf0..=0xf4 => self.continuations = 3,
                 0x80..=0xbf => self.continuations = self.continuations.saturating_sub(1),
                 _ => self.continuations = 0,
             },
@@ -214,11 +228,12 @@ impl ModeScanner {
                             .saturating_add(u32::from(byte - b'0'));
                     }
                 }
-                // `;` separates parameters and `:` their parts; either way the
-                // digits that follow start a new number rather than extending
-                // the last one.
-                b';' | b':' if self.params.len() < MAX_PARAMS => self.params.push(0),
-                b';' | b':' => {}
+                b';' if self.params.len() < MAX_PARAMS => self.params.push(0),
+                b';' => {}
+                // A parameter with parts is not a mode number at all. Setting
+                // this disqualifies the sequence the same way an intermediate
+                // does, rather than leaving `?1004:0h` to look like the mode.
+                b':' => self.intermediate = true,
                 // An intermediate makes this some other command that merely
                 // ends in `h` or `l`.
                 0x20..=0x2f => self.intermediate = true,
@@ -520,10 +535,34 @@ mod tests {
     }
 
     #[test]
-    fn a_number_split_by_a_subparameter_is_not_the_mode() {
-        // `?10:04h` is parameter 10, part 4 — not mode 1004.
+    fn a_parameter_with_parts_is_not_a_mode() {
+        // `?10:04h` is parameter 10, part 4 — not mode 1004 — and `?1004:0h`
+        // is not a mode set either, whatever number it starts with.
         let mut scanner = ModeScanner::default();
         assert!(!scanner.feed(b"\x1b[?10:04h").agent_wants);
+        assert!(!scanner.feed(b"\x1b[?1004:0h").agent_wants);
+    }
+
+    #[test]
+    fn a_control_inside_a_sequence_does_not_finish_it() {
+        // The terminal acts on the control and goes on waiting for the rest
+        // of the sequence; so must the scanner, or it would call this a safe
+        // moment to write.
+        let mut scanner = ModeScanner::default();
+        scanner.feed(b"\x1b(\x07");
+        assert!(
+            !scanner.at_boundary(),
+            "the charset selection is unfinished"
+        );
+        scanner.feed(b"B");
+        assert!(scanner.at_boundary());
+    }
+
+    #[test]
+    fn a_byte_that_can_start_no_character_holds_nothing_up() {
+        let mut scanner = ModeScanner::default();
+        scanner.feed(&[0xff]);
+        assert!(scanner.at_boundary(), "not the start of anything");
     }
 
     #[test]

@@ -49,7 +49,10 @@ pub fn spawn(signals: Sender<Signal>) {
         };
         // Subscribed to before the window is looked up, so that a move in
         // between is waiting in the socket rather than lost: events queue from
-        // the moment of connection.
+        // the moment of connection. The cost is that those queued events are
+        // replayed after the snapshot, so two moves during the lookup are
+        // reported newest, older, newest — briefly stale rather than wrong
+        // forever, and a subscriber may see the middle one.
         let Ok(events) = UnixStream::connect(directory.join(".socket2.sock")) else {
             return;
         };
