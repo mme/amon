@@ -476,8 +476,18 @@ Decisions and open questions from the design discussion; not yet implemented.
   per-key lighting render without an OAI layer? Then optionally let Input
   write the Codex layer and diff the FS before/after to learn the on-disk
   profile format (safer than reverse-engineering Input's serializer).
-- **Unverified:** thstatus rendering on factory profile; whether firmware
-  identifies the Codex layer by position, keycodes, or a flag.
+- **Resolved (fw 0.6.0-rc.13 release notes, 2026-07-31):** thstatus lighting
+  renders **only while a Codex-enabled layer is active**; switching layers
+  restores normal lighting. So amon must watch `device.status.layer_index`
+  and fall back to `lights.preview` zone lighting when the agent layer is
+  not active. The 0.6.0 gate is confirmed by the notes themselves ("adds
+  firmware support for the upcoming OpenAI Codex integration … Lighting can
+  also display live Codex activity and status"; 0.5.0 added only Cheat
+  Sheet/Smart Actions) and by Input's `canCreateCodexLayer` constant
+  `V0_6_0 = "0.6.0"`. The notes also say the Codex host-side integration for
+  stock Micro 2 arrives "with a future Codex host update".
+- **Still unverified:** whether firmware identifies the Codex layer by
+  position, keycodes, or a flag.
 
 ## 10. Hardware verification (2026-07-31, device fw v0.4.0)
 
