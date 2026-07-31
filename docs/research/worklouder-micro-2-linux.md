@@ -576,6 +576,62 @@ Notes worth keeping:
 - Flash took 12s at 921600 baud; `esptool` verified the hash and reset the
   device, which came back as a normal HID keyboard.
 
+## 12. The OAI protocol, verified on hardware (2026-07-31, fw 0.6.0-rc.13)
+
+Everything §8 inferred from the Codex app is now confirmed on the real device,
+in both directions.
+
+**Per-key lighting renders only while a Codex layer is *active*.** This is the
+one that cost the most time. `v.oai.thstatus` answers `{"ok": 1}` on any
+layer, but paints nothing unless the active layer's keys are mapped to
+`KV_OAI_*` keycodes — matching the 0.6.0 release note ("Codex lighting appears
+only while a Codex-enabled layer is active"). Writing the layer is not enough;
+it has to be the one the board is switched to. There is no RPC to switch
+layers, so this is the user's hardware switch or nothing.
+
+**`device.status.layer_index` is 1-based.** The SDK's own doc comment calls
+`selectedLayerIndex` "Zero-based index of the active layer", and it is wrong:
+a board sitting on its first layer reports `layer_index: 1`. Believing the
+comment sent a Codex layer to the wrong slot and made per-key lighting look
+broken for half an hour. **Do not trust that field's documentation.**
+
+**Slot → key mapping.** Slot `id: 0` lights the **top-left** key. With the grid
+being rows of 2 / 4 / 4 / 3, the natural reading is that the six agent keys are
+the first two rows in order, which the key events bear out.
+
+**Keys emit vendor events, not keystrokes.** On a Codex layer the keys stop
+typing entirely. Captured live, with abbreviated JSON-RPC keys (`m`/`p` rather
+than `method`/`params`):
+
+```json
+{"m":"v.oai.hid","p":{"k":"AG00","act":1}}     // press
+{"m":"v.oai.hid","p":{"k":"AG00","act":0}}     // release
+{"m":"v.oai.rad","p":{"a":0.234656,"d":0.972584}}
+```
+
+`act` is **1 for press, 0 for release** — the SDK only says "action type like
+press and release". Every control reported in one session: `AG00`–`AG05`,
+`ACT06`–`ACT12`, `ENC_CC`, `ENC_CW` (encoder), and a continuous stream of
+`v.oai.rad` while the joystick moves — 88 samples from a few seconds of
+movement, so a consumer should expect to throttle it. Nothing needs polling;
+these arrive unsolicited on the same channel used for RPC replies.
+
+**Zone lighting is not layer-gated**, unlike per-key. `lights.preview` and
+`v.oai.rgbcfg` paint on any layer, and the `sk`/`sa` sync flags in
+`thstatus` drive those zones from a slot's colour — which is why setting
+`sk:1, sa:1` lights the *whole board* rather than one key. That is a useful
+fallback for amon on a non-Codex layer: whole-device status colour without
+touching anyone's keymap.
+
+### What this means for amon
+
+The full round trip works on stock hardware: amond can pulse a specific key
+for a specific agent and receive that key's press back, with no keystroke ever
+reaching the focused window. The cost is that the user must be on a Codex
+layer for per-key lighting, which is a real ask — so the sensible shape is
+per-key when the agent layer is active (detectable via `device.status`, minding
+the 1-based index) and zone colour otherwise.
+
 ## Context
 
 - The **OpenAI Codex Micro** (launched July 2026) is a rebranded Creator
