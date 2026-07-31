@@ -45,6 +45,15 @@ impl Drop for RawMode {
     }
 }
 
+/// Whether stdout is the terminal itself rather than a file or a pipe.
+///
+/// Asked before amon writes anything of its own: with `amon agent > log`,
+/// stdin is still a terminal but stdout is a file, and escape sequences do not
+/// belong in someone's log.
+pub fn stdout_is_terminal() -> bool {
+    unsafe { libc::isatty(io::stdout().as_raw_fd()) == 1 }
+}
+
 /// The terminal's current size, or a sane default when it cannot be read (a
 /// pipe, or a terminal being torn down).
 pub fn window_size() -> (u16, u16) {

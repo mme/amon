@@ -95,6 +95,10 @@ impl Sandbox {
         self.runtime.join(name)
     }
 
+    pub fn runtime_dir(&self) -> &Path {
+        &self.runtime
+    }
+
     /// Connects to the daemon the way any other client would.
     pub fn connect(&self) -> UnixStream {
         let start = Instant::now();
@@ -194,6 +198,100 @@ pub fn state_of(agent: &serde_json::Value) -> &str {
 
 pub fn path_str(path: &Path) -> String {
     path.to_string_lossy().into_owned()
+}
+
+/// An agent running behind amon on a real PTY, driven the way a terminal
+/// drives one. Only a terminal gets focus reporting, so this is the only way
+/// to exercise it.
+pub struct PtySession {
+    pub child: Box<dyn portable_pty::Child + Send + Sync>,
+    writer: Box<dyn Write + Send>,
+    output: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
+}
+
+impl PtySession {
+    /// Starts `amon <argv>` on a PTY, draining its output in the background.
+    pub fn start(sandbox: &Sandbox, argv: &[&str]) -> Self {
+        let pty = portable_pty::native_pty_system()
+            .openpty(portable_pty::PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+
+        let mut command = portable_pty::CommandBuilder::new(AMON);
+        command.args(argv);
+        command.env("XDG_RUNTIME_DIR", sandbox.runtime_dir());
+        command.env("XDG_STATE_HOME", sandbox.runtime_path("state"));
+        // A compositor lookup would reach past the sandbox to the developer's
+        // own desktop, and these tests are about focus, not windows.
+        command.env_remove("HYPRLAND_INSTANCE_SIGNATURE");
+        let child = pty.slave.spawn_command(command).expect("spawn");
+        drop(pty.slave);
+
+        let mut reader = pty.master.try_clone_reader().expect("reader");
+        let writer = pty.master.take_writer().expect("writer");
+        let output = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = output.clone();
+        std::thread::spawn(move || {
+            let mut buffer = [0u8; 8192];
+            while let Ok(read) = reader.read(&mut buffer) {
+                if read == 0 {
+                    return;
+                }
+                sink.lock()
+                    .expect("sink")
+                    .extend_from_slice(&buffer[..read]);
+            }
+        });
+
+        Self {
+            child,
+            writer,
+            output,
+        }
+    }
+
+    /// Sends bytes as the terminal would — keystrokes, or a focus report.
+    pub fn send(&mut self, bytes: &[u8]) {
+        self.writer.write_all(bytes).expect("write to pty");
+        self.writer.flush().expect("flush pty");
+    }
+
+    pub fn output(&self) -> Vec<u8> {
+        self.output.lock().expect("output").clone()
+    }
+
+    /// Waits for amon itself to exit, which it does after the agent does.
+    pub fn wait(&mut self) {
+        let _ = self.child.wait();
+    }
+
+    pub fn kill(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+
+    /// Waits for the agent's output to contain `needle`, so tests never race
+    /// the agent's own echo.
+    pub fn wait_for_output(&self, needle: &[u8]) -> Vec<u8> {
+        let start = Instant::now();
+        loop {
+            let seen = self.output();
+            if seen.windows(needle.len()).any(|window| window == needle) {
+                return seen;
+            }
+            assert!(
+                start.elapsed() < DEADLINE,
+                "timed out waiting for {:?}; saw {:?}",
+                String::from_utf8_lossy(needle),
+                String::from_utf8_lossy(&seen)
+            );
+            std::thread::sleep(Duration::from_millis(25));
+        }
+    }
 }
 
 /// Runs a program on a plain PTY, with no amon involved, and returns exactly

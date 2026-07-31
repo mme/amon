@@ -41,6 +41,13 @@ pub enum Signal {
         /// survives even when the one-shot session report was missed.
         session_id: Option<String>,
     },
+    /// The terminal reported that the agent's view gained or lost focus.
+    Focus(bool),
+    /// The compositor placed the agent's window, or moved it.
+    Window {
+        window: Option<String>,
+        workspace: Option<String>,
+    },
     /// An integration hook reported which session the agent is in.
     HookSession {
         source: String,
@@ -76,6 +83,23 @@ pub struct Observer {
     /// this same session may always add metadata (the path), whatever its
     /// sequence — only a *different* session needs to prove it is newer.
     last_session_id: Option<String>,
+    focus: crate::focus::Tracker,
+    /// Shared with the input thread, which decides what to do with the focus
+    /// reports this thread's shadow terminal explains.
+    focus_shared: crate::focus::Shared,
+    /// The agent's own focus-reporting mode, as of the last output. Tracked to
+    /// notice the agent turning it off, which turns it off for amon too.
+    agent_wanted_focus: bool,
+}
+
+/// What the observer needs to know about the agent it is watching.
+pub struct Setup {
+    pub agent_id: String,
+    pub agent: Option<Agent>,
+    pub cwd: PathBuf,
+    pub cols: u16,
+    pub rows: u16,
+    pub focus: crate::focus::Shared,
 }
 
 /// Starts the observer on its own thread.
@@ -85,38 +109,25 @@ pub struct Observer {
 /// cannot be created costs the agent nothing: observation stops, the agent
 /// runs on.
 pub fn spawn(
-    agent_id: String,
-    agent: Option<Agent>,
-    cwd: PathBuf,
-    cols: u16,
-    rows: u16,
+    setup: Setup,
     link: DaemonLink,
     signals: Receiver<Signal>,
 ) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(
-        move || match Observer::new(agent_id, agent, cwd, cols, rows, link) {
-            Ok(observer) => observer.run(signals),
-            Err(error) => {
-                eprintln!("amon: shadow terminal unavailable, state will not be reported: {error}");
-            }
-        },
-    )
+    std::thread::spawn(move || match Observer::new(setup, link) {
+        Ok(observer) => observer.run(signals),
+        Err(error) => {
+            eprintln!("amon: shadow terminal unavailable, state will not be reported: {error}");
+        }
+    })
 }
 
 impl Observer {
-    fn new(
-        agent_id: String,
-        agent: Option<Agent>,
-        cwd: PathBuf,
-        cols: u16,
-        rows: u16,
-        link: DaemonLink,
-    ) -> Result<Self, libghostty_vt::Error> {
+    fn new(setup: Setup, link: DaemonLink) -> Result<Self, libghostty_vt::Error> {
         Ok(Self {
-            shadow: ShadowTerminal::new(cols, rows)?,
-            state: TerminalState::new(TerminalId::alloc(), cwd),
-            agent,
-            agent_id,
+            shadow: ShadowTerminal::new(setup.cols, setup.rows)?,
+            state: TerminalState::new(TerminalId::alloc(), setup.cwd),
+            agent: setup.agent,
+            agent_id: setup.agent_id,
             link,
             last_reported: AgentState::Unknown,
             last_title: None,
@@ -124,6 +135,9 @@ impl Observer {
             last_detection: Instant::now(),
             identity_seqs: std::collections::HashMap::new(),
             last_session_id: None,
+            focus: crate::focus::Tracker::default(),
+            focus_shared: setup.focus,
+            agent_wanted_focus: false,
         })
     }
 
@@ -157,6 +171,21 @@ impl Observer {
             Signal::Output(bytes) => {
                 self.shadow.feed(&bytes);
                 self.dirty = true;
+                self.track_focus_mode();
+            }
+            Signal::Focus(focused) => {
+                if self.focus.focus_changed(focused) {
+                    let mut patch = AgentPatch::new(&self.agent_id);
+                    patch.focused = Some(self.focus.focused());
+                    patch.seen = Some(self.focus.seen());
+                    self.link.update(patch);
+                }
+            }
+            Signal::Window { window, workspace } => {
+                let mut patch = AgentPatch::new(&self.agent_id);
+                patch.window = Some(window);
+                patch.workspace = Some(workspace);
+                self.link.update(patch);
             }
             Signal::Resize { cols, rows } => {
                 let _ = self.shadow.resize(cols, rows);
@@ -308,6 +337,28 @@ impl Observer {
         self.publish();
     }
 
+    /// Follows the agent's focus-reporting mode.
+    ///
+    /// The wrapper keeps mode 1004 on for its own sake (ADR-0007), so an agent
+    /// that turns it off turns it off for both of them — the disable passes
+    /// through to the real terminal like every other byte. Noticing that is
+    /// what lets it be put back.
+    fn track_focus_mode(&mut self) {
+        let wanted = self.shadow.agent_wants_focus_events();
+        if wanted == self.agent_wanted_focus {
+            return;
+        }
+        self.agent_wanted_focus = wanted;
+        self.focus_shared
+            .agent_wants
+            .store(wanted, std::sync::atomic::Ordering::Relaxed);
+        if !wanted {
+            self.focus_shared
+                .reassert
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
     /// Reports the arbitrated state, but only when it actually changed — the
     /// daemon's subscribers should see transitions, not a heartbeat.
     fn publish(&mut self) {
@@ -316,10 +367,14 @@ impl Observer {
             return;
         }
         self.last_reported = state;
+        // Seen is per-state: whatever the user saw of the last state says
+        // nothing about this one.
+        self.focus.state_began();
 
         let mut patch = AgentPatch::new(&self.agent_id);
         patch.state = Some(state);
         patch.state_since = Some(crate::now_millis());
+        patch.seen = Some(self.focus.seen());
         self.link.update(patch);
     }
 }

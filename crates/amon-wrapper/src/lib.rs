@@ -7,15 +7,25 @@
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use amon_protocol::{env as protocol_env, AgentEntry, AgentState};
 
 mod daemon_link;
+mod focus;
 mod hook_socket;
+mod hypr;
 mod observer;
 mod tty;
+
+/// How long the agent's output must have been quiet before amon writes its own
+/// bytes to the terminal. A chunk read from the PTY can end mid-escape
+/// sequence, and injecting into the middle of one would corrupt the screen; a
+/// gap this long between writes means the agent is between sequences.
+const QUIET_BEFORE_INJECTING: Duration = Duration::from_millis(50);
 
 pub use observer::Signal;
 
@@ -106,11 +116,37 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
         title: None,
         agent_session_id: None,
         agent_session_path: None,
+        window: None,
+        workspace: None,
+        focused: None,
+        seen: None,
     });
 
-    let observer_thread = observer::spawn(agent_id, agent, cwd, cols, rows, link, inbox);
+    let focus_shared = focus::Shared::default();
+    let observer_thread = observer::spawn(
+        observer::Setup {
+            agent_id,
+            agent,
+            cwd,
+            cols,
+            rows,
+            focus: focus_shared.clone(),
+        },
+        link,
+        inbox,
+    );
 
     let raw = tty::RawMode::enter()?;
+    // Only a real terminal has focus to report, and only a real terminal may
+    // be written to: stdout is where the mode is enabled, and with
+    // `amon agent > log` that is a file, not a terminal.
+    let on_a_terminal = raw.is_some() && tty::stdout_is_terminal();
+    if on_a_terminal {
+        let mut stdout = std::io::stdout();
+        let _ = stdout.write_all(focus::ENABLE);
+        let _ = stdout.flush();
+        hypr::spawn(signals.clone());
+    }
 
     // stdin -> agent. Detached: it blocks on the user's keyboard, and there is
     // nothing to wait for once the agent is gone.
@@ -125,6 +161,8 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
         pty.master.take_writer().map_err(std::io::Error::other)?,
     ));
     let stdin_writer = pty_writer.clone();
+    let stdin_focus = focus_shared.clone();
+    let stdin_signals = signals.clone();
     std::thread::spawn(move || {
         let mut stdin = std::io::stdin();
         let mut buffer = [0u8; 4096];
@@ -132,10 +170,33 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
             if read == 0 {
                 return;
             }
+            let chunk = &buffer[..read];
+
+            // Focus reports are amon's unless the agent asked for them itself,
+            // in which case they pass through like anything else it enabled
+            // (ADR-0007).
+            let mut forward = chunk;
+            let scanned;
+            if on_a_terminal {
+                let scan = focus::scan(chunk);
+                for gained in scan.events {
+                    let _ = stdin_signals.send(Signal::Focus(gained));
+                }
+                if !stdin_focus.agent_wants.load(Ordering::Relaxed) {
+                    scanned = scan.stripped;
+                    if let Some(stripped) = scanned.as_deref() {
+                        forward = stripped;
+                    }
+                }
+            }
+            if forward.is_empty() {
+                continue;
+            }
+
             let Ok(mut writer) = stdin_writer.lock() else {
                 return;
             };
-            if writer.write_all(&buffer[..read]).is_err() {
+            if writer.write_all(forward).is_err() {
                 return;
             }
             let _ = writer.flush();
@@ -155,10 +216,29 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     // The shadow must match the real terminal or detection reads a
     // differently-wrapped screen than the user sees. The thread dies with the
     // process; the wrapper's lifetime is the process's.
+    // Also the one place amon writes to the user's terminal while the agent is
+    // running: it already wakes on a timer, which is what makes waiting for a
+    // quiet gap free.
     let master = pty.master;
     let resize_signals = signals.clone();
+    let last_output = Arc::new(AtomicU64::new(now_millis()));
+    let injector_output = last_output.clone();
+    let injector_focus = focus_shared.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_millis(50));
+
+        // The agent turned focus reporting off, which turned amon's off with
+        // it. Put it back, but never in the middle of the agent's own output.
+        if injector_focus.reassert.load(Ordering::Relaxed) {
+            let quiet = now_millis().saturating_sub(injector_output.load(Ordering::Relaxed));
+            if quiet >= QUIET_BEFORE_INJECTING.as_millis() as u64 {
+                injector_focus.reassert.store(false, Ordering::Relaxed);
+                let mut stdout = std::io::stdout();
+                let _ = stdout.write_all(focus::ENABLE);
+                let _ = stdout.flush();
+            }
+        }
+
         if resized.swap(false, std::sync::atomic::Ordering::Relaxed) {
             let (cols, rows) = tty::window_size();
             // The shadow is told before the PTY: the real terminal already
@@ -189,6 +269,7 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
                     break;
                 }
                 let _ = stdout.flush();
+                last_output.store(now_millis(), Ordering::Relaxed);
                 let _ = signals.send(Signal::Output(buffer[..read].to_vec()));
             }
         }
@@ -196,6 +277,16 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
 
     let exit = wait_for_agent(&mut child);
     tty::forward::disarm();
+
+    // Leave the terminal as the agent left it. If the agent wanted focus
+    // reporting, it is the agent's to leave on — that is what would have
+    // happened without amon; otherwise the mode was amon's alone and goes away
+    // with it. The agent is gone by now, so there is no output to collide with.
+    if on_a_terminal && !focus_shared.agent_wants.load(Ordering::Relaxed) {
+        let mut stdout = std::io::stdout();
+        let _ = stdout.write_all(focus::DISABLE);
+        let _ = stdout.flush();
+    }
     let _ = signals.send(Signal::AgentExited);
     drop(signals);
     let _ = observer_thread.join();

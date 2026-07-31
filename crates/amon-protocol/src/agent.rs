@@ -67,6 +67,26 @@ pub struct AgentEntry {
     pub agent_session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_path: Option<String>,
+    /// The compositor window hosting the agent's terminal, as an opaque
+    /// compositor-native token. Absent off a supported compositor, or when the
+    /// wrapper could not identify its window unambiguously — never guessed.
+    /// Consumers hand it back to the compositor rather than parsing it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<String>,
+    /// Display name of the workspace holding [`AgentEntry::window`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    /// Whether the agent's terminal *view* has input focus. Absent until a
+    /// focus signal arrives; a focused window can host many views, so this is
+    /// finer-grained than the compositor's notion of focus.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focused: Option<bool>,
+    /// Whether the terminal view has had focus since the current
+    /// [`AgentEntry::state`] began. `Idle` and not seen is "finished but
+    /// unnoticed"; consumers combine the two themselves, because this is an
+    /// annotation on the state rather than a state of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seen: Option<bool>,
 }
 
 /// A partial update to an entry. Absent fields are left alone, which is what
@@ -93,15 +113,42 @@ pub struct AgentPatch {
     pub agent_session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_path: Option<String>,
+    /// Two levels deep, like [`AgentPatch::title`]: a window that closed has
+    /// to be expressible as "no longer known", not merely left stale.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_or_null"
+    )]
+    pub window: Option<Option<String>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_or_null"
+    )]
+    pub workspace: Option<Option<String>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_or_null"
+    )]
+    pub focused: Option<Option<bool>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_or_null"
+    )]
+    pub seen: Option<Option<bool>>,
 }
 
 /// A field that was present, whether or not it was `null`. `#[serde(default)]`
 /// covers the absent case, so together they tell apart absent, `null`, and set.
-fn present_or_null<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
+fn present_or_null<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
 where
     D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
 {
-    Option::<String>::deserialize(deserializer).map(Some)
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 impl AgentPatch {
@@ -132,6 +179,18 @@ impl AgentPatch {
         }
         if self.agent_session_path.is_some() {
             entry.agent_session_path = self.agent_session_path.clone();
+        }
+        if let Some(window) = &self.window {
+            entry.window = window.clone();
+        }
+        if let Some(workspace) = &self.workspace {
+            entry.workspace = workspace.clone();
+        }
+        if let Some(focused) = self.focused {
+            entry.focused = focused;
+        }
+        if let Some(seen) = self.seen {
+            entry.seen = seen;
         }
         *entry != before
     }

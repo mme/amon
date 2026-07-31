@@ -208,9 +208,25 @@ fn run_status(json: bool) -> Result<(), Box<dyn std::error::Error>> {
         .max()
         .unwrap_or(5)
         .max(5);
+    // Only earns a column when something is actually running on a compositor
+    // amon understands; everywhere else the line stays as it was.
+    let workspace_width = agents
+        .iter()
+        .filter_map(|agent| agent.workspace.as_deref())
+        .map(str::len)
+        .max();
+
     for agent in agents {
+        let workspace = match workspace_width {
+            Some(width) => format!(
+                "{:<width$}  ",
+                agent.workspace.as_deref().unwrap_or("-"),
+                width = width
+            ),
+            None => String::new(),
+        };
         println!(
-            "{:<width$}  {:<8}  {:>5}  {}",
+            "{:<width$}  {:<8}  {:>5}  {workspace}{}",
             agent.agent,
             agent.state.as_str(),
             age(agent.state_since),

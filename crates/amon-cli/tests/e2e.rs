@@ -620,6 +620,85 @@ fn a_graceful_shutdown_removes_the_socket_file() {
     }
 }
 
+/// An agent that echoes whatever it is sent, so a test can see exactly what
+/// reached it. `stty raw` keeps the line discipline out of the way; `-echo`
+/// means anything that comes back was echoed by the agent, not the terminal.
+const ECHOES_ITS_INPUT: &str = r#"#!/bin/sh
+stty raw -echo
+while IFS= read -r line; do
+  printf 'got[%s]\n' "$line"
+done
+"#;
+
+#[test]
+fn focus_reports_never_reach_an_agent_that_did_not_ask_for_them() {
+    // Amon turns focus reporting on for its own sake (ADR-0007), so the
+    // reports it caused must be taken back out of the agent's input.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", ECHOES_ITS_INPUT);
+    let mut session = harness::PtySession::start(&sandbox, &[&path_str(&agent)]);
+
+    session.send(b"\x1b[Ohello\r");
+    let seen = session.wait_for_output(b"got[");
+
+    let text = String::from_utf8_lossy(&seen);
+    assert!(
+        text.contains("got[hello]"),
+        "typing still arrives: {text:?}"
+    );
+    assert!(
+        !text.contains("got[\u{1b}[O"),
+        "the focus report was swallowed: {text:?}"
+    );
+
+    session.kill();
+}
+
+#[test]
+fn the_terminal_is_asked_for_focus_reports_and_put_back_afterwards() {
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", "#!/bin/sh\necho ready\n");
+    let mut session = harness::PtySession::start(&sandbox, &[&path_str(&agent)]);
+    session.wait_for_output(b"ready");
+    session.wait();
+    // Give the drain thread its moment to see the last bytes.
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    let seen = session.output();
+    let text = String::from_utf8_lossy(&seen);
+    assert!(
+        text.contains("\u{1b}[?1004h"),
+        "asked for reports: {text:?}"
+    );
+    assert!(
+        text.contains("\u{1b}[?1004l"),
+        "left the terminal as it found it: {text:?}"
+    );
+}
+
+#[test]
+fn amon_writes_nothing_of_its_own_when_stdout_is_not_a_terminal() {
+    // `amon agent > log` must produce the agent's bytes and nothing else:
+    // stdin is still a terminal here, but stdout is a pipe.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", "#!/bin/sh\necho hi\n");
+
+    let output = sandbox.run(&[&path_str(&agent)]).stdout;
+
+    // Byte-for-byte what the agent produces on a PTY of its own — the `\r\n`
+    // is the terminal driver's, and amon adds nothing to it.
+    let without_amon = harness::run_on_bare_pty(&path_str(&agent));
+    assert_eq!(
+        String::from_utf8_lossy(&output),
+        String::from_utf8_lossy(&without_amon)
+    );
+    assert!(
+        !output.windows(4).any(|window| window == b"1004"),
+        "no mode changes belong in a redirected stdout: {:?}",
+        String::from_utf8_lossy(&output)
+    );
+}
+
 #[test]
 fn status_says_so_when_nothing_is_running() {
     let sandbox = Sandbox::new();

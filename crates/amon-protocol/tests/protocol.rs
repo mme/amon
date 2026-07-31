@@ -22,6 +22,10 @@ fn entry() -> AgentEntry {
         title: Some("amon.sh".into()),
         agent_session_id: None,
         agent_session_path: None,
+        window: None,
+        workspace: None,
+        focused: None,
+        seen: None,
     }
 }
 
@@ -185,6 +189,67 @@ fn a_patch_can_clear_the_title() {
         panic!("expected an update");
     };
     assert_eq!(absent.title, None, "absent still means leave alone");
+}
+
+#[test]
+fn a_patch_carries_where_the_agent_is_and_whether_it_was_seen() {
+    let mut entry = entry();
+    let mut patch = AgentPatch::new("a1");
+    patch.window = Some(Some("5643b0cb1810".into()));
+    patch.workspace = Some(Some("3".into()));
+    patch.focused = Some(Some(true));
+    patch.seen = Some(Some(true));
+
+    assert!(patch.apply(&mut entry));
+    assert_eq!(entry.window.as_deref(), Some("5643b0cb1810"));
+    assert_eq!(entry.workspace.as_deref(), Some("3"));
+    assert_eq!(entry.focused, Some(true));
+    assert_eq!(entry.seen, Some(true));
+    assert!(!patch.apply(&mut entry), "reapplying changes nothing");
+}
+
+#[test]
+fn a_patch_can_clear_a_window_that_closed() {
+    // Same three-way distinction the title has: a window that is gone must be
+    // expressible as "no longer known", not left stale at its last value.
+    let mut entry = entry();
+    entry.window = Some("5643b0cb1810".into());
+    entry.focused = Some(true);
+
+    let mut patch = AgentPatch::new("a1");
+    patch.window = Some(None);
+    patch.focused = Some(None);
+
+    assert!(patch.apply(&mut entry), "clearing is a change");
+    assert_eq!(entry.window, None);
+    assert_eq!(entry.focused, None);
+
+    let line = Request::new("req-10", Method::AgentUpdate(patch)).to_line();
+    assert!(line.contains(r#""window":null"#), "{line:?}");
+    let Method::AgentUpdate(parsed) = Request::parse(line.trim()).unwrap().method else {
+        panic!("expected an update");
+    };
+    assert_eq!(parsed.window, Some(None), "null still means clear");
+    assert_eq!(parsed.focused, Some(None));
+}
+
+#[test]
+fn an_older_wrapper_that_knows_no_window_leaves_it_alone() {
+    // Forward compatibility, the same promise the other optional fields make:
+    // omitting a field a newer daemon knows about must not clear it.
+    let mut entry = entry();
+    entry.window = Some("5643b0cb1810".into());
+    entry.seen = Some(true);
+
+    let update =
+        Request::parse(r#"{"id":"req-11","method":"agent.update","params":{"id":"a1"}}"#).unwrap();
+    let Method::AgentUpdate(patch) = update.method else {
+        panic!("expected an update");
+    };
+    patch.apply(&mut entry);
+
+    assert_eq!(entry.window.as_deref(), Some("5643b0cb1810"));
+    assert_eq!(entry.seen, Some(true));
 }
 
 #[test]

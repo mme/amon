@@ -30,6 +30,13 @@
         "cwd": {
           "type": "string"
         },
+        "focused": {
+          "description": "Whether the agent's terminal *view* has input focus. Absent until a\nfocus signal arrives; a focused window can host many views, so this is\nfiner-grained than the compositor's notion of focus.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "hostname": {
           "type": "string"
         },
@@ -42,6 +49,13 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "seen": {
+          "description": "Whether the terminal view has had focus since the current\n[`AgentEntry::state`] began. `Idle` and not seen is \"finished but\nunnoticed\"; consumers combine the two themselves, because this is an\nannotation on the state rather than a state of its own.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "started_at": {
           "description": "Unix milliseconds.",
@@ -60,6 +74,20 @@
         },
         "title": {
           "description": "Terminal title the agent set, if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "window": {
+          "description": "The compositor window hosting the agent's terminal, as an opaque\ncompositor-native token. Absent off a supported compositor, or when the\nwrapper could not identify its window unambiguously — never guessed.\nConsumers hand it back to the compositor rather than parsing it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace": {
+          "description": "Display name of the workspace holding [`AgentEntry::window`].",
           "type": [
             "string",
             "null"
@@ -100,8 +128,20 @@
             "null"
           ]
         },
+        "focused": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "id": {
           "type": "string"
+        },
+        "seen": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "state": {
           "anyOf": [
@@ -123,6 +163,19 @@
         },
         "title": {
           "description": "Two levels deep because \"clear the title\" has to be expressible: absent\nmeans leave alone, `null` means clear, a string means set. An older\ndaemon reads `null` as absent and merely keeps the stale title.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "window": {
+          "description": "Two levels deep, like [`AgentPatch::title`]: a window that closed has\nto be expressible as \"no longer known\", not merely left stale.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace": {
           "type": [
             "string",
             "null"

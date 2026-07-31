@@ -92,6 +92,7 @@ dependencies = [
  "libc",
  "libghostty-vt",
  "portable-pty",
+ "serde_json",
 ]
 
 [[package]]
