@@ -17,15 +17,24 @@ pushes events to subscribers over a unix socket.
 
 ```
 $ amon status
-claude   blocked    4m  ~/Projects/amon.sh
-codex    working   12s  ~/Projects/scriptcast
-claude   idle       3m  ~/Work/api
+claude   blocked    4m  3  ~/Projects/amon.sh
+codex    working   12s  1  ~/Projects/scriptcast
+claude   idle       3m  1  ~/Work/api
 ```
 
+On Hyprland each agent also carries the window it is running in and that
+window's workspace — the column before the directory — so "which one is
+blocked" comes with "and it is over there". Subscribers get two more facts the
+terminal itself reports: whether the agent's view has focus, and whether it has
+had focus since the agent last changed state, which is what tells an agent that
+finished unnoticed from one you watched finish.
+
 The agent cannot tell amon is there: amon answers no terminal queries, injects
-nothing into the stream, and keeps the shadow terminal the same size as your
-real one. If the daemon is missing, wedged, or killed, the agent keeps running
-— observability never interrupts your session.
+nothing into its stream, and keeps the shadow terminal the same size as your
+real one. (Amon does ask the terminal itself to report focus, and takes those
+reports back out of the agent's input — [ADR-0007](./docs/adr/0007-wrapper-enables-terminal-focus-reporting.md)
+covers what that costs and why.) If the daemon is missing, wedged, or killed,
+the agent keeps running — observability never interrupts your session.
 
 ## Subscribing
 
