@@ -64,3 +64,28 @@ _Avoid_: agent list, session store
 A client connected to the Daemon to receive live notifications of agent
 state changes.
 _Avoid_: listener, watcher
+
+**Window**:
+The compositor window hosting the agent's terminal, held as an opaque
+compositor-native token. Mapped by the Wrapper; meaningful only when handed
+back to the compositor (e.g. to focus it). Absent when there is no compositor
+or the mapping is ambiguous — never guessed.
+_Avoid_: client (Hyprland jargon), terminal (that's the emulator)
+
+**Workspace**:
+The compositor workspace currently holding the Window, as a display name.
+Tracked live; changes when the Window moves.
+_Avoid_: desktop, tag
+
+**Focus**:
+Whether the agent's terminal *view* has input focus, learned from terminal
+focus reporting — not from the compositor. A focused Window can host many
+views (tabs, panes); Focus is per-view. Unknown until the first signal.
+_Avoid_: active, compositor focus
+
+**Seen**:
+Whether the agent's terminal view has had Focus at any point since the
+current Agent State began. Reset at every state change (immediately true if
+focused at that instant). Computed by the Wrapper. `Idle` and not Seen is
+the "finished but unnoticed" condition.
+_Avoid_: unread, acknowledged, notified
