@@ -513,6 +513,10 @@ enumerates as `303a:8298` — the "BLE" PID even in wired mode, with
   2026-07-31) in the public repo **`worklouder/cm-v2-fw-releases`** (`.bin`
   assets; sibling repos: `knob-fw-releases`, `nomad-e-v2-fw-releases`, …;
   the Input app filters `rc` releases unless beta is enabled).
+  **v0.4.0 (2026-06-21) is the latest stable** — a stock, fully-updated
+  Micro 2 cannot use `v.oai.*` today; only the Codex Micro edition (own
+  firmware build, shipped 2026-07-15) supports Codex out of the box. Seven
+  0.6.0 RCs landed 2026-07-23…31, so stable looks imminent.
 - **On-disk config format confirmed** — `keymap.json` is the whole config:
   `{version: 1, activeProfileId, profiles: [{id, name, layers: [...],
   macrosUsed, multiActionsUsed}], multiActions, macros, macrosGroups,
