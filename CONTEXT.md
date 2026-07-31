@@ -80,7 +80,9 @@ _Avoid_: desktop, tag
 **Focus**:
 Whether the agent's terminal *view* has input focus, learned from terminal
 focus reporting — not from the compositor. A focused Window can host many
-views (tabs, panes); Focus is per-view. Unknown until the first signal.
+views (tabs, panes); Focus is per-view. Unknown when there is no terminal to
+report it; on one, taken as focused at launch until the terminal says
+otherwise.
 _Avoid_: active, compositor focus
 
 **Seen**:

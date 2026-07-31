@@ -140,7 +140,9 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
         focus_shared.clone(),
     )));
     if on_a_terminal {
-        screen.lock().expect("screen").enable_focus_reports();
+        if let Ok(mut screen) = screen.lock() {
+            screen.enable_focus_reports();
+        }
         // The user typed the command into this view, so they are looking at it
         // now. Any real report from the terminal overrules this immediately;
         // without it, an agent nobody ever switches away from would stay at
