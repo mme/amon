@@ -627,10 +627,27 @@ touching anyone's keymap.
 
 The full round trip works on stock hardware: amond can pulse a specific key
 for a specific agent and receive that key's press back, with no keystroke ever
-reaching the focused window. The cost is that the user must be on a Codex
-layer for per-key lighting, which is a real ask — so the sensible shape is
-per-key when the agent layer is active (detectable via `device.status`, minding
-the 1-based index) and zone colour otherwise.
+reaching the focused window.
+
+**The layer requirement is not a constraint to design around — it is a setup
+step amon owns.** An `amon` command writes the agent layer to the device, and
+every piece of that is already proven here: read the config with `fs.read`,
+replace one layer's `keymap` with the `KV_OAI_*` grid, write it back with
+`fs.write`, and the firmware picks it up live (the keys stopped typing
+immediately, no reboot). Writing an unused layer leaves the user's own layers
+untouched, and keeping a copy of the original makes it reversible — the
+restore in this session came back byte-identical.
+
+What follows from that:
+
+- The device is the source of truth for whether per-key lighting will render:
+  `device.status` gives the active layer, **1-based**, and the config says
+  whether that layer is the agent one. Amon paints per-key when it is.
+- Zone lighting (`lights.preview`, or `v.oai.rgbcfg`, or the `sk`/`sa` sync
+  flags) is not layer-gated, so whole-device status colour still works when
+  the user has switched away — a fallback, not the design.
+- Nothing here needs the Input app or the Codex host: the setup command, the
+  lighting, and the key events all ride the one vendor HID channel.
 
 ## Context
 
