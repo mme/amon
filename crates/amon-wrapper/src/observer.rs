@@ -84,12 +84,6 @@ pub struct Observer {
     /// sequence — only a *different* session needs to prove it is newer.
     last_session_id: Option<String>,
     focus: crate::focus::Tracker,
-    /// Shared with the input thread, which decides what to do with the focus
-    /// reports this thread's shadow terminal explains.
-    focus_shared: crate::focus::Shared,
-    /// The agent's own focus-reporting mode, as of the last output. Tracked to
-    /// notice the agent turning it off, which turns it off for amon too.
-    agent_wanted_focus: bool,
 }
 
 /// What the observer needs to know about the agent it is watching.
@@ -99,7 +93,6 @@ pub struct Setup {
     pub cwd: PathBuf,
     pub cols: u16,
     pub rows: u16,
-    pub focus: crate::focus::Shared,
 }
 
 /// Starts the observer on its own thread.
@@ -136,8 +129,6 @@ impl Observer {
             identity_seqs: std::collections::HashMap::new(),
             last_session_id: None,
             focus: crate::focus::Tracker::default(),
-            focus_shared: setup.focus,
-            agent_wanted_focus: false,
         })
     }
 
@@ -171,7 +162,6 @@ impl Observer {
             Signal::Output(bytes) => {
                 self.shadow.feed(&bytes);
                 self.dirty = true;
-                self.track_focus_mode();
             }
             Signal::Focus(focused) => {
                 if self.focus.focus_changed(focused) {
@@ -335,28 +325,6 @@ impl Observer {
         }
 
         self.publish();
-    }
-
-    /// Follows the agent's focus-reporting mode.
-    ///
-    /// The wrapper keeps mode 1004 on for its own sake (ADR-0007), so an agent
-    /// that turns it off turns it off for both of them — the disable passes
-    /// through to the real terminal like every other byte. Noticing that is
-    /// what lets it be put back.
-    fn track_focus_mode(&mut self) {
-        let wanted = self.shadow.agent_wants_focus_events();
-        if wanted == self.agent_wanted_focus {
-            return;
-        }
-        self.agent_wanted_focus = wanted;
-        self.focus_shared
-            .agent_wants
-            .store(wanted, std::sync::atomic::Ordering::Relaxed);
-        if !wanted {
-            self.focus_shared
-                .reassert
-                .store(true, std::sync::atomic::Ordering::Relaxed);
-        }
     }
 
     /// Reports the arbitrated state, but only when it actually changed — the

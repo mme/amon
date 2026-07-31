@@ -22,6 +22,12 @@ use crate::observer::Signal;
 /// chain, and a hard stop if `/proc` ever hands back a cycle.
 const MAX_ANCESTRY: usize = 32;
 const IO_TIMEOUT: Duration = Duration::from_secs(2);
+/// Caps on what the compositor can make the wrapper hold. Both are far above
+/// anything Hyprland sends — a desktop full of windows is tens of kilobytes of
+/// JSON, an event line a few hundred bytes — and exist so that a peer which
+/// never stops talking cannot grow the wrapper instead of failing.
+const MAX_RESPONSE: u64 = 8 * 1024 * 1024;
+const MAX_EVENT_LINE: u64 = 64 * 1024;
 
 /// The window an agent is running in, as the compositor sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +47,12 @@ pub fn spawn(signals: Sender<Signal>) {
         let Some(directory) = socket_dir() else {
             return;
         };
+        // Subscribed to before the window is looked up, so that a move in
+        // between is waiting in the socket rather than lost: events queue from
+        // the moment of connection.
+        let Ok(events) = UnixStream::connect(directory.join(".socket2.sock")) else {
+            return;
+        };
         let Some(window) = resolve(&directory, std::process::id()) else {
             return;
         };
@@ -49,27 +61,25 @@ pub fn spawn(signals: Sender<Signal>) {
             window: Some(window.address.clone()),
             workspace: window.workspace.clone(),
         });
-        // A best-effort prior so an agent that never sees a focus event is not
-        // stuck at "unknown" — the first real report from the terminal
-        // overrules it, and at view granularity, which this cannot reach.
-        if let Some(active) = active_address(&directory) {
-            let _ = signals.send(Signal::Focus(active == window.address));
-        }
 
-        follow(&directory, window, &signals);
+        follow(&directory, events, window, &signals);
     });
 }
 
 /// Reads the event stream, keeping the window's workspace current.
-fn follow(directory: &Path, mut window: Window, signals: &Sender<Signal>) {
-    let Ok(stream) = UnixStream::connect(directory.join(".socket2.sock")) else {
-        return;
-    };
-    for line in BufReader::new(stream).lines() {
-        let Ok(line) = line else {
-            return;
-        };
-        match parse_event(&line) {
+fn follow(directory: &Path, events: UnixStream, mut window: Window, signals: &Sender<Signal>) {
+    let mut reader = BufReader::new(events);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        // Bounded, so an event line that never ends cannot grow without limit.
+        // An over-long line is cut, fails to parse, and the next read resumes
+        // mid-line — which is a dropped event, not a dead wrapper.
+        match reader.by_ref().take(MAX_EVENT_LINE).read_line(&mut line) {
+            Ok(0) | Err(_) => return,
+            Ok(_) => {}
+        }
+        match parse_event(line.trim_end()) {
             Some(Event::Moved { address, workspace }) if address == window.address => {
                 if window.workspace.as_deref() == Some(workspace.as_str()) {
                     continue;
@@ -82,17 +92,26 @@ fn follow(directory: &Path, mut window: Window, signals: &Sender<Signal>) {
             }
             // The window we were following is gone. A terminal can outlive one
             // of its windows, so look once for a new one rather than assuming
-            // the agent is on its way out.
+            // the agent is on its way out. Failing that, the workspace goes
+            // with the window: a workspace without a window to be on is a
+            // stale answer, not a partial one.
             Some(Event::Closed { address }) if address == window.address => {
                 match resolve(directory, std::process::id()) {
-                    Some(found) => window = found,
-                    None => window.address = String::new(),
+                    Some(found) => {
+                        window = found;
+                        let _ = signals.send(Signal::Window {
+                            window: Some(window.address.clone()),
+                            workspace: window.workspace.clone(),
+                        });
+                    }
+                    None => {
+                        let _ = signals.send(Signal::Window {
+                            window: None,
+                            workspace: None,
+                        });
+                        return;
+                    }
                 }
-                let sent = (!window.address.is_empty()).then(|| window.address.clone());
-                let _ = signals.send(Signal::Window {
-                    window: sent,
-                    workspace: window.workspace.clone(),
-                });
             }
             _ => {}
         }
@@ -135,15 +154,6 @@ pub fn window_for_ancestry(clients_json: &str, ancestry: &[u32]) -> Option<Windo
         });
     }
     None
-}
-
-fn active_address(directory: &Path) -> Option<String> {
-    let active = request(directory, "j/activewindow")?;
-    let active: serde_json::Value = serde_json::from_str(&active).ok()?;
-    active
-        .get("address")
-        .and_then(serde_json::Value::as_str)
-        .map(normalize)
 }
 
 /// `pid` and its ancestors, nearest first, stopping at init.
@@ -241,7 +251,12 @@ fn request(directory: &Path, command: &str) -> Option<String> {
     stream.write_all(command.as_bytes()).ok()?;
     stream.flush().ok()?;
     let mut response = String::new();
-    stream.read_to_string(&mut response).ok()?;
+    // Bounded: the timeout is per read, so a peer that trickles bytes forever
+    // would otherwise be answered with unbounded memory.
+    stream
+        .take(MAX_RESPONSE)
+        .read_to_string(&mut response)
+        .ok()?;
     Some(response)
 }
 

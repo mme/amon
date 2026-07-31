@@ -200,6 +200,40 @@ pub fn path_str(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
+/// Runs amon with a terminal for stdin but a pipe for stdout — `amon agent >
+/// log` typed at a shell — and returns what landed in the pipe.
+///
+/// This split is the whole point: amon can see a terminal on one side and
+/// still owe the other side nothing but the agent's bytes.
+pub fn run_with_terminal_stdin(sandbox: &Sandbox, argv: &[&str]) -> Vec<u8> {
+    use std::os::fd::{FromRawFd, RawFd};
+
+    let (mut controller, mut terminal): (RawFd, RawFd) = (0, 0);
+    let opened = unsafe {
+        libc::openpty(
+            &mut controller,
+            &mut terminal,
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            std::ptr::null(),
+        )
+    };
+    assert_eq!(opened, 0, "openpty");
+
+    // The child owns the terminal end as its stdin; the controller end stays
+    // open here so the pty does not hang up under it.
+    let stdin = unsafe { Stdio::from_raw_fd(terminal) };
+    let output = sandbox
+        .command(argv)
+        .stdin(stdin)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .expect("amon runs");
+    unsafe { libc::close(controller) };
+    output.stdout
+}
+
 /// An agent running behind amon on a real PTY, driven the way a terminal
 /// drives one. Only a terminal gets focus reporting, so this is the only way
 /// to exercise it.

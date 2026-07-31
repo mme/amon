@@ -676,26 +676,48 @@ fn the_terminal_is_asked_for_focus_reports_and_put_back_afterwards() {
     );
 }
 
+/// An agent that turns focus reporting on and then off again, the way a TUI
+/// does around its own lifetime. Turning it off takes amon's reporting with it.
+const TOGGLES_FOCUS_REPORTING: &str = r#"#!/bin/sh
+printf '\033[?1004h'
+sleep 0.2
+printf '\033[?1004l'
+sleep 0.5
+"#;
+
+#[test]
+fn an_agent_turning_focus_reporting_off_gets_it_put_back() {
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", TOGGLES_FOCUS_REPORTING);
+    let mut session = harness::PtySession::start(&sandbox, &[&path_str(&agent)]);
+    session.wait();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    let seen = session.output();
+    let text = String::from_utf8_lossy(&seen);
+    // Amon's enable, the agent's own pair, then amon's re-enable: the agent's
+    // disable reached the real terminal and had to be undone.
+    let enables = text.matches("\u{1b}[?1004h").count();
+    assert!(
+        enables >= 2,
+        "focus reporting must be restored after the agent disables it: {text:?}"
+    );
+}
+
 #[test]
 fn amon_writes_nothing_of_its_own_when_stdout_is_not_a_terminal() {
-    // `amon agent > log` must produce the agent's bytes and nothing else:
-    // stdin is still a terminal here, but stdout is a pipe.
+    // `amon agent > log` typed at a shell: stdin is a terminal, stdout is not.
+    // The agent toggles the mode itself, which is what would otherwise draw
+    // amon into answering — into the log.
     let sandbox = Sandbox::new();
-    let agent = sandbox.fake_agent("claude", "#!/bin/sh\necho hi\n");
+    let agent = sandbox.fake_agent("claude", TOGGLES_FOCUS_REPORTING);
 
-    let output = sandbox.run(&[&path_str(&agent)]).stdout;
+    let output = harness::run_with_terminal_stdin(&sandbox, &[&path_str(&agent)]);
 
-    // Byte-for-byte what the agent produces on a PTY of its own — the `\r\n`
-    // is the terminal driver's, and amon adds nothing to it.
-    let without_amon = harness::run_on_bare_pty(&path_str(&agent));
     assert_eq!(
         String::from_utf8_lossy(&output),
-        String::from_utf8_lossy(&without_amon)
-    );
-    assert!(
-        !output.windows(4).any(|window| window == b"1004"),
-        "no mode changes belong in a redirected stdout: {:?}",
-        String::from_utf8_lossy(&output)
+        "\u{1b}[?1004h\u{1b}[?1004l",
+        "the agent's own bytes, and not one of amon's"
     );
 }
 

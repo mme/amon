@@ -10,7 +10,7 @@
 
 use libghostty_vt::fmt::Format;
 use libghostty_vt::selection::{FormatOptions, Selection};
-use libghostty_vt::terminal::{Mode, Options, Point, PointCoordinate, Terminal};
+use libghostty_vt::terminal::{Options, Point, PointCoordinate, Terminal};
 
 /// Scrollback kept behind the viewport. Detection only reads the last
 /// screenful, but a little history costs nothing and keeps reflow honest.
@@ -68,16 +68,6 @@ impl ShadowTerminal {
             Ok(title) if !title.is_empty() => Some(title.to_string()),
             _ => None,
         }
-    }
-
-    /// Whether the agent asked the terminal for focus events (DEC mode 1004).
-    ///
-    /// The wrapper enables 1004 itself to learn where the user is looking
-    /// (ADR-0007), so this is what tells the two apart: when the agent wants
-    /// focus events they are forwarded to it untouched, and when it does not,
-    /// they are amon's own and get swallowed.
-    pub fn agent_wants_focus_events(&self) -> bool {
-        self.terminal.mode(Mode::FOCUS_EVENT).unwrap_or(false)
     }
 
     /// The text detection runs against: the last screenful of the buffer —

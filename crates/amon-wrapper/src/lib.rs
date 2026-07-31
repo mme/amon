@@ -7,9 +7,8 @@
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::mpsc;
-use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use amon_protocol::{env as protocol_env, AgentEntry, AgentState};
@@ -20,12 +19,6 @@ mod hook_socket;
 mod hypr;
 mod observer;
 mod tty;
-
-/// How long the agent's output must have been quiet before amon writes its own
-/// bytes to the terminal. A chunk read from the PTY can end mid-escape
-/// sequence, and injecting into the middle of one would corrupt the screen; a
-/// gap this long between writes means the agent is between sequences.
-const QUIET_BEFORE_INJECTING: Duration = Duration::from_millis(50);
 
 pub use observer::Signal;
 
@@ -130,7 +123,6 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
             cwd,
             cols,
             rows,
-            focus: focus_shared.clone(),
         },
         link,
         inbox,
@@ -141,10 +133,19 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     // be written to: stdout is where the mode is enabled, and with
     // `amon agent > log` that is a file, not a terminal.
     let on_a_terminal = raw.is_some() && tty::stdout_is_terminal();
+    // Everything amon writes to the terminal goes through here, so its own
+    // bytes can never land inside a sequence the agent is in the middle of.
+    let screen = std::sync::Arc::new(std::sync::Mutex::new(Screen::new(
+        on_a_terminal,
+        focus_shared.clone(),
+    )));
     if on_a_terminal {
-        let mut stdout = std::io::stdout();
-        let _ = stdout.write_all(focus::ENABLE);
-        let _ = stdout.flush();
+        screen.lock().expect("screen").enable_focus_reports();
+        // The user typed the command into this view, so they are looking at it
+        // now. Any real report from the terminal overrules this immediately;
+        // without it, an agent nobody ever switches away from would stay at
+        // "focus unknown" for its whole life.
+        let _ = signals.send(Signal::Focus(true));
         hypr::spawn(signals.clone());
     }
 
@@ -216,27 +217,24 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     // The shadow must match the real terminal or detection reads a
     // differently-wrapped screen than the user sees. The thread dies with the
     // process; the wrapper's lifetime is the process's.
-    // Also the one place amon writes to the user's terminal while the agent is
-    // running: it already wakes on a timer, which is what makes waiting for a
-    // quiet gap free.
+    // It also carries amon's only writes to the terminal while the agent runs:
+    // it already wakes on a timer, and `Screen` decides when writing is safe.
     let master = pty.master;
     let resize_signals = signals.clone();
-    let last_output = Arc::new(AtomicU64::new(now_millis()));
-    let injector_output = last_output.clone();
-    let injector_focus = focus_shared.clone();
+    // Weak, so that the wrapper's own `Screen` is what decides when the
+    // terminal stops being written to: once it is dropped, this thread can no
+    // longer reach a terminal amon has already restored.
+    let injector_screen = std::sync::Arc::downgrade(&screen);
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_millis(50));
 
-        // The agent turned focus reporting off, which turned amon's off with
-        // it. Put it back, but never in the middle of the agent's own output.
-        if injector_focus.reassert.load(Ordering::Relaxed) {
-            let quiet = now_millis().saturating_sub(injector_output.load(Ordering::Relaxed));
-            if quiet >= QUIET_BEFORE_INJECTING.as_millis() as u64 {
-                injector_focus.reassert.store(false, Ordering::Relaxed);
-                let mut stdout = std::io::stdout();
-                let _ = stdout.write_all(focus::ENABLE);
-                let _ = stdout.flush();
-            }
+        // The agent turned focus reporting off — with a mode reset, or by
+        // disabling it outright — which turned amon's off with it.
+        let Some(screen) = injector_screen.upgrade() else {
+            return;
+        };
+        if let Ok(mut screen) = screen.lock() {
+            screen.reassert_focus_reports();
         }
 
         if resized.swap(false, std::sync::atomic::Ordering::Relaxed) {
@@ -257,19 +255,20 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
         }
     });
 
-    let mut stdout = std::io::stdout();
     let mut buffer = [0u8; 8192];
     loop {
         match reader.read(&mut buffer) {
             Ok(0) | Err(_) => break,
             Ok(read) => {
+                let Ok(mut screen) = screen.lock() else {
+                    break;
+                };
                 // The user's terminal comes first, always. Observation is a
                 // copy taken afterwards; it can neither delay nor alter this.
-                if stdout.write_all(&buffer[..read]).is_err() {
+                if screen.agent_output(&buffer[..read]).is_err() {
                     break;
                 }
-                let _ = stdout.flush();
-                last_output.store(now_millis(), Ordering::Relaxed);
+                drop(screen);
                 let _ = signals.send(Signal::Output(buffer[..read].to_vec()));
             }
         }
@@ -278,14 +277,10 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     let exit = wait_for_agent(&mut child);
     tty::forward::disarm();
 
-    // Leave the terminal as the agent left it. If the agent wanted focus
-    // reporting, it is the agent's to leave on — that is what would have
-    // happened without amon; otherwise the mode was amon's alone and goes away
-    // with it. The agent is gone by now, so there is no output to collide with.
-    if on_a_terminal && !focus_shared.agent_wants.load(Ordering::Relaxed) {
-        let mut stdout = std::io::stdout();
-        let _ = stdout.write_all(focus::DISABLE);
-        let _ = stdout.flush();
+    // Leave the terminal as the agent left it, and shut the door behind us so
+    // the injector cannot reach it afterwards.
+    if let Ok(mut screen) = screen.lock() {
+        screen.finish();
     }
     let _ = signals.send(Signal::AgentExited);
     drop(signals);
@@ -294,6 +289,102 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     drop(hook_socket);
 
     Ok(exit)
+}
+
+/// The user's terminal, and everything amon is allowed to do to it.
+///
+/// One owner for all writes, because amon has two reasons to write — passing
+/// the agent's output through, and keeping focus reporting on — and the second
+/// must never land inside a sequence belonging to the first. The mode scanner
+/// lives here rather than in the observer for the same reason it decides the
+/// agent's input: the observer is best-effort, and this is not.
+struct Screen {
+    stdout: std::io::Stdout,
+    scanner: focus::ModeScanner,
+    focus: focus::Shared,
+    /// Whether focus reporting is amon's business at all: piped output gets
+    /// none of it, and neither does a terminal amon has already restored.
+    tracking: bool,
+}
+
+impl Screen {
+    fn new(on_a_terminal: bool, focus: focus::Shared) -> Self {
+        Self {
+            stdout: std::io::stdout(),
+            scanner: focus::ModeScanner::default(),
+            focus,
+            tracking: on_a_terminal,
+        }
+    }
+
+    fn enable_focus_reports(&mut self) {
+        let _ = self.stdout.write_all(focus::ENABLE);
+        let _ = self.stdout.flush();
+    }
+
+    /// Passes the agent's output through, following what it does to the modes
+    /// on the way.
+    ///
+    /// The scan happens first so that the flags governing the agent's input
+    /// are already correct by the time the terminal could act on the bytes —
+    /// it costs a pass over the chunk, never a syscall.
+    fn agent_output(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+        if self.tracking {
+            let change = self.scanner.feed(bytes);
+            self.focus
+                .agent_wants
+                .store(change.agent_wants, Ordering::Relaxed);
+            if change.disabled {
+                self.focus.reassert.store(true, Ordering::Relaxed);
+            } else if change.agent_wants {
+                // The agent wants reports and the terminal is sending them;
+                // an older disable is no longer worth acting on.
+                self.focus.reassert.store(false, Ordering::Relaxed);
+            }
+        }
+        self.stdout.write_all(bytes)?;
+        self.stdout.flush()
+    }
+
+    /// Puts focus reporting back if the agent turned it off — but only between
+    /// the agent's own sequences, which is the only moment amon's bytes cannot
+    /// change the meaning of the agent's.
+    fn reassert_focus_reports(&mut self) {
+        if !self.tracking
+            || !self.focus.reassert.load(Ordering::Relaxed)
+            || !self.scanner.at_boundary()
+        {
+            return;
+        }
+        self.focus.reassert.store(false, Ordering::Relaxed);
+        let _ = self.stdout.write_all(focus::ENABLE);
+        let _ = self.stdout.flush();
+    }
+
+    /// Restores the terminal and stops amon writing to it.
+    ///
+    /// If the agent wanted focus reporting, it is the agent's to leave on —
+    /// that is what would have happened without amon. Otherwise the mode was
+    /// amon's alone and goes away with it.
+    fn finish(&mut self) {
+        if !self.tracking {
+            return;
+        }
+        self.tracking = false;
+        if !self.focus.agent_wants.load(Ordering::Relaxed) {
+            let _ = self.stdout.write_all(focus::DISABLE);
+            let _ = self.stdout.flush();
+        }
+    }
+}
+
+impl Drop for Screen {
+    /// The terminal is restored however the wrapper leaves — including the
+    /// early returns between enabling the mode and the agent's first byte, and
+    /// a panic on the way. `finish` has already run in the ordinary case.
+    fn drop(&mut self) {
+        self.finish();
+    }
 }
 
 /// Reaps the agent and reports how it ended.

@@ -9,7 +9,9 @@
 //! Nothing here delays a keystroke. A sequence split across two reads is
 //! forwarded rather than held, because holding an `ESC` to see what follows
 //! would add latency to the single most-pressed key in a TUI. The cost is a
-//! missed focus event on the rare split; the alternative is a sluggish agent.
+//! missed focus event on the rare split, and a literal `CSI I` typed or pasted
+//! by the user being taken for a focus report; the alternative is the escape
+//! latency multiplexers are notorious for. See ADR-0007.
 
 /// Asks the terminal to report focus changes.
 pub const ENABLE: &[u8] = b"\x1b[?1004h";
@@ -55,20 +57,153 @@ pub fn scan(input: &[u8]) -> Scan {
     Scan { events, stripped }
 }
 
-/// What the observer knows and the input thread needs.
+/// What the output path knows and the input thread needs.
 ///
-/// The mode lives in the shadow terminal, which the observer owns, but the
-/// decision to forward or swallow is made on the input thread. Two flags are
-/// cheaper than a channel and cannot block either side.
+/// Read on every keystroke, so these are atomics rather than anything the
+/// output path could make an input thread wait behind.
 #[derive(Clone, Default)]
 pub struct Shared {
     /// The agent enabled focus reporting itself, so the reports are its own
     /// and must reach it untouched.
     pub agent_wants: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// The agent turned focus reporting off, taking the wrapper's own
-    /// reporting with it. Set here, acted on where writing to the terminal is
-    /// safe.
+    /// reporting with it. Set on the output path, acted on where writing to
+    /// the terminal is safe.
     pub reassert: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// Follows the agent's focus-reporting mode along the output stream.
+///
+/// This has to live on the output path rather than in the shadow terminal:
+/// what it decides governs the agent's *input*, and the observer is
+/// best-effort — a shadow terminal that failed to start, or fell behind, must
+/// never change what the agent receives. It is also what says whether the
+/// stream is between escape sequences, which is the only safe moment for amon
+/// to write anything of its own.
+#[derive(Default)]
+pub struct ModeScanner {
+    state: State,
+    /// Parameters of the CSI being read, newest last.
+    params: Vec<u32>,
+    private: bool,
+    agent_wants: bool,
+}
+
+#[derive(Default, PartialEq, Eq, Clone, Copy)]
+enum State {
+    #[default]
+    Ground,
+    Escape,
+    Csi,
+    /// Inside an OSC/DCS/APC string, which ends at BEL or ST.
+    String_,
+    /// Inside such a string, having just seen the ESC of a possible ST.
+    StringEscape,
+}
+
+/// What changed while a chunk of output went past.
+#[derive(Default, PartialEq, Eq, Debug)]
+pub struct ModeChange {
+    /// The agent's focus-reporting mode after this chunk.
+    pub agent_wants: bool,
+    /// The agent turned the mode off at some point in this chunk — including
+    /// turning it off when it was already off, which still reaches the real
+    /// terminal and still takes amon's own reporting with it.
+    pub disabled: bool,
+}
+
+impl ModeScanner {
+    /// Feeds a chunk of the agent's output. Never call this with bytes the
+    /// terminal did not also receive.
+    pub fn feed(&mut self, bytes: &[u8]) -> ModeChange {
+        let mut change = ModeChange {
+            agent_wants: self.agent_wants,
+            disabled: false,
+        };
+        for byte in bytes {
+            self.step(*byte, &mut change);
+        }
+        change.agent_wants = self.agent_wants;
+        change
+    }
+
+    /// Whether the stream is between escape sequences. Injecting anything of
+    /// amon's own at any other moment would land inside the agent's sequence
+    /// and change what it means.
+    pub fn at_boundary(&self) -> bool {
+        self.state == State::Ground
+    }
+
+    fn step(&mut self, byte: u8, change: &mut ModeChange) {
+        const MAX_PARAMS: usize = 32;
+        match self.state {
+            State::Ground => {
+                if byte == 0x1b {
+                    self.state = State::Escape;
+                }
+            }
+            State::Escape => match byte {
+                b'[' => {
+                    self.state = State::Csi;
+                    self.params.clear();
+                    self.private = false;
+                }
+                b']' | b'P' | b'X' | b'^' | b'_' => self.state = State::String_,
+                // RIS: every mode goes back to its default, amon's included.
+                b'c' => {
+                    change.disabled = true;
+                    self.agent_wants = false;
+                    self.state = State::Ground;
+                }
+                _ => self.state = State::Ground,
+            },
+            State::Csi => match byte {
+                b'?' if self.params.is_empty() => self.private = true,
+                b'0'..=b'9' => {
+                    if self.params.is_empty() {
+                        self.params.push(0);
+                    }
+                    if let Some(last) = self.params.last_mut() {
+                        *last = last
+                            .saturating_mul(10)
+                            .saturating_add(u32::from(byte - b'0'));
+                    }
+                }
+                b';' if self.params.len() < MAX_PARAMS => self.params.push(0),
+                b';' => {}
+                // Intermediates and anything else in the middle: keep reading.
+                0x20..=0x2f => {}
+                0x40..=0x7e => {
+                    let mentions_focus = self.params.contains(&1004);
+                    if self.private && mentions_focus {
+                        match byte {
+                            b'h' => self.agent_wants = true,
+                            b'l' => {
+                                change.disabled = true;
+                                self.agent_wants = false;
+                            }
+                            _ => {}
+                        }
+                    }
+                    self.state = State::Ground;
+                }
+                _ => {}
+            },
+            State::String_ => match byte {
+                0x07 => self.state = State::Ground,
+                0x1b => self.state = State::StringEscape,
+                _ => {}
+            },
+            State::StringEscape => {
+                // ESC \ ends the string; anything else was a stray ESC.
+                self.state = if byte == b'\\' {
+                    State::Ground
+                } else {
+                    State::String_
+                };
+            }
+        }
+    }
 }
 
 /// Focus and Seen for one agent.
@@ -154,6 +289,106 @@ mod tests {
         let scan = scan(b"\x1b[O\x1b[I");
         assert_eq!(scan.events, vec![false, true]);
         assert_eq!(scan.stripped.unwrap(), b"");
+    }
+
+    #[test]
+    fn an_agent_that_says_nothing_wants_no_focus_reports() {
+        let mut scanner = ModeScanner::default();
+        let change = scanner.feed(b"hello \x1b[1mworld\x1b[0m\n");
+        assert_eq!(
+            change,
+            ModeChange {
+                agent_wants: false,
+                disabled: false
+            }
+        );
+        assert!(scanner.at_boundary());
+    }
+
+    #[test]
+    fn enabling_and_disabling_focus_reporting_is_followed() {
+        let mut scanner = ModeScanner::default();
+        assert!(scanner.feed(b"\x1b[?1004h").agent_wants);
+        let off = scanner.feed(b"\x1b[?1004l");
+        assert!(!off.agent_wants);
+        assert!(off.disabled, "the real terminal was turned off too");
+    }
+
+    #[test]
+    fn a_disable_counts_even_when_the_agent_never_enabled_it() {
+        // The agent's own state did not change, but the byte still reached the
+        // terminal and turned amon's reporting off with it — the case a
+        // before/after comparison of the mode misses entirely.
+        let mut scanner = ModeScanner::default();
+        let change = scanner.feed(b"\x1b[?1004l");
+        assert!(!change.agent_wants);
+        assert!(change.disabled);
+    }
+
+    #[test]
+    fn a_reset_takes_focus_reporting_with_it() {
+        let mut scanner = ModeScanner::default();
+        scanner.feed(b"\x1b[?1004h");
+        let change = scanner.feed(b"\x1bc");
+        assert!(!change.agent_wants, "RIS restores mode defaults");
+        assert!(change.disabled);
+    }
+
+    #[test]
+    fn a_mode_change_split_across_chunks_is_still_seen() {
+        // Chunk boundaries are wherever the pty happened to split; they are
+        // not sequence boundaries.
+        let mut scanner = ModeScanner::default();
+        assert!(!scanner.feed(b"\x1b[?10").agent_wants);
+        assert!(!scanner.at_boundary(), "mid-sequence");
+        assert!(scanner.feed(b"04h").agent_wants);
+        assert!(scanner.at_boundary());
+    }
+
+    #[test]
+    fn focus_is_found_among_other_modes() {
+        let mut scanner = ModeScanner::default();
+        assert!(scanner.feed(b"\x1b[?1000;1004;2004h").agent_wants);
+        assert!(!scanner.feed(b"\x1b[?1000;1004;2004l").agent_wants);
+    }
+
+    #[test]
+    fn a_mode_amon_does_not_care_about_changes_nothing() {
+        let mut scanner = ModeScanner::default();
+        scanner.feed(b"\x1b[?1004h");
+        let change = scanner.feed(b"\x1b[?25l\x1b[?2004h");
+        assert!(change.agent_wants, "still on");
+        assert!(!change.disabled);
+    }
+
+    #[test]
+    fn an_ansi_mode_is_not_a_private_one() {
+        // `CSI 1004 h` without the `?` is a different namespace.
+        let mut scanner = ModeScanner::default();
+        assert!(!scanner.feed(b"\x1b[1004h").agent_wants);
+    }
+
+    #[test]
+    fn a_mode_sequence_inside_a_title_is_only_text() {
+        // OSC strings carry arbitrary bytes; nothing in them is a command.
+        let mut scanner = ModeScanner::default();
+        let change = scanner.feed(b"\x1b]0;\x1b[?1004h\x07");
+        assert!(!change.agent_wants);
+        assert!(scanner.at_boundary(), "the string terminated");
+    }
+
+    #[test]
+    fn an_unterminated_sequence_is_never_a_safe_moment_to_write() {
+        let mut scanner = ModeScanner::default();
+        scanner.feed(b"\x1b[");
+        assert!(!scanner.at_boundary());
+        scanner.feed(b"0m");
+        assert!(scanner.at_boundary());
+
+        scanner.feed(b"\x1b]0;a title");
+        assert!(!scanner.at_boundary(), "an OSC string is still open");
+        scanner.feed(b"\x1b\\");
+        assert!(scanner.at_boundary());
     }
 
     #[test]
