@@ -476,9 +476,48 @@ Decisions and open questions from the design discussion; not yet implemented.
   per-key lighting render without an OAI layer? Then optionally let Input
   write the Codex layer and diff the FS before/after to learn the on-disk
   profile format (safer than reverse-engineering Input's serializer).
-- **Unverified:** thstatus rendering on factory profile; on-disk file
-  names/format; layer cap (is it 3?); whether firmware identifies the Codex
-  layer by position, keycodes, or a flag.
+- **Unverified:** thstatus rendering on factory profile; whether firmware
+  identifies the Codex layer by position, keycodes, or a flag.
+
+## 10. Hardware verification (2026-07-31, device fw v0.4.0)
+
+Live results against the real device (serial `1020BA734D08`, wired,
+enumerates as `303a:8298` — the "BLE" PID even in wired mode, with
+`bcdDevice 0.b0`; the Codex heuristic `release % 4 == 0` classifies it USB):
+
+- **One HID interface only** — keyboard/mouse/consumer *and* the vendor
+  usage share a single hidraw node; the leading `0x06` of each frame is the
+  HID report ID. Smoke test in Python (raw `os.write`/`os.read` of 64-byte
+  frames on `/dev/hidraw*`) worked exactly per §7 framing.
+- **Confirmed working on fw v0.4.0:** `sys.version` →
+  `{"version":"v0.4.0"}`; `device.status` → `{version, profile_index,
+  layer_index, battery, is_charging}` (snake_case on the wire!);
+  `lights.preview` (§7 zone params) → applies immediately;
+  `fs.list` → `[{"name":"keymap.json","size":1714}]`;
+  `fs.read {"file": name}` → `{"data": "<json string>"}` (param is `file`,
+  not `name`; response is stringified JSON in `data`).
+- **`v.oai.thstatus` → `{"error":{"code":404,"message":"Method not
+  found"}}` on v0.4.0.** Consistent with the Input app's `canCreateCodexLayer`
+  gate: the OAI feature set ships in **firmware 0.6.0**, which as of
+  2026-07-31 exists only as pre-releases (`v0.6.0-rc.13`, released
+  2026-07-31) in the public repo **`worklouder/cm-v2-fw-releases`** (`.bin`
+  assets; sibling repos: `knob-fw-releases`, `nomad-e-v2-fw-releases`, …;
+  the Input app filters `rc` releases unless beta is enabled).
+- **On-disk config format confirmed** — `keymap.json` is the whole config:
+  `{version: 1, activeProfileId, profiles: [{id, name, layers: [...],
+  macrosUsed, multiActionsUsed}], multiActions, macros, macrosGroups,
+  multiActionsGroups, linkedApps}`. Factory profile has **3 layers**
+  (Layer 1: keys `KC_A`–`KC_M`, encoder `KC_VOLU/KC_VOLD/KC_MPLY`, joystick
+  `type:"RADIAL"` with 8 sectors `{k, a1, a2}` (angles 0–1); Layers 2–3 all
+  `KC_NONE`, joystick `type:"JOYSTICK"`). Each layer may carry `lights:
+  {backlight, underglow}` with **effect as a string** (`"solid"`,
+  `"rainbow"`) — note the RPC lighting params use numeric effects, the file
+  uses names. Device was on `layer_index: 1` (the empty Layer 2) during the
+  test. Backup of the full factory config:
+  `~/.cache/wl-input-app/device_keymap_backup_20260731.json`.
+- **Conclusion:** everything amon needs is proven except `v.oai.*`, which
+  requires a firmware update to 0.6.0 (currently RC-only). Fallback available
+  today on 0.4.0: zone lighting via `lights.preview`.
 
 ## Context
 
