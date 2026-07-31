@@ -86,6 +86,13 @@ pub struct ModeScanner {
     /// Parameters of the CSI being read, newest last.
     params: Vec<u32>,
     private: bool,
+    /// An intermediate byte appeared in this CSI, which makes it some other
+    /// command that merely ends in `h` or `l`.
+    intermediate: bool,
+    /// Continuation bytes still owed by a UTF-8 character in progress. A
+    /// character is as indivisible as an escape sequence: amon must not write
+    /// between its bytes either.
+    continuations: u8,
     agent_wants: bool,
 }
 
@@ -94,10 +101,15 @@ enum State {
     #[default]
     Ground,
     Escape,
+    /// `ESC` followed by an intermediate — `ESC ( B` and friends — still owed
+    /// its final byte.
+    EscapeIntermediate,
     Csi,
-    /// Inside an OSC/DCS/APC string, which ends at BEL or ST.
-    String_,
-    /// Inside such a string, having just seen the ESC of a possible ST.
+    /// An OSC string, which ends at BEL or ST.
+    Osc,
+    /// A DCS, SOS, PM or APC string. Only ST ends these: BEL is payload.
+    Dcs,
+    /// Inside a string, having just seen an ESC that may begin ST.
     StringEscape,
 }
 
@@ -127,38 +139,63 @@ impl ModeScanner {
         change
     }
 
-    /// Whether the stream is between escape sequences. Injecting anything of
-    /// amon's own at any other moment would land inside the agent's sequence
-    /// and change what it means.
+    /// Whether the stream is between things the terminal treats as indivisible
+    /// — no escape sequence in progress, no half-written character. Injecting
+    /// anything of amon's own at any other moment would land inside the
+    /// agent's and change what it means.
     pub fn at_boundary(&self) -> bool {
-        self.state == State::Ground
+        self.state == State::Ground && self.continuations == 0
     }
 
     fn step(&mut self, byte: u8, change: &mut ModeChange) {
         const MAX_PARAMS: usize = 32;
+
+        // CAN and SUB abandon whatever was in progress, wherever it was.
+        if matches!(byte, 0x18 | 0x1a) {
+            self.state = State::Ground;
+            self.continuations = 0;
+            return;
+        }
+
         match self.state {
-            State::Ground => {
-                if byte == 0x1b {
+            State::Ground => match byte {
+                0x1b => {
                     self.state = State::Escape;
+                    self.continuations = 0;
                 }
-            }
+                // A multi-byte character owes continuations before it is whole.
+                0xc0..=0xdf => self.continuations = 1,
+                0xe0..=0xef => self.continuations = 2,
+                0xf0..=0xf7 => self.continuations = 3,
+                0x80..=0xbf => self.continuations = self.continuations.saturating_sub(1),
+                _ => self.continuations = 0,
+            },
             State::Escape => match byte {
                 b'[' => {
                     self.state = State::Csi;
                     self.params.clear();
                     self.private = false;
+                    self.intermediate = false;
                 }
-                b']' | b'P' | b'X' | b'^' | b'_' => self.state = State::String_,
+                b']' => self.state = State::Osc,
+                b'P' | b'X' | b'^' | b'_' => self.state = State::Dcs,
                 // RIS: every mode goes back to its default, amon's included.
                 b'c' => {
                     change.disabled = true;
                     self.agent_wants = false;
                     self.state = State::Ground;
                 }
+                // `ESC ( B` and its like are still owed a final byte.
+                0x20..=0x2f => self.state = State::EscapeIntermediate,
                 _ => self.state = State::Ground,
             },
+            State::EscapeIntermediate => {
+                if !matches!(byte, 0x20..=0x2f) {
+                    self.state = State::Ground;
+                }
+            }
             State::Csi => match byte {
-                b'?' if self.params.is_empty() => self.private = true,
+                b'?' if self.params.is_empty() && !self.intermediate => self.private = true,
                 b'0'..=b'9' => {
                     if self.params.is_empty() {
                         self.params.push(0);
@@ -169,13 +206,16 @@ impl ModeScanner {
                             .saturating_add(u32::from(byte - b'0'));
                     }
                 }
-                b';' if self.params.len() < MAX_PARAMS => self.params.push(0),
-                b';' => {}
-                // Intermediates and anything else in the middle: keep reading.
-                0x20..=0x2f => {}
+                // `;` separates parameters and `:` their parts; either way the
+                // digits that follow start a new number rather than extending
+                // the last one.
+                b';' | b':' if self.params.len() < MAX_PARAMS => self.params.push(0),
+                b';' | b':' => {}
+                // An intermediate makes this some other command that merely
+                // ends in `h` or `l`.
+                0x20..=0x2f => self.intermediate = true,
                 0x40..=0x7e => {
-                    let mentions_focus = self.params.contains(&1004);
-                    if self.private && mentions_focus {
+                    if self.private && !self.intermediate && self.params.contains(&1004) {
                         match byte {
                             b'h' => self.agent_wants = true,
                             b'l' => {
@@ -189,18 +229,24 @@ impl ModeScanner {
                 }
                 _ => {}
             },
-            State::String_ => match byte {
-                0x07 => self.state = State::Ground,
+            // BEL ends an OSC string but is payload inside the others.
+            State::Osc | State::Dcs => match byte {
+                0x07 if self.state == State::Osc => self.state = State::Ground,
+                // ST, as a single C1 byte rather than `ESC \`.
+                0x9c => self.state = State::Ground,
                 0x1b => self.state = State::StringEscape,
                 _ => {}
             },
             State::StringEscape => {
-                // ESC \ ends the string; anything else was a stray ESC.
-                self.state = if byte == b'\\' {
-                    State::Ground
+                if byte == b'\\' {
+                    self.state = State::Ground;
                 } else {
-                    State::String_
-                };
+                    // Not ST: the escape cancels the string and is itself the
+                    // start of a new sequence, which is what a terminal makes
+                    // of it too.
+                    self.state = State::Escape;
+                    self.step(byte, change);
+                }
             }
         }
     }
@@ -326,6 +372,16 @@ mod tests {
     }
 
     #[test]
+    fn turning_it_off_and_on_again_within_one_read_reports_both() {
+        // The caller needs both facts to see that the mode ended up on and
+        // nothing has to be put back — a disable alone would say otherwise.
+        let mut scanner = ModeScanner::default();
+        let change = scanner.feed(b"\x1b[?1004l\x1b[?1004h");
+        assert!(change.disabled);
+        assert!(change.agent_wants, "and back on by the end");
+    }
+
+    #[test]
     fn a_reset_takes_focus_reporting_with_it() {
         let mut scanner = ModeScanner::default();
         scanner.feed(b"\x1b[?1004h");
@@ -370,11 +426,84 @@ mod tests {
 
     #[test]
     fn a_mode_sequence_inside_a_title_is_only_text() {
-        // OSC strings carry arbitrary bytes; nothing in them is a command.
+        // The title is payload, right up until it is terminated.
         let mut scanner = ModeScanner::default();
-        let change = scanner.feed(b"\x1b]0;\x1b[?1004h\x07");
+        let change = scanner.feed(b"\x1b]0;1004h and \x07");
         assert!(!change.agent_wants);
         assert!(scanner.at_boundary(), "the string terminated");
+    }
+
+    #[test]
+    fn an_escape_inside_a_string_cancels_it_the_way_a_terminal_does() {
+        // Not ST, so the string is abandoned and the escape is a sequence in
+        // its own right — which the terminal will act on, so amon must too.
+        let mut scanner = ModeScanner::default();
+        let change = scanner.feed(b"\x1b]0;title\x1b[?1004h");
+        assert!(change.agent_wants);
+        assert!(scanner.at_boundary());
+    }
+
+    #[test]
+    fn bell_ends_a_title_but_not_a_device_string() {
+        // BEL is payload inside DCS; treating it as a terminator would call
+        // the middle of someone's control string a safe place to write.
+        let mut scanner = ModeScanner::default();
+        scanner.feed(b"\x1bPpayload\x07more");
+        assert!(!scanner.at_boundary(), "still inside the DCS");
+        scanner.feed(b"\x1b\\");
+        assert!(scanner.at_boundary());
+    }
+
+    #[test]
+    fn a_lone_c1_terminator_ends_a_string() {
+        let mut scanner = ModeScanner::default();
+        scanner.feed(b"\x1b]0;title");
+        assert!(!scanner.at_boundary());
+        scanner.feed(b"\x9c");
+        assert!(scanner.at_boundary());
+    }
+
+    #[test]
+    fn a_cancel_abandons_whatever_was_in_progress() {
+        let mut scanner = ModeScanner::default();
+        scanner.feed(b"\x1b[?100");
+        assert!(!scanner.at_boundary());
+        scanner.feed(b"\x18");
+        assert!(scanner.at_boundary(), "CAN abandons the sequence");
+    }
+
+    #[test]
+    fn a_half_written_character_is_not_a_safe_moment_to_write() {
+        // Writing between the bytes of a character mangles it just as surely
+        // as writing into an escape sequence.
+        let mut scanner = ModeScanner::default();
+        scanner.feed("⠋".as_bytes().split_last().unwrap().1);
+        assert!(!scanner.at_boundary(), "the character is unfinished");
+        scanner.feed(&["⠋".as_bytes()[2]]);
+        assert!(scanner.at_boundary());
+    }
+
+    #[test]
+    fn a_charset_selection_is_owed_its_final_byte() {
+        let mut scanner = ModeScanner::default();
+        scanner.feed(b"\x1b(");
+        assert!(!scanner.at_boundary(), "ESC ( still needs its designator");
+        scanner.feed(b"B");
+        assert!(scanner.at_boundary());
+    }
+
+    #[test]
+    fn a_number_split_by_a_subparameter_is_not_the_mode() {
+        // `?10:04h` is parameter 10, part 4 — not mode 1004.
+        let mut scanner = ModeScanner::default();
+        assert!(!scanner.feed(b"\x1b[?10:04h").agent_wants);
+    }
+
+    #[test]
+    fn an_intermediate_makes_it_a_different_command() {
+        // `CSI ? 1004 SP h` ends in `h` without being a mode set.
+        let mut scanner = ModeScanner::default();
+        assert!(!scanner.feed(b"\x1b[?1004 h").agent_wants);
     }
 
     #[test]

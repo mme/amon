@@ -676,6 +676,30 @@ fn the_terminal_is_asked_for_focus_reports_and_put_back_afterwards() {
     );
 }
 
+#[test]
+fn looking_away_reaches_the_registry() {
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", ECHOES_ITS_INPUT);
+    let mut session = harness::PtySession::start(&sandbox, &[&path_str(&agent)]);
+
+    // Launching from this view counts as looking at it.
+    sandbox.wait_for_status("the agent to be focused", |agents| {
+        agent_named(agents, "claude").is_some_and(|agent| agent["focused"] == true)
+    });
+
+    session.send(b"\x1b[O");
+    let agents = sandbox.wait_for_status("focus to be lost", |agents| {
+        agent_named(agents, "claude").is_some_and(|agent| agent["focused"] == false)
+    });
+    assert_eq!(
+        agent_named(&agents, "claude").expect("registered")["seen"],
+        serde_json::json!(true),
+        "looking away does not unsee what was already seen"
+    );
+
+    session.kill();
+}
+
 /// An agent that turns focus reporting on and then off again, the way a TUI
 /// does around its own lifetime. Turning it off takes amon's reporting with it.
 const TOGGLES_FOCUS_REPORTING: &str = r#"#!/bin/sh
@@ -690,18 +714,28 @@ fn an_agent_turning_focus_reporting_off_gets_it_put_back() {
     let sandbox = Sandbox::new();
     let agent = sandbox.fake_agent("claude", TOGGLES_FOCUS_REPORTING);
     let mut session = harness::PtySession::start(&sandbox, &[&path_str(&agent)]);
-    session.wait();
-    std::thread::sleep(std::time::Duration::from_millis(300));
 
-    let seen = session.output();
-    let text = String::from_utf8_lossy(&seen);
-    // Amon's enable, the agent's own pair, then amon's re-enable: the agent's
-    // disable reached the real terminal and had to be undone.
-    let enables = text.matches("\u{1b}[?1004h").count();
-    assert!(
-        enables >= 2,
-        "focus reporting must be restored after the agent disables it: {text:?}"
-    );
+    // Checked while the agent is still running: amon disables the mode itself
+    // on the way out, so the last word on a finished session is always `l`.
+    // What matters is that reporting came back *during* the session.
+    let start = std::time::Instant::now();
+    let text = loop {
+        let seen = session.output();
+        let text = String::from_utf8_lossy(&seen).into_owned();
+        if text.contains("\u{1b}[?1004l")
+            && text.rfind("\u{1b}[?1004h") > text.rfind("\u{1b}[?1004l")
+        {
+            break text;
+        }
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(10),
+            "focus reporting was never restored after the agent disabled it: {text:?}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    };
+    assert!(text.contains("\u{1b}[?1004l"), "the agent did disable it");
+
+    session.kill();
 }
 
 #[test]

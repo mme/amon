@@ -334,12 +334,13 @@ impl Screen {
             self.focus
                 .agent_wants
                 .store(change.agent_wants, Ordering::Relaxed);
-            if change.disabled {
-                self.focus.reassert.store(true, Ordering::Relaxed);
-            } else if change.agent_wants {
-                // The agent wants reports and the terminal is sending them;
-                // an older disable is no longer worth acting on.
+            // What matters is where the mode ended up: an agent that turned it
+            // off and back on within one read left the terminal reporting, so
+            // there is nothing to put back.
+            if change.agent_wants {
                 self.focus.reassert.store(false, Ordering::Relaxed);
+            } else if change.disabled {
+                self.focus.reassert.store(true, Ordering::Relaxed);
             }
         }
         self.stdout.write_all(bytes)?;
