@@ -28,6 +28,15 @@ const IO_TIMEOUT: Duration = Duration::from_secs(2);
 /// never stops talking cannot grow the wrapper instead of failing.
 const MAX_RESPONSE: u64 = 8 * 1024 * 1024;
 const MAX_EVENT_LINE: u64 = 64 * 1024;
+/// How long to keep looking for the window before giving up.
+///
+/// A terminal started as `foot -e amon claude` runs its command before the
+/// compositor has mapped its window, so the first look finds nothing that
+/// matches — the ancestry is right, the window simply does not exist yet.
+/// Mapping takes milliseconds; this waits far longer, and costs nothing but a
+/// sleeping thread when there will never be a window at all.
+const RESOLVE_ATTEMPTS: usize = 20;
+const RESOLVE_INTERVAL: Duration = Duration::from_millis(250);
 
 /// The window an agent is running in, as the compositor sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,7 +65,7 @@ pub fn spawn(signals: Sender<Signal>) {
         let Ok(events) = UnixStream::connect(directory.join(".socket2.sock")) else {
             return;
         };
-        let Some(window) = resolve(&directory, std::process::id()) else {
+        let Some(window) = resolve_when_mapped(&directory, std::process::id()) else {
             return;
         };
 
@@ -119,6 +128,24 @@ fn follow(directory: &Path, events: UnixStream, mut window: Window, signals: &Se
             _ => {}
         }
     }
+}
+
+/// Finds the window hosting `pid`, waiting for it to be mapped.
+///
+/// The wrapper can easily be running before its own terminal has a window, so
+/// finding nothing at first says only "not yet". Giving up is bounded: an
+/// agent that will never have a window — over ssh, in a multiplexer — must not
+/// leave a thread looking for one forever.
+fn resolve_when_mapped(directory: &Path, pid: u32) -> Option<Window> {
+    for attempt in 0..RESOLVE_ATTEMPTS {
+        if let Some(window) = resolve(directory, pid) {
+            return Some(window);
+        }
+        if attempt + 1 < RESOLVE_ATTEMPTS {
+            std::thread::sleep(RESOLVE_INTERVAL);
+        }
+    }
+    None
 }
 
 /// Finds the window hosting `pid` by walking up its ancestry.
