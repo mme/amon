@@ -102,7 +102,7 @@ returned even when nothing happens (see `focus` below):
 | Close a window | `hl.dsp.window.close({window="address:0x…"})` | Window destroyed, `closewindow>>…` emitted. A real close, exactly as if the user had closed it — no softer programmatic variant exists. |
 | Move a window to a workspace | `hl.dsp.window.move({window="address:0x…", workspace="3"})` | Window moved; events in §4 |
 | Renumber a workspace | `hl.dsp.workspace.change_id({workspace="3", id=1})` | Workspace 3 became 1 |
-| Focus a window | `hl.dsp.focus({window="address:0x…"})` | Returns `ok`, **no observable effect** — see below |
+| Focus a window, on any workspace | `hl.dsp.focus({window="address:0x…"})` | Follows the window onto its workspace — §3.1 |
 
 The **window selector is a string** in the old familiar form,
 `"address:0x5635b755fcf0"`; a nested table (`{window={address=…}}`) is
@@ -114,13 +114,51 @@ hl.dsp.focus({window="address:0x5635b755fcf0"})
 hl.dsp.focus({window=hl.get_window("address:0x5635b755fcf0")})
 ```
 
-**Focus could not be confirmed to work.** Both forms return `ok`, but the
-active window stays empty and *no event is emitted*, while `window.close` on
-the very same selector works and does emit. **Inference:** the VM's session has
-no seat/keyboard focus to give (its only monitor reports `focused: true`, but
-`j/activewindow` returns `{}` even with windows mapped), so this is likely an
-environment limitation rather than wrong syntax — unproven either way, and the
-thing to re-test on a desktop session before relying on it.
+**Focus works, including across workspaces** (see §3.1). An earlier note here
+said it did not; that was wrong — the test had been aimed at a window that had
+already closed.
+
+## 3.1 Focusing a window on another workspace
+
+**Verified on 0.56.1.** One call does the whole job — there is no need to
+switch workspace first, and no separate workspace-switch dispatcher is
+involved (there isn't an obvious one: `hl.dsp.workspace` holds only
+`change_id move rename swap_monitors toggle_special`):
+
+```
+dispatch hl.dsp.focus({window="address:0x5635b75919d0"})
+```
+
+Written **straight to `.socket.sock`** — no `hyprctl` — it answers `ok` and
+the compositor follows the window onto its workspace, emitting:
+
+```
+workspace>>3
+workspacev2>>3,3
+```
+
+Proven by moving one window to workspace 3, leaving the other on 1, and
+focusing each from the other's workspace in turn: the monitor's
+`activeWorkspace` became `3`, then `1`, matching the target every time, and
+the target's `focusHistoryID` became `0` (most recently focused).
+
+Two cautions from the same session:
+
+- **The address must belong to a live window.** Aiming at a closed window's
+  address still returns `ok` and does nothing at all — which is exactly what
+  made this look broken the first time round. `ok` means "the Lua ran", not
+  "a window was focused".
+- **`j/activewindow` stayed `{}` throughout**, even while workspaces were
+  demonstrably switching. That looks like a headless-VM artifact — no seat to
+  hand keyboard focus to — so **do not use `activewindow` as the oracle for
+  whether focus succeeded**. `focusHistoryID` in `j/clients` and the
+  `workspace` events are trustworthy; on a real desktop session
+  `activewindow` presumably fills in, which is worth confirming once.
+
+For a program on ≤ 0.56.0 the equivalent is the old string form,
+`dispatch focuswindow address:0x…`, which also follows the window across
+workspaces. Both are a single write to the same socket, so a client can try
+the Lua form and fall back on the parse error (§1).
 
 ## 4. What amon reads is unchanged
 
@@ -166,10 +204,16 @@ old (≤ 0.56.0):  dispatch focuswindow address:0x5635b755fcf0
 new (0.56.1+):   dispatch hl.dsp.focus({window="address:0x5635b755fcf0"})
 ```
 
-Both are one write to `.socket.sock`. Since the old form fails loudly with a
-parse error rather than silently, trying one and falling back on error is
-viable; `hyprctl version` (or `j/version`) would let it be decided up front.
-Note the failed-focus caveat in §3 before assuming the new form is sufficient.
+Both are one write to `.socket.sock`, and both follow the window across
+workspaces on their own (§3.1) — a jump needs no workspace switch of its own.
+Since the old form fails loudly with a parse error rather than silently,
+trying one and falling back on the error is viable; `hyprctl version` (or
+`j/version`) would let it be decided up front instead.
+
+The one thing a `goto` must not do is trust the reply: `ok` only means the Lua
+ran, so a stale address — an agent whose terminal has closed — reports success
+and does nothing. Amon already tracks window lifetime through `closewindow`
+events (§4), which is the right guard.
 
 ## 6. Not established
 
