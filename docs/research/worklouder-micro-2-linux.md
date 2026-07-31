@@ -533,6 +533,49 @@ enumerates as `303a:8298` — the "BLE" PID even in wired mode, with
   requires a firmware update to 0.6.0 (currently RC-only). Fallback available
   today on 0.4.0: zone lighting via `lights.preview`.
 
+## 11. Flashing 0.6.0-rc.13 from Linux (done, 2026-07-31)
+
+The device was updated 0.4.0 → 0.6.0-rc.13 entirely from Linux, without the
+Input app, and **`v.oai.thstatus` and `v.oai.rgbcfg` now answer
+`{"ok": 1}`** where 0.4.0 returned `404 Method not found`.
+
+Two things make this easy from Linux. The RC firmware is a **single merged
+image** (`firmware_v0.6.0-rc.13_merged.bin`, 2.3 MB) written at **offset 0**,
+which is exactly what the Input app does (`flashDeviceFirmware` →
+`flashFiles([{address: 0}], 921_600)`). And the device can be put into
+download mode **over the wire** with the `sys.bootloader` RPC — no key combo,
+no button. It then re-enumerates as `303a:1001` "Espressif USB JTAG/serial
+debug unit" on `/dev/ttyACM0`.
+
+```sh
+# 1. back up first: the config lives on the device's own flash
+#    (fs.read {"file":"keymap.json"} → result.data is the JSON as a string)
+# 2. into download mode
+#    send {"method":"sys.bootloader"} on the vendor HID channel
+# 3. flash
+esptool --chip esp32s3 --port /dev/ttyACM0 --baud 921600 \
+        write-flash 0x0 firmware_v0.6.0-rc.13_merged.bin
+```
+
+Notes worth keeping:
+
+- **The filesystem survives.** Despite the merged image covering
+  `0x0`–`0x238fff`, `keymap.json` came back byte-identical to the pre-flash
+  backup. 0.6.0 additionally creates `smart_actions.json`. Back up anyway —
+  this is one observation, not a guarantee.
+- **Serial needs its own udev rule.** The hidraw rules in §3 do not cover
+  `/dev/ttyACM*`, which is `root:uucp 660` on Arch; flashing fails to open the
+  port without
+  `SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", TAG+="uaccess"`.
+- **RC firmware is offered by a beta *app*, not a setting.** The Input app
+  calls `shouldUpdateFirmware(appVersion, …)`, which passes `isBeta =
+  semver.prerelease(appVersion) !== null`; only then does `getLatestRelease`
+  stop filtering releases whose name contains `rc`. The Linux AppImage is
+  version `0.18.0-rc.8-Devbuild4`, so it is *already* a beta app — on macOS or
+  Windows you would have to install a pre-release build deliberately.
+- Flash took 12s at 921600 baud; `esptool` verified the hash and reset the
+  device, which came back as a normal HID keyboard.
+
 ## Context
 
 - The **OpenAI Codex Micro** (launched July 2026) is a rebranded Creator
