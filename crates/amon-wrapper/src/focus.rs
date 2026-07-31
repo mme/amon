@@ -157,12 +157,20 @@ impl ModeScanner {
             return;
         }
 
+        // An ESC anywhere abandons what was in progress and begins a new
+        // sequence — the one exception being a string, where it may still turn
+        // out to be the first half of ST.
+        if byte == 0x1b {
+            self.state = match self.state {
+                State::Osc | State::Dcs => State::StringEscape,
+                _ => State::Escape,
+            };
+            self.continuations = 0;
+            return;
+        }
+
         match self.state {
             State::Ground => match byte {
-                0x1b => {
-                    self.state = State::Escape;
-                    self.continuations = 0;
-                }
                 // A multi-byte character owes continuations before it is whole.
                 0xc0..=0xdf => self.continuations = 1,
                 0xe0..=0xef => self.continuations = 2,
@@ -234,7 +242,6 @@ impl ModeScanner {
                 0x07 if self.state == State::Osc => self.state = State::Ground,
                 // ST, as a single C1 byte rather than `ESC \`.
                 0x9c => self.state = State::Ground,
-                0x1b => self.state = State::StringEscape,
                 _ => {}
             },
             State::StringEscape => {
@@ -461,6 +468,26 @@ mod tests {
         assert!(!scanner.at_boundary());
         scanner.feed(b"\x9c");
         assert!(scanner.at_boundary());
+    }
+
+    #[test]
+    fn an_escape_abandons_an_unfinished_sequence_without_finishing_it() {
+        // A terminal that sees ESC mid-CSI drops the CSI and starts over — it
+        // does not go back to ground, so neither may amon: it is still owed
+        // the rest of the new sequence.
+        let mut scanner = ModeScanner::default();
+        scanner.feed(b"\x1b[?100\x1b");
+        assert!(!scanner.at_boundary(), "a new escape is in progress");
+        scanner.feed(b"[0m");
+        assert!(scanner.at_boundary());
+    }
+
+    #[test]
+    fn an_abandoned_sequence_does_not_leave_its_parameters_behind() {
+        let mut scanner = ModeScanner::default();
+        // The 1004 belongs to a sequence that never happened.
+        scanner.feed(b"\x1b[?1004\x1b[?25h");
+        assert!(!scanner.feed(b"").agent_wants);
     }
 
     #[test]
