@@ -649,6 +649,58 @@ What follows from that:
 - Nothing here needs the Input app or the Codex host: the setup command, the
   lighting, and the key events all ride the one vendor HID channel.
 
+## 13. The intended layout (decided 2026-08-01)
+
+Physical buttons numbered 1–13 in reading order, over the grid's rows of
+2 / 4 / 4 / 3, land on the firmware's keycodes like this:
+
+| Buttons | Row | Keycodes | Individually lightable |
+|---|---|---|---|
+| 1–6 | rows 1–2 | `KV_OAI_AG00`–`AG05` | **yes** — the six `thstatus` slots |
+| 7–10 | row 3 | `KV_OAI_ACT06`–`ACT09` | no |
+| 11–13 | row 4 | `KV_OAI_ACT10`–`ACT12` | no |
+
+The decisions:
+
+- **1–6 — one per Omarchy workspace.** Colour shows the state of the agent(s)
+  there; which state gets which colour is still open. Pressing one jumps to an
+  agent that needs attention, cycling when several do. The jump is solved:
+  focus by window address crosses workspaces on its own
+  ([hyprland-lua-api.md §3.1](./hyprland-lua-api.md)).
+- **7** — agent panel hotkey, not yet implemented.
+- **8** Tab · **9** Up · **10** Escape · **12** Page Down · **13** Enter.
+- **11 — dictation**, either press-to-start/press-to-stop or hold-to-talk with
+  autosubmit. Undecided; both are reachable, since key events carry press
+  *and* release (`act` 1/0).
+- **Joystick** — window switching (Super + arrows).
+- **Dial** — scrolling (mouse wheel up/down) when turned, and **End** when
+  pressed: the dial is also a button, and pressing it jumps to the bottom.
+
+That the six state keys coincide exactly with the six lightable slots is luck
+worth noticing: the layout needs no compromise to get per-key status.
+
+### What this layout still has to answer
+
+1. **Can a layer be part agent keys, part ordinary keycodes?** Buttons 8, 9,
+   10, 12 and 13 are plain keystrokes. On an all-`KV_OAI_*` layer they emit
+   vendor events instead of typing, which would force the host to synthesise
+   Tab/Up/Escape/PageDown/Enter through uinput — latency, and nothing works
+   when amond is down. Far better if they stay native (`KC_TAB`, `KC_UP`,
+   `KC_ESC`, `KC_PGDN`, `KC_ENT`) while 1–7 stay `KV_OAI_*`. Whether such a
+   hybrid layer still counts as "Codex-enabled" for per-key lighting is
+   **untested, and worth testing before anything is designed around it**.
+2. **Can a joystick sector send a modifier combo?** The factory config uses
+   `type: "RADIAL"` with eight sectors bound to keycodes, which would give
+   native Super+arrow with no host involvement — but only if a sector can
+   carry a modifier. As `VENDOR` it instead streams `v.oai.rad`, and the host
+   would translate.
+3. **Is there a mouse-wheel keycode?** The factory encoder is
+   `KC_VOLU`/`KC_VOLD`/`KC_MPLY`, so encoder keycodes exist; whether scroll is
+   among them is unknown. Otherwise the dial goes through the host too. The
+   encoder's three slots line up with what the dial has to do — turn each way
+   plus its press — and the vendor events confirm the press is its own control
+   (`ENC_CC`, `ENC_CW` were captured turning it, `ENC_CLK` is the click).
+
 ## Context
 
 - The **OpenAI Codex Micro** (launched July 2026) is a rebranded Creator
