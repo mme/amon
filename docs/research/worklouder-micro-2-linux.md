@@ -679,27 +679,45 @@ The decisions:
 That the six state keys coincide exactly with the six lightable slots is luck
 worth noticing: the layout needs no compromise to get per-key status.
 
-### What this layout still has to answer
+### Everything goes through the host (decided)
 
-1. **Can a layer be part agent keys, part ordinary keycodes?** Buttons 8, 9,
-   10, 12 and 13 are plain keystrokes. On an all-`KV_OAI_*` layer they emit
-   vendor events instead of typing, which would force the host to synthesise
-   Tab/Up/Escape/PageDown/Enter through uinput — latency, and nothing works
-   when amond is down. Far better if they stay native (`KC_TAB`, `KC_UP`,
-   `KC_ESC`, `KC_PGDN`, `KC_ENT`) while 1–7 stay `KV_OAI_*`. Whether such a
-   hybrid layer still counts as "Codex-enabled" for per-key lighting is
-   **untested, and worth testing before anything is designed around it**.
-2. **Can a joystick sector send a modifier combo?** The factory config uses
-   `type: "RADIAL"` with eight sectors bound to keycodes, which would give
-   native Super+arrow with no host involvement — but only if a sector can
-   carry a modifier. As `VENDOR` it instead streams `v.oai.rad`, and the host
-   would translate.
-3. **Is there a mouse-wheel keycode?** The factory encoder is
-   `KC_VOLU`/`KC_VOLD`/`KC_MPLY`, so encoder keycodes exist; whether scroll is
-   among them is unknown. Otherwise the dial goes through the host too. The
-   encoder's three slots line up with what the dial has to do — turn each way
-   plus its press — and the vendor events confirm the press is its own control
-   (`ENC_CC`, `ENC_CW` were captured turning it, `ENC_CLK` is the click).
+The layer is **entirely `KV_OAI_*`** — every key, the joystick and the dial —
+and amon synthesises the ordinary keystrokes itself with uinput. Tab, Up,
+Escape, Page Down, Enter, End on the dial click, Super+arrow from the
+joystick: none of them are keycodes on the device.
+
+The alternative was a hybrid layer keeping those five as native `KC_*` so the
+board types them without a host. Rejected, because:
+
+- **The host is in the loop regardless.** Dictation needs press/release plus
+  recording state and autosubmit, which no keycode expresses, and Super+arrow
+  needs a modifier a joystick sector may not be able to carry. A "native where
+  possible" layout still needs the host for the interesting controls, and pays
+  for it with two mechanisms instead of one.
+- **Remapping stops touching flash.** Native keycodes mean an `fs.write` to
+  change a binding — device present, flash rewritten, for a config tweak.
+  Host-side it is a line of amon config.
+- **It avoids depending on an untested firmware behaviour.** Whether a layer
+  that mixes `KV_OAI_*` with ordinary keycodes still counts as "Codex-enabled"
+  for per-key lighting is unknown; if it does not, the hybrid design loses the
+  entire state display. All-`KV_OAI_*` cannot hit that.
+- Latency does not decide it: vendor event → uinput is a local path, low
+  single-digit milliseconds at human keypress rates. uinput also injects below
+  the display server, so a synthesised Super+Left is indistinguishable from a
+  real one to Hyprland — one of the few automation routes Wayland does not
+  break.
+
+**The cost, and its mitigation.** With amond stopped, buttons 8–13 do nothing
+at all rather than degrading to plain keys. The board has three layers, so the
+fallback is free: keep an ordinary keyboard layer on layer 2 or 3. That also
+leaves the device useful on a machine with no amon on it.
+
+Consequences to build for: amon needs `/dev/uinput` (another udev rule beside
+the hidraw and tty ones), and it owns the keymap — press *and* release are
+both reported (`act` 1/0), so hold-to-repeat and hold-to-talk are expressible.
+The dial's three encoder slots match what it has to do — turn each way plus
+click — and all three are distinct vendor events (`ENC_CC`, `ENC_CW` captured
+while turning; `ENC_CLK` is the click).
 
 ## Context
 
