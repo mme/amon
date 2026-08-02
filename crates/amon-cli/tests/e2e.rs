@@ -872,8 +872,9 @@ fn uninstalling_removes_amons_files_and_nothing_else() {
     let output = sandbox.run(&["uninstall", "omarchy"]);
 
     assert!(output.status.success(), "{output:?}");
-    assert!(!plugin.join("manifest.json").exists(), "amon's file goes");
-    assert!(!plugin.join("AgentDots.qml").exists(), "amon's file goes");
+    for ours in ["manifest.json", "AgentDots.qml", "Workspaces.qml"] {
+        assert!(!plugin.join(ours).exists(), "{ours} goes");
+    }
     assert_eq!(
         std::fs::read_to_string(&theirs).expect("theirs survives"),
         "mine",
@@ -882,9 +883,7 @@ fn uninstalling_removes_amons_files_and_nothing_else() {
 }
 
 #[test]
-fn a_plugin_directory_amon_did_not_write_is_left_alone() {
-    // Someone else's plugin under the same id, or a dotfiles checkout linked
-    // into place: overwriting or deleting it would destroy their files.
+fn someone_elses_plugin_under_the_same_id_is_left_alone() {
     let sandbox = Sandbox::new();
     let plugin = sandbox.config_path(PLUGIN_DIR);
     std::fs::create_dir_all(&plugin).expect("their dir");
@@ -900,6 +899,66 @@ fn a_plugin_directory_amon_did_not_write_is_left_alone() {
         std::fs::read_to_string(plugin.join("manifest.json")).expect("untouched"),
         theirs
     );
+}
+
+#[test]
+fn a_symlinked_plugin_directory_is_left_alone() {
+    // Dotfiles kept in a repository and linked into place. Writing through the
+    // link would edit files in that repository; removing them would delete
+    // them from it.
+    let sandbox = Sandbox::new();
+    let plugin = sandbox.config_path(PLUGIN_DIR);
+    let elsewhere = sandbox.runtime_path("dotfiles-widget");
+    std::fs::create_dir_all(&elsewhere).expect("their repo");
+    std::fs::write(elsewhere.join("manifest.json"), "theirs").expect("their file");
+    std::fs::create_dir_all(plugin.parent().unwrap()).expect("plugins dir");
+    std::os::unix::fs::symlink(&elsewhere, &plugin).expect("link it into place");
+
+    assert!(!sandbox.run(&["install", "omarchy"]).status.success());
+    assert!(!sandbox.run(&["uninstall", "omarchy"]).status.success());
+
+    assert_eq!(
+        std::fs::read_to_string(elsewhere.join("manifest.json")).expect("untouched"),
+        "theirs"
+    );
+    assert!(elsewhere.exists(), "their directory survives");
+}
+
+#[test]
+fn a_symlinked_widget_file_is_never_written_through() {
+    // The same hazard one level down: the directory is amon's, but a file in
+    // it points into someone's repository.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["install", "omarchy"]);
+    let plugin = sandbox.config_path(PLUGIN_DIR);
+    let theirs = sandbox.runtime_path("their-widget.qml");
+    std::fs::write(&theirs, "their widget").expect("their file");
+    std::fs::remove_file(plugin.join("Workspaces.qml")).expect("make room");
+    std::os::unix::fs::symlink(&theirs, plugin.join("Workspaces.qml")).expect("link");
+
+    assert!(!sandbox.run(&["install", "omarchy"]).status.success());
+
+    assert_eq!(
+        std::fs::read_to_string(&theirs).expect("untouched"),
+        "their widget",
+        "install must not follow a symlink and truncate what it points at"
+    );
+}
+
+#[test]
+fn an_install_that_died_half_way_can_be_finished() {
+    // Assets are written before the manifest, so an interrupted install leaves
+    // files with nothing identifying them. Refusing that directory would lock
+    // amon out of its own half-finished work.
+    let sandbox = Sandbox::new();
+    let plugin = sandbox.config_path(PLUGIN_DIR);
+    sandbox.run(&["install", "omarchy"]);
+    std::fs::remove_file(plugin.join("manifest.json")).expect("kill it half way");
+
+    let output = sandbox.run(&["install", "omarchy"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(plugin.join("manifest.json").exists(), "install completes");
 }
 
 #[test]

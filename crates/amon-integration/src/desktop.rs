@@ -118,20 +118,40 @@ fn ours(directory: &Path) -> io::Result<bool> {
         return Ok(false);
     }
 
-    let manifest = directory.join(MANIFEST_NAME);
-    match std::fs::symlink_metadata(&manifest) {
-        // A directory with no manifest of ours in it: only ours if it is empty,
-        // so a fresh install can still use a directory someone precreated.
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            Ok(std::fs::read_dir(directory)?.next().is_none())
-        }
-        Err(error) => Err(error),
-        Ok(metadata) if metadata.file_type().is_symlink() => Ok(false),
-        Ok(_) => {
-            let installed = std::fs::read_to_string(&manifest)?;
-            Ok(manifest_id(&installed).as_deref() == manifest_id(MANIFEST).as_deref())
+    // No file amon writes may be a symlink: writing one follows it and
+    // truncates whatever it points at, which for a dotfiles checkout is
+    // someone else's file in someone else's repository.
+    for name in file_names() {
+        if let Ok(metadata) = std::fs::symlink_metadata(directory.join(name)) {
+            if metadata.file_type().is_symlink() {
+                return Ok(false);
+            }
         }
     }
+
+    match std::fs::read_to_string(directory.join(MANIFEST_NAME)) {
+        Ok(installed) => Ok(manifest_id(&installed).as_deref() == manifest_id(MANIFEST).as_deref()),
+        // Nothing to identify it by, so go on what is there: a directory
+        // holding only files amon writes is amon's, however it came to be that
+        // way. That covers one someone precreated, and an install or uninstall
+        // that died half way — which writes the manifest last and removes it
+        // first, and would otherwise have locked itself out of finishing.
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            for entry in std::fs::read_dir(directory)? {
+                let found = entry?.file_name();
+                if !file_names().any(|ours| ours == found) {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Every file amon writes into the plugin directory.
+fn file_names() -> impl Iterator<Item = &'static str> {
+    std::iter::once(MANIFEST_NAME).chain(ASSETS.iter().map(|(name, _)| *name))
 }
 
 fn manifest_id(manifest: &str) -> Option<String> {
@@ -193,7 +213,7 @@ pub fn uninstall(target: DesktopTarget) -> io::Result<Vec<String>> {
 
     // Manifest first, so an interrupted removal leaves something the shell no
     // longer loads rather than a plugin missing its widget.
-    for name in std::iter::once(MANIFEST_NAME).chain(ASSETS.iter().map(|(name, _)| *name)) {
+    for name in file_names() {
         match std::fs::remove_file(directory.join(name)) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -234,7 +254,7 @@ pub fn status(target: DesktopTarget) -> DesktopStatus {
         // The version alone is not enough: a widget file that failed to write,
         // was truncated, or was edited by hand would otherwise be reported
         // current, which is the one thing this is here to prevent.
-        Some(version) if *version == expected && assets_match(&directory) => InstallState::Current,
+        Some(version) if *version == expected && files_match(&directory) => InstallState::Current,
         Some(_) => InstallState::Outdated,
     };
 
@@ -253,11 +273,16 @@ fn installed_version(directory: &Path) -> Option<String> {
     manifest_version(&manifest)
 }
 
-/// Whether every file on disk is byte-for-byte the one this build ships.
-fn assets_match(directory: &Path) -> bool {
-    ASSETS.iter().all(|(name, contents)| {
-        std::fs::read_to_string(directory.join(name)).is_ok_and(|found| found == *contents)
-    })
+/// Whether every file on disk is byte-for-byte the one this build ships —
+/// the manifest included, since a manifest whose version still matches but
+/// whose `kinds` or `entryPoints` were mangled is one Omarchy may refuse to
+/// load, and saying "current" about that helps nobody.
+fn files_match(directory: &Path) -> bool {
+    std::iter::once((MANIFEST_NAME, MANIFEST))
+        .chain(ASSETS)
+        .all(|(name, contents)| {
+            std::fs::read_to_string(directory.join(name)).is_ok_and(|found| found == contents)
+        })
 }
 
 #[cfg(test)]

@@ -45,6 +45,9 @@ impl Sandbox {
         // that way and ignores XDG_CONFIG_HOME — so a test must give them a
         // home of their own or it would reach the developer's real setup.
         command.env("HOME", self.runtime.join("home"));
+        // Sandboxed too, so an inherited value cannot leak into anything else
+        // that consults it — even though the Omarchy path deliberately does not.
+        command.env("XDG_CONFIG_HOME", self.runtime.join("home/.config"));
         command
     }
 

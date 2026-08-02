@@ -114,8 +114,14 @@ Item {
     if (frame.event !== undefined) {
       if (!root.seeded) {
         // Bounded: a daemon that never answers `status` must not grow this
-        // without limit.
-        if (root.pending.length < 512) root.pending.push(frame)
+        // without limit. Overflowing means the buffer can no longer be
+        // replayed faithfully, so start the whole conversation again rather
+        // than seed from a snapshot that later events would contradict.
+        if (root.pending.length >= 512) {
+          root.relink()
+          return
+        }
+        root.pending.push(frame)
         return
       }
       root.applyEvent(frame)
@@ -167,6 +173,15 @@ Item {
     sourceComponent: linkComponent
   }
 
+  // Throwing the socket away and building a new one is the only way to retry;
+  // it is also the simplest way to start over from a state that cannot be
+  // trusted.
+  function relink() {
+    root.reset()
+    link.active = false
+    link.active = root.socketPath !== ""
+  }
+
   // Keeps trying for as long as there is no daemon, and never starts one.
   // Rebuilding the loader is what actually retries; a failed Socket will not
   // reconnect in place.
@@ -174,10 +189,6 @@ Item {
     interval: 2000
     repeat: true
     running: root.socketPath !== ""
-    onTriggered: {
-      if (link.item && link.item.connected) return
-      link.active = false
-      link.active = true
-    }
+    onTriggered: if (!link.item || !link.item.connected) root.relink()
   }
 }
