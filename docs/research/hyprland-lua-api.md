@@ -77,10 +77,11 @@ This is a configuration and scripting surface, not merely renamed dispatchers:
 and a family of `get_*` queries all live in-process. None of it is reachable
 from another process — an external program still uses the sockets.
 
-## 2.1 The errors are the documentation
+## 2.1 The errors are the documentation — but they under-report
 
 Wrong arguments produce the schema, which is the fastest way to a working
-call:
+call. **The lists are incomplete**, though: `focus` also accepts `workspace`
+(§3.1) and never says so below. Use them to get started, not as a contract.
 
 ```
 hl.dsp.focus()                      → hl.focus: expected a table, e.g. { direction = "left" }
@@ -121,9 +122,7 @@ already closed.
 ## 3.1 Focusing a window on another workspace
 
 **Verified on 0.56.1.** One call does the whole job — there is no need to
-switch workspace first, and no separate workspace-switch dispatcher is
-involved (there isn't an obvious one: `hl.dsp.workspace` holds only
-`change_id move rename swap_monitors toggle_special`):
+switch workspace first:
 
 ```
 dispatch hl.dsp.focus({window="address:0x5635b75919d0"})
@@ -154,6 +153,13 @@ Two cautions from the same session:
   whether focus succeeded**. `focusHistoryID` in `j/clients` and the
   `workspace` events are trustworthy; on a real desktop session
   `activewindow` presumably fills in, which is worth confirming once.
+
+**Switching workspace directly** is the same dispatcher with a different key,
+`hl.dsp.focus({workspace = "3"})` — verified, and it is what Omarchy's own bar
+widget uses (`plugins/bar/widgets/Workspaces.qml`). Note that `workspace` does
+**not** appear in the key list `focus` names when it rejects bad arguments
+(§2.1), so **those lists are not exhaustive** — treat them as a hint, and read
+Omarchy's shell source for what the API really accepts.
 
 For a program on ≤ 0.56.0 the equivalent is the old string form,
 `dispatch focuswindow address:0x…`, which also follows the window across

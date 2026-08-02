@@ -51,9 +51,13 @@ Terminal's screen into an Agent State.
 _Avoid_: pattern file, rules file
 
 **Integration**:
-The per-agent install artifact written by `amon install <agent>` (hook scripts,
-config edits) that lets the agent itself report session events to the Daemon.
-_Avoid_: plugin, extension
+What `amon install <target>` writes into something else's configuration, in
+either direction: an *agent* Integration (hook scripts, config edits) lets the
+agent report session events to the Daemon, while a *desktop* Integration is a
+Subscriber amon ships, consuming those events rather than producing them.
+Either way amon owns the artifact and reports whether the installed copy is
+current.
+_Avoid_: plugin, extension (what the host calls it is the host's word)
 
 **Registry**:
 The Daemon's live list of connected agents. An entry exists exactly as long as
