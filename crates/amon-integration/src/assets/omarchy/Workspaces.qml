@@ -1,4 +1,7 @@
-// Forked from Omarchy's plugins/bar/widgets/Workspaces.qml (ADR-0008).
+// Forked from Omarchy (ADR-0008). Do not edit the upstream parts by hand.
+//
+//   upstream: /usr/share/omarchy/shell/plugins/bar/widgets/Workspaces.qml
+//   taken:    2026-08-02, Omarchy Quattro (Hyprland 0.56.1, quickshell-git)
 //
 // Omarchy's bar has no way for one plugin to decorate another's widget, and a
 // dot above the workspace numbers can only be drawn by whatever draws the
@@ -6,9 +9,15 @@
 // changed — same rendering, same click behaviour — which is what keeps a
 // re-sync a re-application rather than a merge.
 //
-// The amon additions are exactly: the `dots` object below, and the `Rectangle`
-// inside WidgetButton. Everything else is upstream and must be re-derived from
-// it rather than edited here.
+// To re-derive: copy the upstream file over this one, then re-apply exactly
+// the three additions, each marked `amon:` below —
+//
+//   1. `moduleName` names this plugin rather than Omarchy's
+//   2. the `AgentDots` object
+//   3. the `Rectangle` inside WidgetButton
+//
+// Anything else differing from upstream is drift, and the tests in desktop.rs
+// exist to notice it.
 
 import QtQuick
 import QtQuick.Layouts
@@ -18,7 +27,7 @@ import qs.Ui
 
 BarWidget {
   id: root
-  moduleName: "sh.amon.workspaces"
+  moduleName: "sh.amon.workspaces"   // amon: upstream says omarchy.workspaces
 
   // amon: the one piece of state upstream does not have.
   AgentDots { id: dots }
@@ -106,8 +115,6 @@ BarWidget {
                : "transparent"
           border.width: agentState === "idle" ? 1 : 0
           border.color: "#9E9E9E"
-          // The dot reports the agent, not the workspace's own dimming.
-          opacity: button.opacity > 0 ? 1 / button.opacity : 1
         }
       }
     }

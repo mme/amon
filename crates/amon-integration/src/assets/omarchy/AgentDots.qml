@@ -16,21 +16,28 @@ Item {
   // Workspaces absent from this map show nothing.
   property var stateByWorkspace: ({})
 
-  // Agent id -> { workspace, state, seen }. The daemon sends whole entries,
-  // and an entry disappears when its wrapper disconnects (ADR-0002).
+  // Agent id -> { workspace, state }. The daemon sends whole entries, and an
+  // entry disappears when its wrapper disconnects (ADR-0002).
   property var agents: ({})
 
+  // Resolved the way the daemon resolves it: an explicit socket wins, then the
+  // runtime directory. Without either there is nothing to connect to — the
+  // daemon's last-resort path is per-uid and not derivable from QML.
   readonly property string socketPath: {
+    const explicit = Quickshell.env("AMON_DAEMON_SOCKET")
+    if (explicit && explicit.length > 0) return explicit
     const runtime = Quickshell.env("XDG_RUNTIME_DIR")
-    // Without a runtime dir there is nothing to connect to; the daemon's
-    // fallback location is per-uid and not derivable from here.
     return runtime && runtime.length > 0 ? runtime + "/amon/amond.sock" : ""
   }
 
-  // Most urgent first. A finished agent nobody has looked at outranks one that
-  // is still working: the dot exists to say "this wants you", and a working
-  // agent wants nothing.
-  readonly property var order: ["blocked", "done", "working", "idle"]
+  // Most urgent first, matching the order the registry itself sorts by.
+  readonly property var order: ["blocked", "working", "done", "idle"]
+
+  // Events that arrived before the seed. Applying them first and the seed
+  // afterwards would let the snapshot resurrect an agent that has already gone,
+  // or rewind one that has already moved on.
+  property bool seeded: false
+  property var pending: []
 
   function rank(state) {
     const at = root.order.indexOf(state)
@@ -42,7 +49,6 @@ Item {
     for (const id in root.agents) {
       const agent = root.agents[id]
       if (!agent.workspace) continue          // ssh, tmux, unmapped: not ours to place
-      if (!agent.state) continue
       const previous = next[agent.workspace]
       if (previous === undefined || root.rank(agent.state) < root.rank(previous))
         next[agent.workspace] = agent.state
@@ -62,22 +68,39 @@ Item {
   function remember(entry) {
     if (!entry || !entry.id) return
     const state = root.displayState(entry)
-    if (state === "") {
-      delete root.agents[entry.id]
-    } else {
-      root.agents[entry.id] = { workspace: entry.workspace || "", state: state }
-    }
-    root.recompute()
+    if (state === "") delete root.agents[entry.id]
+    else root.agents[entry.id] = { workspace: entry.workspace || "", state: state }
   }
 
   function forget(id) {
-    delete root.agents[id]
-    root.recompute()
+    if (id) delete root.agents[id]
   }
 
-  function clear() {
+  function reset() {
     root.agents = ({})
     root.stateByWorkspace = ({})
+    root.seeded = false
+    root.pending = []
+  }
+
+  function applyEvent(frame) {
+    if (frame.event === "agent_connected" || frame.event === "agent_updated")
+      root.remember(frame.params)
+    else if (frame.event === "agent_disconnected")
+      root.forget(frame.params ? frame.params.id : "")
+  }
+
+  // The reply to `status`, which seeds everything already running: `subscribe`
+  // only registers for what happens next, so without this an agent started
+  // before the bar came up would stay invisible.
+  function seed(agents) {
+    root.agents = ({})
+    for (let i = 0; i < agents.length; i++) root.remember(agents[i])
+    root.seeded = true
+    const buffered = root.pending
+    root.pending = []
+    for (let i = 0; i < buffered.length; i++) root.applyEvent(buffered[i])
+    root.recompute()
   }
 
   function handle(line) {
@@ -88,59 +111,73 @@ Item {
       return
     }
 
-    // Events the daemon pushes.
-    if (frame.event === "agent_connected" || frame.event === "agent_updated")
-      return root.remember(frame.params)
-    if (frame.event === "agent_disconnected")
-      return root.forget(frame.params ? frame.params.id : "")
-
-    // The reply to `status`, which seeds everything already running:
-    // `subscribe` only registers for what happens next, so without this an
-    // agent started before the bar came up would stay invisible.
-    if (frame.id === "amon-status" && frame.result && frame.result.agents) {
-      const agents = frame.result.agents
-      for (let i = 0; i < agents.length; i++) root.remember(agents[i])
+    if (frame.event !== undefined) {
+      if (!root.seeded) {
+        // Bounded: a daemon that never answers `status` must not grow this
+        // without limit.
+        if (root.pending.length < 512) root.pending.push(frame)
+        return
+      }
+      root.applyEvent(frame)
+      root.recompute()
+      return
     }
+
+    if (frame.id === "amon-status" && frame.result && frame.result.agents)
+      root.seed(frame.result.agents)
   }
 
-  Socket {
-    id: sock
-    path: root.socketPath
+  // Recreated rather than reopened. Quickshell keeps its internal socket after
+  // a failed connect, so assigning `connected` again does nothing: the object
+  // itself has to go. The bar starts at login before any daemon exists, which
+  // makes this the ordinary path rather than an edge case.
+  Component {
+    id: linkComponent
 
-    // Set imperatively rather than bound: the shell starts at login, before
-    // any daemon exists, so reconnecting is the ordinary path and not an edge
-    // case. A binding here would be re-evaluated to its original value and
-    // fight every attempt to reopen the socket.
-    Component.onCompleted: if (root.socketPath !== "") sock.connected = true
+    Socket {
+      path: root.socketPath
+      connected: true
 
-    parser: SplitParser {
-      splitMarker: "\n"
-      onRead: line => root.handle(line)
-    }
+      parser: SplitParser {
+        splitMarker: "\n"
+        onRead: line => root.handle(line)
+      }
 
-    onConnectionStateChanged: {
-      if (sock.connected) {
-        sock.write('{"id":"amon-hello","method":"hello","params":{"role":"subscriber","protocol":1,"version":"omarchy-widget"}}\n')
-        // Subscribe first, then ask for the current set: the other order can
-        // drop an agent that registers in between.
-        sock.write('{"id":"amon-subscribe","method":"subscribe"}\n')
-        sock.write('{"id":"amon-status","method":"status"}\n')
-        sock.flush()
-      } else {
-        // Never show a stale dot: what amon can no longer see, the bar does
-        // not claim to know.
-        root.clear()
-        retry.restart()
+      onConnectionStateChanged: {
+        if (connected) {
+          root.reset()
+          write('{"id":"amon-hello","method":"hello","params":{"role":"subscriber","protocol":1,"version":"omarchy-widget"}}\n')
+          // Subscribe first, then ask for the current set: the other order can
+          // drop an agent that registers in between.
+          write('{"id":"amon-subscribe","method":"subscribe"}\n')
+          write('{"id":"amon-status","method":"status"}\n')
+          flush()
+        } else {
+          // Never show a stale dot: what amon can no longer see, the bar does
+          // not claim to know.
+          root.reset()
+        }
       }
     }
   }
 
-  // Keeps trying for as long as there is no daemon. Never starts one.
+  Loader {
+    id: link
+    active: root.socketPath !== ""
+    sourceComponent: linkComponent
+  }
+
+  // Keeps trying for as long as there is no daemon, and never starts one.
+  // Rebuilding the loader is what actually retries; a failed Socket will not
+  // reconnect in place.
   Timer {
-    id: retry
     interval: 2000
     repeat: true
-    running: !sock.connected && root.socketPath !== ""
-    onTriggered: sock.connected = true
+    running: root.socketPath !== ""
+    onTriggered: {
+      if (link.item && link.item.connected) return
+      link.active = false
+      link.active = true
+    }
   }
 }

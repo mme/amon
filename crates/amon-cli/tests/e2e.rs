@@ -820,24 +820,85 @@ fn installing_the_omarchy_widget_leaves_the_bar_config_alone() {
 }
 
 #[test]
-fn the_omarchy_widget_can_be_reinstalled_and_removed() {
+fn reinstalling_restores_a_widget_someone_broke() {
     let sandbox = Sandbox::new();
     let plugin = sandbox.config_path(PLUGIN_DIR);
 
     sandbox.run(&["install", "omarchy"]);
-    let first: Vec<_> = read_dir_names(&plugin);
+    let widget = plugin.join("AgentDots.qml");
+    let original = std::fs::read_to_string(&widget).expect("installed");
+    std::fs::write(&widget, "corrupted").expect("corrupt it");
+
     sandbox.run(&["install", "omarchy"]);
+
     assert_eq!(
-        first,
-        read_dir_names(&plugin),
-        "installing twice is a no-op"
+        std::fs::read_to_string(&widget).expect("still there"),
+        original,
+        "reinstalling rewrites every file, not just the missing ones"
     );
+}
+
+#[test]
+fn a_widget_someone_broke_is_not_reported_current() {
+    // The point of reporting currency is catching a widget that no longer
+    // matches the daemon it parses; a version string alone cannot do that.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["install", "omarchy"]);
+    let widget = sandbox.config_path(PLUGIN_DIR).join("Workspaces.qml");
+    std::fs::write(&widget, "not the widget we shipped").expect("corrupt it");
+
+    let listed = read_to_string(&sandbox.run(&["integrations"]).stdout[..]);
+    let line = listed
+        .lines()
+        .find(|line| line.starts_with("omarchy"))
+        .unwrap_or_default();
+
+    assert!(
+        !line.contains("current"),
+        "a broken install must not claim to be current: {line}"
+    );
+}
+
+#[test]
+fn uninstalling_removes_amons_files_and_nothing_else() {
+    let sandbox = Sandbox::new();
+    let plugin = sandbox.config_path(PLUGIN_DIR);
+    sandbox.run(&["install", "omarchy"]);
+
+    // Something the user put there. Whatever it is, it is not amon's to delete.
+    let theirs = plugin.join("notes.md");
+    std::fs::write(&theirs, "mine").expect("write");
 
     let output = sandbox.run(&["uninstall", "omarchy"]);
+
     assert!(output.status.success(), "{output:?}");
-    assert!(
-        !plugin.exists(),
-        "uninstall removes exactly what install added"
+    assert!(!plugin.join("manifest.json").exists(), "amon's file goes");
+    assert!(!plugin.join("AgentDots.qml").exists(), "amon's file goes");
+    assert_eq!(
+        std::fs::read_to_string(&theirs).expect("theirs survives"),
+        "mine",
+        "a file amon did not write survives, and keeps the directory alive"
+    );
+}
+
+#[test]
+fn a_plugin_directory_amon_did_not_write_is_left_alone() {
+    // Someone else's plugin under the same id, or a dotfiles checkout linked
+    // into place: overwriting or deleting it would destroy their files.
+    let sandbox = Sandbox::new();
+    let plugin = sandbox.config_path(PLUGIN_DIR);
+    std::fs::create_dir_all(&plugin).expect("their dir");
+    let theirs = r#"{"id":"someone.else"}"#;
+    std::fs::write(plugin.join("manifest.json"), theirs).expect("their file");
+
+    let install = sandbox.run(&["install", "omarchy"]);
+    assert!(!install.status.success(), "install refuses");
+    let uninstall = sandbox.run(&["uninstall", "omarchy"]);
+    assert!(!uninstall.status.success(), "uninstall refuses");
+
+    assert_eq!(
+        std::fs::read_to_string(plugin.join("manifest.json")).expect("untouched"),
+        theirs
     );
 }
 
@@ -860,16 +921,6 @@ fn integrations_reports_the_desktop_widget_alongside_the_agents() {
     assert!(line.contains("current"), "now current: {after}");
     // Agent integrations are still listed; the desktop one is an addition.
     assert!(after.contains("claude"), "{after}");
-}
-
-fn read_dir_names(dir: &std::path::Path) -> Vec<String> {
-    let mut names: Vec<String> = std::fs::read_dir(dir)
-        .expect("plugin dir")
-        .flatten()
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .collect();
-    names.sort();
-    names
 }
 
 #[test]
