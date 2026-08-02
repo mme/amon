@@ -765,6 +765,113 @@ fn status_says_so_when_nothing_is_running() {
     assert!(String::from_utf8_lossy(&output.stdout).contains("no agents running"));
 }
 
+/// Where Omarchy discovers third-party plugins, relative to the config dir.
+const PLUGIN_DIR: &str = "omarchy/plugins/sh.amon.workspaces";
+
+#[test]
+fn installing_the_omarchy_widget_puts_it_where_the_shell_looks() {
+    let sandbox = Sandbox::new();
+
+    let output = sandbox.run(&["install", "omarchy"]);
+    assert!(output.status.success(), "{output:?}");
+
+    let plugin = sandbox.config_path(PLUGIN_DIR);
+    let manifest = std::fs::read_to_string(plugin.join("manifest.json")).expect("a manifest");
+    let manifest: serde_json::Value = serde_json::from_str(&manifest).expect("valid json");
+
+    // The contract Omarchy loads a plugin by. A manifest it cannot read is the
+    // one failure with no symptom: the widget just never appears.
+    assert_eq!(manifest["id"], "sh.amon.workspaces");
+    assert_eq!(manifest["schemaVersion"], 1);
+    assert_eq!(manifest["kinds"], serde_json::json!(["bar-widget"]));
+    let entry = manifest["entryPoints"]["barWidget"]
+        .as_str()
+        .expect("entry");
+    assert!(
+        plugin.join(entry).exists(),
+        "the manifest's entry point must be installed: {entry}"
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("omarchy plugin enable sh.amon.workspaces")
+            && stdout.contains("omarchy bar plugin add sh.amon.workspaces"),
+        "the user is told how to enable it: {stdout}"
+    );
+}
+
+#[test]
+fn installing_the_omarchy_widget_leaves_the_bar_config_alone() {
+    // shell.json becomes the user's canonical file once they touch it, and
+    // Omarchy does not deep-merge — so amon writing into it could silently
+    // discard a layout they chose.
+    let sandbox = Sandbox::new();
+    let shell_json = sandbox.config_path("omarchy/shell.json");
+    std::fs::create_dir_all(shell_json.parent().unwrap()).expect("config dir");
+    std::fs::write(&shell_json, "{\"mine\":true}").expect("write shell.json");
+
+    sandbox.run(&["install", "omarchy"]);
+
+    assert_eq!(
+        std::fs::read_to_string(&shell_json).expect("still there"),
+        "{\"mine\":true}",
+        "the user's bar config must be untouched"
+    );
+}
+
+#[test]
+fn the_omarchy_widget_can_be_reinstalled_and_removed() {
+    let sandbox = Sandbox::new();
+    let plugin = sandbox.config_path(PLUGIN_DIR);
+
+    sandbox.run(&["install", "omarchy"]);
+    let first: Vec<_> = read_dir_names(&plugin);
+    sandbox.run(&["install", "omarchy"]);
+    assert_eq!(
+        first,
+        read_dir_names(&plugin),
+        "installing twice is a no-op"
+    );
+
+    let output = sandbox.run(&["uninstall", "omarchy"]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !plugin.exists(),
+        "uninstall removes exactly what install added"
+    );
+}
+
+#[test]
+fn integrations_reports_the_desktop_widget_alongside_the_agents() {
+    let sandbox = Sandbox::new();
+
+    let before = read_to_string(&sandbox.run(&["integrations"]).stdout[..]);
+    assert!(
+        before.contains("omarchy") && before.contains("not installed"),
+        "an uninstalled widget is listed as such: {before}"
+    );
+
+    sandbox.run(&["install", "omarchy"]);
+    let after = read_to_string(&sandbox.run(&["integrations"]).stdout[..]);
+    let line = after
+        .lines()
+        .find(|line| line.starts_with("omarchy"))
+        .unwrap_or_default();
+    assert!(line.contains("current"), "now current: {after}");
+    // Agent integrations are still listed; the desktop one is an addition.
+    assert!(after.contains("claude"), "{after}");
+}
+
+fn read_dir_names(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .expect("plugin dir")
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
 #[test]
 fn unknown_install_targets_are_rejected_with_the_list() {
     let sandbox = Sandbox::new();
@@ -773,6 +880,10 @@ fn unknown_install_targets_are_rejected_with_the_list() {
 
     assert!(!output.status.success());
     let stderr = read_to_string(&output.stderr[..]);
-    assert!(stderr.contains("unknown agent: notanagent"), "{stderr}");
+    assert!(stderr.contains("unknown target: notanagent"), "{stderr}");
     assert!(stderr.contains("claude"), "the list is offered: {stderr}");
+    assert!(
+        stderr.contains("omarchy"),
+        "desktops are installable too, so they are listed: {stderr}"
+    );
 }

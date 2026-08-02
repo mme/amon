@@ -49,15 +49,15 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Install an agent's integration hooks, for richer session data
+    /// Install an integration: an agent's hooks, or a desktop's widget
     Install {
-        /// Agent to install for, e.g. `claude`
-        agent: String,
+        /// What to install for, e.g. `claude` or `omarchy`
+        target: String,
     },
-    /// Remove an agent's integration hooks
+    /// Remove an installed integration
     Uninstall {
-        /// Agent to uninstall from
-        agent: String,
+        /// What to uninstall from
+        target: String,
     },
     /// Which integrations are installed, and how current
     Integrations,
@@ -128,8 +128,8 @@ fn main() -> ExitCode {
     let result = match cli.command {
         Command::Agent(argv) => return run_agent(&argv),
         Command::Status { json } => run_status(json),
-        Command::Install { agent } => run_install(&agent),
-        Command::Uninstall { agent } => run_uninstall(&agent),
+        Command::Install { target } => run_install(&target),
+        Command::Uninstall { target } => run_uninstall(&target),
         Command::Integrations => run_integrations(),
         Command::Daemon => run_daemon(),
         Command::Hook(report) => run_hook(report),
@@ -261,17 +261,25 @@ fn fetch_status() -> Result<Vec<AgentEntry>, Box<dyn std::error::Error>> {
     Ok(status.agents)
 }
 
-fn run_install(agent: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let target = require_target(agent)?;
-    for message in amon_integration::install(target)? {
+fn run_install(target: &str) -> Result<(), Box<dyn std::error::Error>> {
+    // A desktop target installs a subscriber rather than an agent hook; same
+    // verb, different direction.
+    let messages = match amon_integration::desktop::parse_target(target) {
+        Some(desktop) => amon_integration::desktop::install(desktop)?,
+        None => amon_integration::install(require_target(target)?)?,
+    };
+    for message in messages {
         println!("{message}");
     }
     Ok(())
 }
 
-fn run_uninstall(agent: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let target = require_target(agent)?;
-    for message in amon_integration::uninstall(target)? {
+fn run_uninstall(target: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let messages = match amon_integration::desktop::parse_target(target) {
+        Some(desktop) => amon_integration::desktop::uninstall(desktop)?,
+        None => amon_integration::uninstall(require_target(target)?)?,
+    };
+    for message in messages {
         println!("{message}");
     }
     Ok(())
@@ -281,41 +289,67 @@ fn require_target(
     name: &str,
 ) -> Result<amon_integration::IntegrationTarget, Box<dyn std::error::Error>> {
     amon_integration::parse_target(name)
-        .ok_or_else(|| format!("unknown agent: {name}\n{}", known_agents()).into())
+        .ok_or_else(|| format!("unknown target: {name}\n{}", known_targets()).into())
 }
 
-fn known_agents() -> String {
-    let names: Vec<&str> = amon_integration::all_targets()
+fn known_targets() -> String {
+    let mut names: Vec<&str> = amon_integration::all_targets()
         .into_iter()
         .map(amon_integration::target_label)
         .collect();
-    format!("known agents: {}", names.join(", "))
+    names.extend(
+        amon_integration::DesktopTarget::ALL
+            .into_iter()
+            .map(amon_integration::DesktopTarget::label),
+    );
+    format!("known targets: {}", names.join(", "))
 }
 
 fn run_integrations() -> Result<(), Box<dyn std::error::Error>> {
     for status in amon_integration::statuses() {
-        let state = match status.state {
-            amon_integration::InstallState::NotInstalled => "not installed".to_string(),
-            amon_integration::InstallState::Current => {
-                format!("current (v{})", status.expected_version)
-            }
-            amon_integration::InstallState::Outdated => format!(
-                "outdated (v{} < v{})",
-                status
-                    .installed_version
-                    .map(|version| version.to_string())
-                    .unwrap_or_else(|| "?".into()),
-                status.expected_version
-            ),
-        };
-        println!(
-            "{:<12} {:<24} {}",
+        let installed = status
+            .installed_version
+            .map(|version| version.to_string())
+            .unwrap_or_else(|| "?".into());
+        print_integration(
             status.label,
-            state,
-            status.path.display()
+            &describe_state(
+                status.state,
+                &installed,
+                &status.expected_version.to_string(),
+            ),
+            &status.path,
+        );
+    }
+    // Desktop integrations report the same three states; only their version is
+    // a string rather than a number.
+    for status in amon_integration::desktop::statuses() {
+        let installed = status.installed_version.unwrap_or_else(|| "?".into());
+        print_integration(
+            status.label,
+            &describe_state(status.state, &installed, &status.expected_version),
+            &status.path,
         );
     }
     Ok(())
+}
+
+fn describe_state(
+    state: amon_integration::InstallState,
+    installed: &str,
+    expected: &str,
+) -> String {
+    match state {
+        amon_integration::InstallState::NotInstalled => "not installed".to_string(),
+        amon_integration::InstallState::Current => format!("current (v{expected})"),
+        amon_integration::InstallState::Outdated => {
+            format!("outdated (v{installed} < v{expected})")
+        }
+    }
+}
+
+fn print_integration(label: &str, state: &str, path: &std::path::Path) {
+    println!("{:<12} {:<24} {}", label, state, path.display());
 }
 
 /// The relay for hooks that cannot speak the socket protocol directly and

@@ -30,9 +30,11 @@ pub(crate) mod noninteractive_process;
 pub mod integration;
 
 mod api_surface;
+pub mod desktop;
 
 pub use api::schema::IntegrationTarget;
 pub use api_surface::{
     all_targets, install, outdated_notice, parse_target, statuses, target_label, uninstall,
     InstallState, Status,
 };
+pub use desktop::{DesktopStatus, DesktopTarget};

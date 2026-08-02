@@ -41,7 +41,15 @@ impl Sandbox {
         // Detection must see this build's bundled manifests, not whatever
         // remote manifest cache the developer's machine has accumulated.
         command.env("XDG_STATE_HOME", self.runtime.join("state"));
+        // Desktop integrations write into the user's config; a test must never
+        // reach the developer's real Omarchy setup.
+        command.env("XDG_CONFIG_HOME", self.runtime.join("config"));
         command
+    }
+
+    /// Where a desktop integration installs to, inside this sandbox.
+    pub fn config_path(&self, relative: &str) -> PathBuf {
+        self.runtime.join("config").join(relative)
     }
 
     pub fn run(&self, args: &[&str]) -> std::process::Output {

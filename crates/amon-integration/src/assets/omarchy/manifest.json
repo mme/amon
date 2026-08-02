@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "sh.amon.workspaces",
+  "name": "Workspaces (amon)",
+  "version": "1.0.0",
+  "author": "amon",
+  "description": "Workspace number indicators, with a dot showing the most urgent agent state on each workspace",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Workspaces.qml"
+  },
+  "barWidget": {
+    "displayName": "Workspaces (amon)",
+    "description": "Workspace numbers with amon agent state",
+    "category": "Compositor",
+    "allowMultiple": false
+  }
+}
