@@ -84,7 +84,21 @@ BarWidget {
         readonly property bool focused: Hyprland.focusedWorkspace !== null && Hyprland.focusedWorkspace.id === modelData
 
         bar: root.bar
-        text: focused ? "󱓻" : (modelData === 10 ? "0" : String(modelData))
+        // amon: the workspace's own agent state, replacing the number.
+        //
+        // Built with String.fromCodePoint rather than "\uXXXX": QML's escape
+        // takes exactly four hex digits, and the Material icons live above
+        // U+FFFF, so "\uF051F" would silently parse as U+F051 followed by "F".
+        readonly property string agentState: dots.stateByWorkspace[String(modelData)] || ""
+        // Focus wins: which workspace you are on is something only this widget
+        // says, while an agent's state is also a dot away in `amon status`.
+        text: focused ? "󱓻"
+            : agentState === "working" ? String.fromCodePoint(0xF051F)   // timer sand
+            : agentState === "blocked" ? String.fromCodePoint(0xF0026)   // alert
+            : agentState === "done" ? String.fromCodePoint(0xF05E0)      // check circle
+            // An agent that is idle and has been seen wants nothing, so the
+            // workspace goes back to looking like any other.
+            : (modelData === 10 ? "0" : String(modelData))
         opacity: occupied || focused ? 1 : 0.5
         horizontalMargin: 6
         verticalPadding: 6
@@ -92,30 +106,6 @@ BarWidget {
         fixedHeight: root.barSize
         onPressed: function() { root.focusWorkspace(modelData) }
 
-        // amon: agent state for this workspace. Sits inside the button's own
-        // top padding so the bar keeps its height, and is absent entirely when
-        // the workspace has no agents.
-        Rectangle {
-          readonly property string agentState: dots.stateByWorkspace[String(button.modelData)] || ""
-
-          visible: agentState !== ""
-          width: 5
-          height: 5
-          radius: width / 2
-          anchors.horizontalCenter: parent.horizontalCenter
-          anchors.top: parent.top
-          anchors.topMargin: 2
-
-          // Hollow for an idle agent already seen; filled for anything that is
-          // new, working, or waiting.
-          color: agentState === "idle" ? "transparent"
-               : agentState === "working" ? "#304FFE"
-               : agentState === "done" ? "#00C853"
-               : agentState === "blocked" ? "#FF6D00"
-               : "transparent"
-          border.width: agentState === "idle" ? 1 : 0
-          border.color: "#9E9E9E"
-        }
       }
     }
   }
