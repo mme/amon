@@ -795,7 +795,11 @@ fn installing_the_omarchy_widget_puts_it_where_the_shell_looks() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("omarchy plugin enable sh.amon.workspaces")
-            && stdout.contains("omarchy bar plugin add sh.amon.workspaces"),
+            // Positioned against the built-in before it is removed: the left
+            // section anchors on omarchy.workspaces, so removing it first
+            // leaves the widget with nowhere to go but the centre.
+            && stdout
+                .contains("omarchy bar plugin add sh.amon.workspaces --after omarchy.workspaces"),
         "the user is told how to enable it: {stdout}"
     );
 }

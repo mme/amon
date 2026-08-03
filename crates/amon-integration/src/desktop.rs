@@ -194,10 +194,16 @@ pub fn install(target: DesktopTarget) -> io::Result<Vec<String>> {
     Ok(vec![
         format!("installed {} to {}", id, directory.display()),
         String::new(),
-        "Enable it, then put it in the bar in place of the built-in workspaces:".to_string(),
+        "Enable it, then put it in the bar where the built-in workspaces are:".to_string(),
         format!("  omarchy plugin enable {id}"),
-        format!("  omarchy bar plugin add {id}"),
+        format!("  omarchy bar plugin add {id} --after omarchy.workspaces"),
         "  omarchy bar plugin remove omarchy.workspaces".to_string(),
+        String::new(),
+        // `add` positions relative to a section anchor, and the left section's
+        // anchor is omarchy.workspaces itself — so removing it first leaves
+        // nothing to anchor to and the widget lands in the centre instead.
+        "(in that order: removing the built-in first would leave the bar with".to_string(),
+        " nothing to position this next to, and it would land in the centre)".to_string(),
     ])
 }
 
