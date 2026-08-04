@@ -829,7 +829,7 @@ fn reinstalling_restores_a_widget_someone_broke() {
     let plugin = sandbox.config_path(PLUGIN_DIR);
 
     sandbox.run(&["install", "omarchy"]);
-    let widget = plugin.join("AgentDots.qml");
+    let widget = plugin.join("AgentStates.qml");
     let original = std::fs::read_to_string(&widget).expect("installed");
     std::fs::write(&widget, "corrupted").expect("corrupt it");
 
@@ -876,7 +876,7 @@ fn uninstalling_removes_amons_files_and_nothing_else() {
     let output = sandbox.run(&["uninstall", "omarchy"]);
 
     assert!(output.status.success(), "{output:?}");
-    for ours in ["manifest.json", "AgentDots.qml", "Workspaces.qml"] {
+    for ours in ["manifest.json", "AgentStates.qml", "Workspaces.qml"] {
         assert!(!plugin.join(ours).exists(), "{ours} goes");
     }
     assert_eq!(
@@ -999,5 +999,135 @@ fn unknown_install_targets_are_rejected_with_the_list() {
     assert!(
         stderr.contains("omarchy"),
         "desktops are installable too, so they are listed: {stderr}"
+    );
+}
+
+/// `amon install <agent>` refuses when the agent itself is not there, so a
+/// test about aliases has to put its config directory in place first.
+fn agent_is_installed(sandbox: &Sandbox, config: &str) {
+    std::fs::create_dir_all(sandbox.home_path(config)).expect("agent config dir");
+}
+
+fn bashrc(sandbox: &Sandbox) -> String {
+    std::fs::read_to_string(sandbox.home_path(".bashrc")).unwrap_or_default()
+}
+
+#[test]
+fn installing_an_agent_aliases_its_own_name() {
+    let sandbox = Sandbox::new();
+    agent_is_installed(&sandbox, ".claude");
+
+    let output = sandbox.run(&["install", "claude"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let rc = bashrc(&sandbox);
+    assert!(
+        rc.contains("alias claude='amon claude'"),
+        "typing claude has to run it under amon: {rc}"
+    );
+}
+
+#[test]
+fn aliasing_can_be_declined() {
+    let sandbox = Sandbox::new();
+    agent_is_installed(&sandbox, ".claude");
+
+    sandbox.run(&["install", "claude", "--no-alias"]);
+
+    assert!(
+        !sandbox.home_path(".bashrc").exists(),
+        "the shell config is not touched at all"
+    );
+}
+
+#[test]
+fn reinstalling_does_not_repeat_the_block() {
+    let sandbox = Sandbox::new();
+    agent_is_installed(&sandbox, ".claude");
+
+    sandbox.run(&["install", "claude"]);
+    sandbox.run(&["install", "claude"]);
+
+    let rc = bashrc(&sandbox);
+    assert_eq!(rc.matches("# >>> amon >>>").count(), 1, "{rc}");
+    assert_eq!(rc.matches("alias claude=").count(), 1, "{rc}");
+}
+
+#[test]
+fn a_second_agent_joins_the_same_block() {
+    let sandbox = Sandbox::new();
+    agent_is_installed(&sandbox, ".claude");
+    agent_is_installed(&sandbox, ".codex");
+
+    sandbox.run(&["install", "claude"]);
+    sandbox.run(&["install", "codex"]);
+
+    let rc = bashrc(&sandbox);
+    assert_eq!(
+        rc.matches("# >>> amon >>>").count(),
+        1,
+        "one block for all of them: {rc}"
+    );
+    assert!(rc.contains("alias claude='amon claude'"), "{rc}");
+    assert!(rc.contains("alias codex='amon codex'"), "{rc}");
+}
+
+#[test]
+fn uninstalling_one_agent_leaves_the_others_alias_alone() {
+    let sandbox = Sandbox::new();
+    agent_is_installed(&sandbox, ".claude");
+    agent_is_installed(&sandbox, ".codex");
+    sandbox.run(&["install", "claude"]);
+    sandbox.run(&["install", "codex"]);
+
+    let output = sandbox.run(&["uninstall", "claude"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let rc = bashrc(&sandbox);
+    assert!(!rc.contains("alias claude="), "its own line goes: {rc}");
+    assert!(
+        rc.contains("alias codex='amon codex'"),
+        "the other stays: {rc}"
+    );
+}
+
+#[test]
+fn uninstalling_the_last_agent_takes_the_block_with_it() {
+    let sandbox = Sandbox::new();
+    agent_is_installed(&sandbox, ".claude");
+    std::fs::write(sandbox.home_path(".bashrc"), "# theirs\nexport EDITOR=hx\n").expect("write");
+    sandbox.run(&["install", "claude"]);
+
+    sandbox.run(&["uninstall", "claude"]);
+
+    assert_eq!(
+        bashrc(&sandbox),
+        "# theirs\nexport EDITOR=hx\n",
+        "the file goes back to exactly what it was"
+    );
+}
+
+#[test]
+fn a_symlinked_shell_config_is_not_followed() {
+    // A ~/.bashrc symlinked into a dotfiles checkout is a file in someone's
+    // repository; writing through the link would edit it.
+    let sandbox = Sandbox::new();
+    agent_is_installed(&sandbox, ".claude");
+    let real = sandbox.home_path("dotfiles-bashrc");
+    std::fs::write(&real, "# theirs\n").expect("write");
+    std::os::unix::fs::symlink(&real, sandbox.home_path(".bashrc")).expect("symlink");
+
+    let output = sandbox.run(&["install", "claude"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        std::fs::read_to_string(&real).expect("still there"),
+        "# theirs\n",
+        "the file behind the symlink is untouched"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("alias claude='amon claude'"),
+        "and the user is told the line to add themselves: {stdout}"
     );
 }

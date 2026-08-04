@@ -53,7 +53,12 @@ impl Sandbox {
 
     /// Where a desktop integration installs to, inside this sandbox.
     pub fn config_path(&self, relative: &str) -> PathBuf {
-        self.runtime.join("home").join(".config").join(relative)
+        self.home_path(".config").join(relative)
+    }
+
+    /// A path inside this sandbox's home directory.
+    pub fn home_path(&self, relative: &str) -> PathBuf {
+        self.runtime.join("home").join(relative)
     }
 
     pub fn run(&self, args: &[&str]) -> std::process::Output {

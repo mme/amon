@@ -53,6 +53,9 @@ enum Command {
     Install {
         /// What to install for, e.g. `claude` or `omarchy`
         target: String,
+        /// Do not alias the agent's own name to run it under amon
+        #[arg(long)]
+        no_alias: bool,
     },
     /// Remove an installed integration
     Uninstall {
@@ -128,7 +131,7 @@ fn main() -> ExitCode {
     let result = match cli.command {
         Command::Agent(argv) => return run_agent(&argv),
         Command::Status { json } => run_status(json),
-        Command::Install { target } => run_install(&target),
+        Command::Install { target, no_alias } => run_install(&target, no_alias),
         Command::Uninstall { target } => run_uninstall(&target),
         Command::Integrations => run_integrations(),
         Command::Daemon => run_daemon(),
@@ -261,12 +264,21 @@ fn fetch_status() -> Result<Vec<AgentEntry>, Box<dyn std::error::Error>> {
     Ok(status.agents)
 }
 
-fn run_install(target: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn run_install(target: &str, no_alias: bool) -> Result<(), Box<dyn std::error::Error>> {
     // A desktop target installs a subscriber rather than an agent hook; same
-    // verb, different direction.
+    // verb, different direction. It gets no alias: nothing is typed to start a
+    // bar widget.
     let messages = match amon_integration::desktop::parse_target(target) {
         Some(desktop) => amon_integration::desktop::install(desktop)?,
-        None => amon_integration::install(require_target(target)?)?,
+        None => {
+            let agent = require_target(target)?;
+            let mut messages = amon_integration::install(agent)?;
+            if !no_alias {
+                messages.push(String::new());
+                messages.extend(amon_integration::alias::install(agent)?);
+            }
+            messages
+        }
     };
     for message in messages {
         println!("{message}");
@@ -275,9 +287,16 @@ fn run_install(target: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_uninstall(target: &str) -> Result<(), Box<dyn std::error::Error>> {
+    // No flag on the way out: an alias left behind for an agent amon no longer
+    // hooks would keep taking over its name for nothing.
     let messages = match amon_integration::desktop::parse_target(target) {
         Some(desktop) => amon_integration::desktop::uninstall(desktop)?,
-        None => amon_integration::uninstall(require_target(target)?)?,
+        None => {
+            let agent = require_target(target)?;
+            let mut messages = amon_integration::uninstall(agent)?;
+            messages.extend(amon_integration::alias::uninstall(agent)?);
+            messages
+        }
     };
     for message in messages {
         println!("{message}");

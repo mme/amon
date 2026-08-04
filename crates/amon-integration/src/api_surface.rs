@@ -22,6 +22,15 @@ pub fn uninstall(target: IntegrationTarget) -> io::Result<Vec<String>> {
     integration::uninstall_target(target)
 }
 
+/// The commands an agent is actually run as, most usual first.
+///
+/// Not the same as the target's label: `cursor` is run as `cursor-agent`, and
+/// Kilo answers to two names. Aliases need the real ones, and herdr already
+/// keeps that table.
+pub fn command_names(target: IntegrationTarget) -> &'static [&'static str] {
+    integration::integration_target_command_names(target)
+}
+
 /// Whether an agent's installed hook is current, outdated, or absent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallState {

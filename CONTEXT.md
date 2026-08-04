@@ -59,6 +59,14 @@ Either way amon owns the artifact and reports whether the installed copy is
 current.
 _Avoid_: plugin, extension (what the host calls it is the host's word)
 
+**Alias**:
+The bash alias amon installs for an Agent — `alias claude='amon claude'` — so
+that running the Agent by its own name runs it under the Wrapper without anyone
+typing `amon` first. Interactive shells only: an Agent started any other way
+runs unwrapped, exactly as it would with no Alias at all.
+_Avoid_: launcher, shim (the second is taken: the crate's vendor-compatibility
+layer)
+
 **Registry**:
 The Daemon's live list of connected agents. An entry exists exactly as long as
 its Wrapper's connection; nothing is persisted.

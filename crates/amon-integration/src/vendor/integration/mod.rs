@@ -20,8 +20,8 @@ pub(crate) use env::{
     apply_pane_base_env, AMON_AGENT_ID_ENV_VAR, AMON_TAB_ID_ENV_VAR, AMON_WORKSPACE_ID_ENV_VAR,
 };
 pub(crate) use registry::{
-    installed_integration_statuses, integration_recommendations, integration_target_label,
-    print_outdated_update_notice,
+    installed_integration_statuses, integration_recommendations, integration_target_command_names,
+    integration_target_label, print_outdated_update_notice,
 };
 pub(crate) use types::{IntegrationRecommendation, IntegrationStatus, IntegrationStatusKind};
 

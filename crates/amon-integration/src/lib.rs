@@ -29,12 +29,13 @@ pub(crate) mod noninteractive_process;
 #[path = "vendor/integration/mod.rs"]
 pub mod integration;
 
+pub mod alias;
 mod api_surface;
 pub mod desktop;
 
 pub use api::schema::IntegrationTarget;
 pub use api_surface::{
-    all_targets, install, outdated_notice, parse_target, statuses, target_label, uninstall,
-    InstallState, Status,
+    all_targets, command_names, install, outdated_notice, parse_target, statuses, target_label,
+    uninstall, InstallState, Status,
 };
 pub use desktop::{DesktopStatus, DesktopTarget};
