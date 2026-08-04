@@ -14,23 +14,36 @@ decide this ADR:
   directly: `hello`, `subscribe`, then live events off `amond.sock`. No bridge
   process, no polling `amon status`, no shelling out.
 
-What we want in the bar is one dot **above each workspace number**, coloured
-by the most urgent agent state in that workspace. That placement is the whole
-point — it answers "where", not merely "whether" — and it is only reachable
-from inside the widget that draws the workspace numbers.
+What we want in the bar is the most urgent agent state of a workspace shown
+**on that workspace's own indicator**. That placement is the whole point — it
+answers "where", not merely "whether" — and it is only reachable from inside
+the widget that draws the workspace indicators, for a reason worth writing
+down because it is what closes off every alternative below:
 
-So amon ships `amon.workspaces`: a copy of Omarchy's `Workspaces.qml` with a
-dot layer added, which the user swaps in for `omarchy.workspaces` in their bar
-layout.
+> A workspace's label is not data the widget looks up. It is computed in one
+> expression, `text: focused ? … : String(modelData)`, from a `required
+> property int` fed by `Hyprland.workspaces`. The widget reads no settings, so
+> there is no label map, no icon map, and nothing a `shell.json` entry or a
+> second plugin could populate. Both ends of that expression are private to
+> the file.
+
+So amon ships `sh.amon.workspaces`: a copy of Omarchy's `Workspaces.qml` whose
+label expression consults agent state, which the user swaps in for
+`omarchy.workspaces` in their bar layout.
 
 The alternatives, and why not:
 
-- **Wrap the upstream widget** — instantiate Omarchy's `Workspaces`
-  unmodified and paint over it. No forked code, but positioning a dot over
-  each workspace button needs those buttons' geometry, which the widget does
-  not expose; it would mean walking its child items at runtime and breaking
-  silently whenever upstream restructures its layout. Brittle in a way users
-  cannot diagnose.
+- **Wrap the upstream widget** — instantiate Omarchy's `Workspaces` unmodified
+  and paint over it. No forked code, but an overlay cannot replace a label,
+  only cover it, and positioning anything per-button needs geometry the widget
+  does not expose. Reaching the buttons at all means walking its child items at
+  runtime.
+- **Rebind the labels at runtime** — a plugin in the same QML engine could walk
+  the object tree and reassign each button's `text` with `Qt.binding`. It
+  installs no forked code, but it has to re-implement upstream's focus logic
+  inside the new binding anyway, so the same lines are copied either way — just
+  invisibly, and load-order-dependently. When upstream restructures, a fork
+  fails loudly and this fails silently.
 - **Upstream a per-workspace badge hook into Omarchy** — the right long-term
   answer, and worth pursuing, but it does not exist and would put amon's
   release cadence inside someone else's.
@@ -41,21 +54,45 @@ The alternatives, and why not:
 
 Deliberately narrow, because a bar is a glance and not a report:
 
-- One dot per workspace that has agents, showing that workspace's most urgent
-  state. A workspace with no agents shows nothing.
-- Working blue, done-but-unseen green, blocked amber, idle-and-seen a hollow
-  circle. `Unknown` shows nothing — it is usually a non-agent process. Red is
-  reserved for an error state amon does not have; the four states stay
-  herdr's, and the bar invents nothing the daemon cannot observe.
+- A workspace's number is replaced by its most urgent agent state: working the
+  braille spinner, blocked a circled question mark, done-but-unseen a circled
+  check. Nothing is added beside or above the number, so the bar keeps exactly
+  the width and height it had.
+- Working animates with the same ten braille frames herdr shows in its own UI,
+  at the same 80ms, driven by one timer for the whole bar so that two working
+  workspaces step together. It is also what amon reads: ten of herdr's
+  manifests decide an agent is working by finding a braille character in its
+  title, so the bar is showing back its own evidence. Card suits were tried
+  first and abandoned — a set only animates without twitching if every frame
+  has the same ink box, and no heart in the font shares the other suits' grid.
+- A workspace whose agents are all idle-and-seen shows its plain number, the
+  same as a workspace with no agents at all. Nothing is wanted from you, so
+  nothing is asked. Setting the two apart was tried, in italic, and dropped:
+  the slant reads as noise rather than information, and upstream already draws
+  the half of it that matters, dimming a workspace holding no windows to half
+  opacity — and an agent's workspace always holds its terminal. `Unknown`
+  counts as no agent: it is usually a non-agent process, and lighting the bar
+  for it would cry wolf.
+- The focused workspace keeps upstream's focus marker, which wins over agent
+  state: which workspace you are on is something only this widget can say,
+  while an agent's state is also one `amon status` away.
+- Glyphs rather than colour, decided by building all three and looking at them
+  on a real bar. A coloured dot row reads as noise at bar height, and glyphs
+  small enough to sit above a number are indistinguishable from each other;
+  taking the number's place gives the state the full label size. There is also
+  no error state, because amon has none — the four states stay herdr's, and the
+  bar invents nothing the daemon cannot observe.
 - Agents whose workspace could not be resolved — tmux, ssh, an unmapped
   window — are absent from the bar. `amon status` remains the complete view.
-- No daemon means no dots and a quiet retry. Dots are cleared on disconnect
-  rather than left stale: an indicator that can lie is worse than a blank one.
-  The widget never starts the daemon; the bar observes, it does not summon.
+- No daemon means plain workspace numbers and a quiet retry. State is cleared
+  on disconnect rather than left stale: an indicator that can lie is worse than
+  one that says nothing. The widget never starts the daemon; the bar observes,
+  it does not summon.
 - Clicking a workspace does what it did before — switch to it. Seen-ness then
   updates itself, because arriving focuses the agent's terminal, which reports
   focus, which flips `seen` (ADR-0007), which the subscription pushes straight
-  back into the bar. The dot clears because you looked at it.
+  back into the bar. The workspace goes back to its number because you looked
+  at it.
 
 ## Consequences
 
@@ -63,10 +100,20 @@ The fork carries the cost forks carry: Omarchy improving its workspaces widget
 does not reach anyone using amon's until we re-sync. The repo already has the
 discipline for this — ADR-0005 forbids hand-editing vendored code and
 re-derives it mechanically — and the same rule applies here, with one
-addition: **the behavioural diff from upstream stays at zero.** The only
-difference is that a dot appears. Every re-sync is then a mechanical
-re-application of one layer, not a merge of two designs. That is also why the
-click behaviour was left alone.
+addition: **the behavioural diff from upstream stays at zero.** Two lines are
+replaced, `moduleName` and `text`, and one object is added. Every re-sync is
+then a mechanical re-application of three marked changes, not a merge of two
+designs. That is also why the click behaviour was left alone.
+
+The copy is checked into amon rather than derived from the machine at install
+time, which has a consequence worth stating plainly: **when Omarchy improves
+its workspaces widget, installing amon's replaces that improvement with our
+older copy, silently.** The drift tests compare the fork against a checked-in
+fixture, so they measure our copy against the version we forked, not against
+the version the user has. Deriving the widget at install — patching whatever
+`Workspaces.qml` is on the machine and failing loudly when the anchors do not
+match — would turn that silent regression into an error message, and remains
+the obvious upgrade if the fork ever falls behind in a way anyone notices.
 
 The widget is a protocol client, so it must not drift from the daemon it
 parses. It therefore ships inside amon and installs with

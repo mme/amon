@@ -3,21 +3,23 @@
 //   upstream: /usr/share/omarchy/shell/plugins/bar/widgets/Workspaces.qml
 //   taken:    2026-08-02, Omarchy Quattro (Hyprland 0.56.1, quickshell-git)
 //
-// Omarchy's bar has no way for one plugin to decorate another's widget, and a
-// dot above the workspace numbers can only be drawn by whatever draws the
-// numbers. So this is upstream's widget with one layer added and nothing else
-// changed — same rendering, same click behaviour — which is what keeps a
-// re-sync a re-application rather than a merge.
+// Omarchy's bar has no way for one plugin to decorate another's widget, and
+// the label a workspace shows is computed inside the widget that draws it:
+// `modelData` is a `required property int`, and the widget reads no settings,
+// so there is nowhere outside this file to say what a workspace displays.
+// Hence a fork — upstream's widget with the label expression rewritten and
+// nothing else changed, which is what keeps a re-sync a re-application rather
+// than a merge.
 //
 // To re-derive: copy the upstream file over this one, then re-apply exactly
-// the three additions, each marked `amon:` below —
+// the three changes, each marked `amon:` below —
 //
 //   1. `moduleName` names this plugin rather than Omarchy's
-//   2. the `AgentDots` object
-//   3. the `Rectangle` inside WidgetButton
+//   2. the `AgentStates` object
+//   3. the `agentState` property and the `text` expression that reads it
 //
-// Anything else differing from upstream is drift, and the tests in desktop.rs
-// exist to notice it.
+// Anything else differing from upstream is drift, and the tests in fork.rs and
+// desktop.rs exist to notice it.
 
 import QtQuick
 import QtQuick.Layouts
@@ -30,7 +32,7 @@ BarWidget {
   moduleName: "sh.amon.workspaces"   // amon: upstream says omarchy.workspaces
 
   // amon: the one piece of state upstream does not have.
-  AgentDots { id: dots }
+  AgentStates { id: agents }
 
   function workspaceById(id) {
     var values = Hyprland.workspaces.values
@@ -76,7 +78,6 @@ BarWidget {
       model: root.workspaceIds()
 
       WidgetButton {
-        id: button
         required property int modelData
 
         readonly property var workspace: root.workspaceById(modelData)
@@ -89,23 +90,28 @@ BarWidget {
         // Built with String.fromCodePoint rather than "\uXXXX": QML's escape
         // takes exactly four hex digits, and the Material icons live above
         // U+FFFF, so "\uF051F" would silently parse as U+F051 followed by "F".
-        readonly property string agentState: dots.stateByWorkspace[String(modelData)] || ""
+        readonly property string agentState: agents.stateByWorkspace[String(modelData)] || ""
+        readonly property string label: modelData === 10 ? "0" : String(modelData)
         // Focus wins: which workspace you are on is something only this widget
-        // says, while an agent's state is also a dot away in `amon status`.
+        // says, while an agent's state is also one `amon status` away.
         text: focused ? "󱓻"
-            : agentState === "working" ? String.fromCodePoint(0xF051F)   // timer sand
-            : agentState === "blocked" ? String.fromCodePoint(0xF0026)   // alert
+            : agentState === "working" ? agents.spinner                  // braille spinner
+            : agentState === "blocked" ? String.fromCodePoint(0xF02D7)   // help circle
             : agentState === "done" ? String.fromCodePoint(0xF05E0)      // check circle
-            // An agent that is idle and has been seen wants nothing, so the
-            // workspace goes back to looking like any other.
-            : (modelData === 10 ? "0" : String(modelData))
+            // An agent that has come to rest asks for nothing, so the workspace
+            // goes back to its number — in bold, which says an agent is here
+            // and wants nothing. Weight is free to mean that: upstream says
+            // occupancy with opacity, dimming a workspace that holds no
+            // windows, and never varies weight itself. Markup rather than a
+            // font property because the label exposes only family and size.
+            : agentState === "idle" ? "<b>" + label + "</b>"
+            : label
         opacity: occupied || focused ? 1 : 0.5
         horizontalMargin: 6
         verticalPadding: 6
         fixedWidth: root.vertical ? root.barSize : Style.space(20)
         fixedHeight: root.barSize
         onPressed: function() { root.focusWorkspace(modelData) }
-
       }
     }
   }

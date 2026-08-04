@@ -50,7 +50,7 @@ pub fn parse_target(name: &str) -> Option<DesktopTarget> {
 
 const MANIFEST: &str = include_str!("assets/omarchy/manifest.json");
 const WORKSPACES_QML: &str = include_str!("assets/omarchy/Workspaces.qml");
-const AGENT_DOTS_QML: &str = include_str!("assets/omarchy/AgentDots.qml");
+const AGENT_STATES_QML: &str = include_str!("assets/omarchy/AgentStates.qml");
 
 const MANIFEST_NAME: &str = "manifest.json";
 
@@ -60,7 +60,7 @@ const MANIFEST_NAME: &str = "manifest.json";
 /// half-written plugin must never be one that carries a current manifest.
 const ASSETS: [(&str, &str); 2] = [
     ("Workspaces.qml", WORKSPACES_QML),
-    ("AgentDots.qml", AGENT_DOTS_QML),
+    ("AgentStates.qml", AGENT_STATES_QML),
 ];
 
 /// What the widget on disk is compared against. The shipped manifest is the
@@ -327,22 +327,41 @@ mod tests {
         assert!(!expected_version().is_empty());
     }
 
+    /// The asset with its comments removed. What the widget is forbidden to do
+    /// is a property of its code; the prose above that code is free to name
+    /// `amon status` while explaining why the widget does not run it.
+    fn code_of(qml: &str) -> String {
+        qml.lines()
+            .map(|line| line.split("//").next().unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     #[test]
     fn the_widget_only_ever_connects_to_the_daemon() {
-        // The bar observes; it must not be able to start a daemon. Guarding the
-        // asset because this is a property of what we ship, not of any Rust.
-        assert!(
-            !AGENT_DOTS_QML.contains("Process") && !WORKSPACES_QML.contains("amon status"),
-            "the widget must not spawn anything"
-        );
-        assert!(AGENT_DOTS_QML.contains("amond.sock"));
+        // The bar observes: it must not be able to start a daemon, and it must
+        // not poll the CLI either. Guarding the assets because this is a
+        // property of what we ship, not of any Rust.
+        for (name, qml) in [
+            ("AgentStates.qml", AGENT_STATES_QML),
+            ("Workspaces.qml", WORKSPACES_QML),
+        ] {
+            let code = code_of(qml);
+            assert!(!code.contains("Process"), "{name} must not spawn anything");
+            assert!(
+                !code.contains("amon status"),
+                "{name} must not poll the CLI"
+            );
+        }
+        assert!(AGENT_STATES_QML.contains("amond.sock"));
     }
 
     #[test]
     fn the_fork_keeps_upstreams_behaviour() {
-        // ADR-0008: the only difference from Omarchy's widget is the dot, so
-        // the parts that make it Omarchy's widget have to still be there and
-        // still be wired up. If this drifts, every re-sync becomes a merge.
+        // ADR-0008: the only difference from Omarchy's widget is what a
+        // workspace's label says, so the parts that make it Omarchy's widget
+        // have to still be there and still be wired up. If this drifts, every
+        // re-sync becomes a merge.
         let wired = WORKSPACES_QML
             .lines()
             .any(|line| line.contains("onPressed:") && line.contains("focusWorkspace"));
@@ -374,7 +393,7 @@ mod tests {
                 .filter(|line| line.contains("// amon:"))
                 .count(),
             3,
-            "exactly the three additions ADR-0008 allows, each marked"
+            "exactly the three changes ADR-0008 allows, each marked"
         );
     }
 }

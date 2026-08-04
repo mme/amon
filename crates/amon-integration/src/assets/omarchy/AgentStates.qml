@@ -33,6 +33,35 @@ Item {
   // Most urgent first, matching the order the registry itself sorts by.
   readonly property var order: ["blocked", "working", "done", "idle"]
 
+  // A working agent shows the braille spinner, the same ten frames herdr runs
+  // in its own UI and at the same 80ms. It is also what amon's detection keys
+  // off: codex's manifest matches exactly these characters, and nine more
+  // manifests — claude, amp, cursor, droid and the rest — accept any character
+  // in the braille block as the sign of a working agent. So the bar shows back
+  // the very thing it read.
+  //
+  // Icon glyphs were tried first and abandoned. A set only animates without
+  // twitching if every frame has the same ink box, and the card suits do not:
+  // spade, diamond and club match, but every heart in the font is a pixel
+  // shorter, and no substitute exists — all 70 heart glyphs were measured, and
+  // the only ones on the suits' grid are hearts inside a circle or a card.
+  // Braille has no such problem: one cell, one advance width, dots switching on
+  // and off inside it.
+  readonly property var spinnerFrames: [
+    "⠋", "⠙", "⠹", "⠸", "⠼",
+    "⠴", "⠦", "⠧", "⠇", "⠏"
+  ]
+
+  // One tick for the whole bar, so two working workspaces spin in step instead
+  // of drifting out of phase with each other.
+  property int spinnerFrame: 0
+  readonly property string spinner: root.spinnerFrames[root.spinnerFrame]
+  readonly property bool anyWorking: {
+    for (const workspace in root.stateByWorkspace)
+      if (root.stateByWorkspace[workspace] === "working") return true
+    return false
+  }
+
   // Events that arrived before the seed. Applying them first and the seed
   // afterwards would let the snapshot resurrect an agent that has already gone,
   // or rewind one that has already moved on.
@@ -159,8 +188,8 @@ Item {
           write('{"id":"amon-status","method":"status"}\n')
           flush()
         } else {
-          // Never show a stale dot: what amon can no longer see, the bar does
-          // not claim to know.
+          // Never show a stale state: what amon can no longer see, the bar
+          // does not claim to know, so the workspaces go back to numbers.
           root.reset()
         }
       }
@@ -180,6 +209,15 @@ Item {
     root.reset()
     link.active = false
     link.active = root.socketPath !== ""
+  }
+
+  // Only while something is actually working: an idle bar animates nothing.
+  Timer {
+    interval: 80 // herdr's own cadence
+    repeat: true
+    running: root.anyWorking
+    onTriggered: root.spinnerFrame = (root.spinnerFrame + 1) % root.spinnerFrames.length
+    onRunningChanged: if (!running) root.spinnerFrame = 0
   }
 
   // Keeps trying for as long as there is no daemon, and never starts one.

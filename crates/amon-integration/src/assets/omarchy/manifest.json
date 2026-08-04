@@ -4,7 +4,7 @@
   "name": "Workspaces (amon)",
   "version": "1.0.0",
   "author": "amon",
-  "description": "Workspace number indicators, with a dot showing the most urgent agent state on each workspace",
+  "description": "Workspace indicators that show the most urgent agent state on each workspace in place of its number",
   "kinds": [
     "bar-widget"
   ],
