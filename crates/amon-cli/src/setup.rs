@@ -322,19 +322,25 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                 let hooks = amon_integration::uninstall(*target);
                 let unaliased = alias::uninstall(*target);
                 match (hooks, unaliased) {
-                    // "unaliased" only when it is true: lines stranded in a
-                    // symlinked bashrc survive `alias::uninstall`, which
-                    // refuses to write through links. Per-agent, so removing
-                    // one agent never instructs deleting the others' lines.
-                    (Ok(_), Ok(_)) => {
+                    // "unaliased" only when it is true: `alias::uninstall`
+                    // returns Ok while *refusing* to edit — a symlinked
+                    // bashrc, a truncated fence — and its notes say why.
+                    // Verify against the file and pass the notes on instead
+                    // of claiming success over a still-active alias.
+                    (Ok(_), Ok(alias_notes)) => {
                         let stranded = alias::stranded_for(*target);
-                        if stranded.is_empty() {
-                            println!("✓ {label} — hooks removed, unaliased");
-                        } else {
+                        if !stranded.is_empty() {
                             println!("✓ {label} — hooks removed");
                             for note in stranded {
                                 println!("    {}", note.trim_start());
                             }
+                        } else if alias::is_installed(*target) {
+                            println!("✓ {label} — hooks removed");
+                            for note in alias_notes {
+                                println!("    {}", note.trim_start());
+                            }
+                        } else {
+                            println!("✓ {label} — hooks removed, unaliased");
                         }
                     }
                     (Err(error), _) | (_, Err(error)) => {

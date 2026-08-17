@@ -65,11 +65,20 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("omarchy:");
     if desktop::cli_present() {
         print_line("cli", "found", "");
+        let installed = desktop::status(DesktopTarget::Omarchy).state != InstallState::NotInstalled;
         match desktop::enabled_in_bar(DesktopTarget::Omarchy) {
             Some(true) => print_line("widget", "enabled in the bar", ""),
-            Some(false) => print_line(
+            // The fix depends on what is missing: an installed widget wants
+            // enabling; an absent one wants installing first — recommending
+            // enable for a plugin the shell has never seen would just fail.
+            Some(false) if installed => print_line(
                 "widget",
                 "not in the bar (omarchy plugin enable sh.amon.workspaces)",
+                "",
+            ),
+            Some(false) => print_line(
+                "widget",
+                "not installed (amon setup installs and enables it)",
                 "",
             ),
             None => print_line("widget", "unknown (shell not reachable)", ""),
