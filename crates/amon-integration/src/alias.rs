@@ -62,24 +62,24 @@ fn is_symlink(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// The alias lines currently inside the block, in the order they appear.
+/// The alias lines inside every fenced block, in the order they appear. Every
+/// block: a hand-maintained config can end up with more than one (two agents'
+/// symlink instructions, pasted verbatim), and bash activates them all, so
+/// reading only the first would hide live aliases.
 fn aliases_in(existing: &str) -> Vec<String> {
-    let lines: Vec<&str> = existing.lines().collect();
-    let Some(begin) = lines.iter().position(|line| line.trim() == BEGIN) else {
-        return Vec::new();
-    };
-    let Some(end) = lines.iter().position(|line| line.trim() == END) else {
-        return Vec::new();
-    };
-    if end < begin {
-        return Vec::new();
+    let mut aliases = Vec::new();
+    let mut in_block = false;
+    for line in existing.lines() {
+        let trimmed = line.trim();
+        if trimmed == BEGIN {
+            in_block = true;
+        } else if trimmed == END {
+            in_block = false;
+        } else if in_block && trimmed.starts_with("alias ") {
+            aliases.push(trimmed.to_string());
+        }
     }
-    lines[begin + 1..end]
-        .iter()
-        .map(|line| line.trim())
-        .filter(|line| line.starts_with("alias "))
-        .map(str::to_string)
-        .collect()
+    aliases
 }
 
 fn block(aliases: &[String]) -> String {
@@ -95,56 +95,60 @@ fn block(aliases: &[String]) -> String {
     out
 }
 
-/// Replaces the fenced block, or appends one when it is not there yet.
-fn with_block(existing: &str, block: &str) -> String {
-    let lines: Vec<&str> = existing.lines().collect();
-    let begin = lines.iter().position(|line| line.trim() == BEGIN);
-    let end = lines.iter().position(|line| line.trim() == END);
-
-    if let (Some(begin), Some(end)) = (begin, end) {
-        if end > begin {
-            let mut out = String::new();
-            for line in &lines[..begin] {
-                out.push_str(line);
-                out.push('\n');
+/// The lines outside every fenced block, and where the first block began —
+/// the shared walk under [`with_block`] and [`without_block`].
+fn split_blocks(existing: &str) -> (Vec<&str>, Option<usize>) {
+    let mut kept = Vec::new();
+    let mut in_block = false;
+    let mut first_block = None;
+    for line in existing.lines() {
+        let trimmed = line.trim();
+        if !in_block && trimmed == BEGIN {
+            in_block = true;
+            first_block.get_or_insert(kept.len());
+        } else if in_block {
+            if trimmed == END {
+                in_block = false;
             }
-            out.push_str(block);
-            out.push('\n');
-            for line in &lines[end + 1..] {
-                out.push_str(line);
-                out.push('\n');
-            }
-            return out;
+        } else {
+            kept.push(line);
         }
     }
+    (kept, first_block)
+}
 
-    let mut out = existing.to_string();
-    if !out.is_empty() && !out.ends_with('\n') {
+/// Replaces the fenced block — every fenced block, merged into one at the
+/// first's position — or appends one when none is there yet. Collapsing
+/// duplicates matters because [`aliases_in`] feeds this the union of all
+/// blocks' lines; leaving a second block behind would double them.
+fn with_block(existing: &str, block: &str) -> String {
+    let (kept, first_block) = split_blocks(existing);
+
+    let mut out = String::new();
+    let index = first_block.unwrap_or(kept.len());
+    for line in &kept[..index] {
+        out.push_str(line);
         out.push('\n');
     }
-    if !out.is_empty() {
+    if first_block.is_none() && !out.is_empty() {
         out.push('\n');
     }
     out.push_str(block);
     out.push('\n');
-    out
-}
-
-/// Removes the fenced block, leaving the rest of the file as it was.
-fn without_block(existing: &str) -> Option<String> {
-    let lines: Vec<&str> = existing.lines().collect();
-    let begin = lines.iter().position(|line| line.trim() == BEGIN)?;
-    let end = lines.iter().position(|line| line.trim() == END)?;
-    if end < begin {
-        return None;
-    }
-
-    let mut out = String::new();
-    for line in &lines[..begin] {
+    for line in &kept[index..] {
         out.push_str(line);
         out.push('\n');
     }
-    for line in &lines[end + 1..] {
+    out
+}
+
+/// Removes every fenced block, leaving the rest of the file as it was.
+fn without_block(existing: &str) -> Option<String> {
+    let (kept, first_block) = split_blocks(existing);
+    first_block?;
+
+    let mut out = String::new();
+    for line in kept {
         out.push_str(line);
         out.push('\n');
     }
@@ -413,6 +417,36 @@ mod tests {
         // `PATH` lookup never consults aliases, so the `claude` inside is the
         // real one. That is why an alias needs no loop guard at all.
         assert_eq!(alias_line("claude"), "alias claude='amon claude'");
+    }
+
+    #[test]
+    fn two_pasted_blocks_are_read_removed_and_merged_as_one() {
+        // Two agents' symlink instructions, pasted verbatim, make two blocks.
+        // Bash activates both, so every reader must see both — and the first
+        // amon-side write must collapse them back to one.
+        let pasted = format!(
+            "mine\n{}\ntheirs\n{}\n",
+            block(&[alias_line("claude")]),
+            block(&[alias_line("codex")])
+        );
+
+        assert_eq!(
+            aliases_in(&pasted),
+            vec![alias_line("claude"), alias_line("codex")],
+            "aliases from every block are seen"
+        );
+        assert_eq!(
+            without_block(&pasted).expect("blocks found"),
+            "mine\ntheirs\n",
+            "removal takes every block"
+        );
+        let merged = with_block(
+            &pasted,
+            &block(&[alias_line("claude"), alias_line("codex")]),
+        );
+        assert_eq!(merged.matches(BEGIN).count(), 1, "one block after a write");
+        assert!(merged.contains("alias codex='amon codex'"));
+        assert!(merged.contains("theirs"), "user content survives");
     }
 
     #[test]

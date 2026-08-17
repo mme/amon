@@ -221,7 +221,15 @@ pub fn uninstall(target: DesktopTarget) -> io::Result<Vec<String>> {
     }
 
     let id = target.plugin_id();
-    let restore_note = disable_widget(id);
+    // The swap-back only happens when the *installed* manifest declares
+    // `clonedFrom` — a copy from before the manifest gained it disables
+    // without restoring anything, and claiming otherwise would hide a bar
+    // that just lost its workspace indicators.
+    let swaps_back = std::fs::read_to_string(directory.join(MANIFEST_NAME))
+        .ok()
+        .and_then(|manifest| serde_json::from_str::<serde_json::Value>(&manifest).ok())
+        .is_some_and(|manifest| manifest["omarchy"]["clonedFrom"].is_string());
+    let restore_note = disable_widget(id, swaps_back);
 
     // Manifest first, so an interrupted removal leaves something the shell no
     // longer loads rather than a plugin missing its widget.
@@ -248,14 +256,21 @@ pub fn uninstall(target: DesktopTarget) -> io::Result<Vec<String>> {
 /// that fails (shell not running, stale id) gets the manual commands — which
 /// name the *built-in*, because by the time anyone runs them this plugin's
 /// manifest is gone and only re-enabling `omarchy.workspaces` still works.
-fn disable_widget(id: &str) -> Vec<String> {
+fn disable_widget(id: &str, swaps_back: bool) -> Vec<String> {
     match std::process::Command::new("omarchy")
         .args(["plugin", "disable", id])
         .output()
     {
-        Ok(output) if output.status.success() => {
+        Ok(output) if output.status.success() && swaps_back => {
             vec!["  (restored the built-in workspaces widget)".to_string()]
         }
+        // Disabled, but nothing swapped back: the installed copy predates the
+        // clonedFrom manifest, so the shell only dropped the bar entry.
+        Ok(output) if output.status.success() => vec![
+            "the installed widget predates the in-place swap, so the built-in".to_string(),
+            "was not restored; if the bar is missing its workspaces:".to_string(),
+            "  omarchy plugin enable omarchy.workspaces".to_string(),
+        ],
         Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
         Ok(_) | Err(_) => vec![
             "could not ask omarchy to restore the built-in widget; if the bar".to_string(),

@@ -970,6 +970,39 @@ fn a_machine_without_the_omarchy_cli_uninstalls_quietly() {
 }
 
 #[test]
+fn removing_a_pre_swap_widget_does_not_claim_restoration() {
+    // A widget installed before the manifest declared clonedFrom disables
+    // without swapping the built-in back; saying "restored" would hide a bar
+    // that just lost its workspace indicators.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
+    assert!(sandbox.run(&["setup", "omarchy"]).status.success());
+    let manifest_path = sandbox.config_path(PLUGIN_DIR).join("manifest.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&manifest_path).expect("manifest"))
+            .expect("valid json");
+    manifest
+        .as_object_mut()
+        .expect("object")
+        .remove("omarchy")
+        .expect("the field to regress");
+    std::fs::write(&manifest_path, manifest.to_string()).expect("regress the manifest");
+
+    let output = sandbox.run(&["remove", "omarchy"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("(restored the built-in"),
+        "no restore claim for a pre-swap copy: {stdout}"
+    );
+    assert!(
+        stdout.contains("omarchy plugin enable omarchy.workspaces"),
+        "the fix-up is named instead: {stdout}"
+    );
+}
+
+#[test]
 fn setup_without_a_terminal_names_the_flags() {
     // A script that forgot its flag gets told what to type, never a silently
     // assumed --all: bashrc edits from an implicit default is exactly the
