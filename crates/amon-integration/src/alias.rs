@@ -95,8 +95,34 @@ fn block(aliases: &[String]) -> String {
     out
 }
 
+/// Whether a `# >>> amon >>>` fence is missing its closing marker. The block
+/// walkers treat everything inside a fence as amon's to rewrite, so a
+/// truncated fence would swallow the rest of the user's file — every writer
+/// checks this first and refuses to edit rather than destroy.
+fn fence_unterminated(existing: &str) -> bool {
+    let mut in_block = false;
+    for line in existing.lines() {
+        let trimmed = line.trim();
+        if !in_block && trimmed == BEGIN {
+            in_block = true;
+        } else if in_block && trimmed == END {
+            in_block = false;
+        }
+    }
+    in_block
+}
+
+/// The note printed instead of editing a file with a truncated fence.
+fn truncated_note(rc: &Path) -> String {
+    format!(
+        "the amon block in {} is missing its closing `{END}` — repair it by hand before amon edits this file",
+        rc.display()
+    )
+}
+
 /// The lines outside every fenced block, and where the first block began —
-/// the shared walk under [`with_block`] and [`without_block`].
+/// the shared walk under [`with_block`] and [`without_block`]. Callers have
+/// already refused files where [`fence_unterminated`] holds.
 fn split_blocks(existing: &str) -> (Vec<&str>, Option<usize>) {
     let mut kept = Vec::new();
     let mut in_block = false;
@@ -271,6 +297,9 @@ pub fn remove_all() -> io::Result<Vec<String>> {
     let Ok(existing) = std::fs::read_to_string(&rc) else {
         return Ok(Vec::new());
     };
+    if fence_unterminated(&existing) {
+        return Ok(vec![truncated_note(&rc)]);
+    }
     let Some(updated) = without_block(&existing) else {
         return Ok(Vec::new());
     };
@@ -306,6 +335,9 @@ pub fn install(target: IntegrationTarget) -> io::Result<Vec<String>> {
     }
 
     let existing = std::fs::read_to_string(&rc).unwrap_or_default();
+    if fence_unterminated(&existing) {
+        return Ok(vec![truncated_note(&rc)]);
+    }
     let mut aliases = aliases_in(&existing);
     for alias in &wanted {
         if !aliases.contains(alias) {
@@ -340,6 +372,9 @@ pub fn uninstall(target: IntegrationTarget) -> io::Result<Vec<String>> {
     let Ok(existing) = std::fs::read_to_string(&rc) else {
         return Ok(Vec::new());
     };
+    if fence_unterminated(&existing) {
+        return Ok(vec![truncated_note(&rc)]);
+    }
 
     let unwanted: Vec<String> = crate::command_names(target)
         .iter()
@@ -417,6 +452,22 @@ mod tests {
         // `PATH` lookup never consults aliases, so the `claude` inside is the
         // real one. That is why an alias needs no loop guard at all.
         assert_eq!(alias_line("claude"), "alias claude='amon claude'");
+    }
+
+    #[test]
+    fn a_truncated_fence_freezes_the_file() {
+        // Everything inside a fence is amon's to rewrite, so a block missing
+        // its closing marker would swallow the rest of the user's file. The
+        // writers all check this and refuse; the readers still see the
+        // aliases, because bash does too.
+        let truncated = format!("{BEGIN}\n{}\nexport THEIRS=1\n", alias_line("claude"));
+        assert!(fence_unterminated(&truncated));
+        assert!(!fence_unterminated(&block(&[alias_line("claude")])));
+        assert_eq!(
+            aliases_in(&truncated),
+            vec![alias_line("claude")],
+            "still-active aliases stay visible"
+        );
     }
 
     #[test]

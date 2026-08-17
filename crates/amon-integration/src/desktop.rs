@@ -224,7 +224,10 @@ pub fn uninstall(target: DesktopTarget) -> io::Result<Vec<String>> {
     // The swap-back only happens when the *installed* manifest declares
     // `clonedFrom` — a copy from before the manifest gained it disables
     // without restoring anything, and claiming otherwise would hide a bar
-    // that just lost its workspace indicators.
+    // that just lost its workspace indicators. Judged from the disk manifest:
+    // the shell's cached copy could in principle lag it, but only within the
+    // watcher's debounce of a rewrite — and setup and remove are separate
+    // human-run commands, not milliseconds apart. Accepted.
     let swaps_back = std::fs::read_to_string(directory.join(MANIFEST_NAME))
         .ok()
         .and_then(|manifest| serde_json::from_str::<serde_json::Value>(&manifest).ok())
@@ -305,9 +308,13 @@ pub fn enable(target: DesktopTarget) -> io::Result<Vec<String>> {
         .output();
     for _ in 0..40 {
         // Only keep waiting while the shell answers with a real list that
-        // lacks the id: that is the one state polling can improve. No CLI,
-        // an error, or unparseable output ends the wait immediately.
-        match discovered(id) {
+        // does not yet show the *shipped* manifest: that is the one state
+        // polling can improve. Mere id presence is not enough — an upgrade
+        // of an already-known widget would pass instantly while the shell's
+        // cached manifest still lacks `clonedFrom`, and enable would then
+        // place the widget beside the built-in instead of swapping it in.
+        // No CLI, an error, or unparseable output ends the wait immediately.
+        match discovered_current(id) {
             Some(false) => std::thread::sleep(std::time::Duration::from_millis(50)),
             _ => break,
         }
@@ -327,10 +334,30 @@ pub fn enable(target: DesktopTarget) -> io::Result<Vec<String>> {
     ])
 }
 
-/// Whether the shell's registry knows this plugin id at all. `None` when the
-/// list cannot be read.
-fn discovered(id: &str) -> Option<bool> {
-    Some(plugin_list()?.iter().any(|plugin| plugin["id"] == id))
+/// Whether the shell's registry knows this plugin id *as currently shipped*:
+/// the listed entry must carry the manifest's `clonedFrom`, which is how a
+/// freshly written upgrade is told apart from a stale cached registration.
+/// `None` when the list cannot be read (or predates the `clonedFrom` field in
+/// its output, which reads as never-current and simply exhausts the poll).
+fn discovered_current(id: &str) -> Option<bool> {
+    let source = manifest_clone_source();
+    Some(
+        plugin_list()?
+            .iter()
+            .any(|plugin| plugin["id"] == id && plugin["clonedFrom"] == source.as_str()),
+    )
+}
+
+/// The `omarchy.clonedFrom` the shipped manifest declares.
+fn manifest_clone_source() -> String {
+    serde_json::from_str::<serde_json::Value>(MANIFEST)
+        .ok()
+        .and_then(|manifest| {
+            manifest["omarchy"]["clonedFrom"]
+                .as_str()
+                .map(str::to_owned)
+        })
+        .unwrap_or_default()
 }
 
 fn plugin_list() -> Option<Vec<serde_json::Value>> {

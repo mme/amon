@@ -970,6 +970,30 @@ fn a_machine_without_the_omarchy_cli_uninstalls_quietly() {
 }
 
 #[test]
+fn a_truncated_amon_block_is_never_rewritten() {
+    // A fence missing its closing marker makes everything after it look like
+    // amon's to rewrite; editing would erase the user's own lines. Setup must
+    // refuse and say why, leaving the file byte-identical.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    let damaged = "# >>> amon >>>\nalias claude='amon claude'\nexport THEIRS=1\n";
+    std::fs::write(sandbox.home_path(".bashrc"), damaged).expect("damaged rc");
+
+    let output = sandbox.run(&["setup", "claude"]);
+
+    assert_eq!(
+        std::fs::read_to_string(sandbox.home_path(".bashrc")).expect("still there"),
+        damaged,
+        "a file amon cannot parse is a file amon does not touch"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("missing its closing"),
+        "and the user is told what to repair: {output:?}"
+    );
+}
+
+#[test]
 fn removing_a_pre_swap_widget_does_not_claim_restoration() {
     // A widget installed before the manifest declared clonedFrom disables
     // without swapping the built-in back; saying "restored" would hide a bar
