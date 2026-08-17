@@ -169,8 +169,13 @@ fn not_ours(directory: &Path) -> io::Error {
     ))
 }
 
-/// Writes the plugin, returning the notes to print — including the two Omarchy
-/// commands the user runs to enable it.
+/// Writes the plugin, returning the notes to print — including the one Omarchy
+/// command the user runs to enable it.
+///
+/// The manifest declares `omarchy.clonedFrom: omarchy.workspaces`, so enabling
+/// swaps the widget into the built-in's own bar slot — same section, same
+/// index, settings carried over — and disabling swaps the built-in back. That
+/// is Quattro's clone mechanism, honored for any manifest that declares it.
 ///
 /// Idempotent: every file is rewritten, and nothing else in the Omarchy config
 /// is touched. In particular `shell.json` is left alone; it becomes the user's
@@ -194,20 +199,18 @@ pub fn install(target: DesktopTarget) -> io::Result<Vec<String>> {
     Ok(vec![
         format!("installed {} to {}", id, directory.display()),
         String::new(),
-        "Enable it, then put it in the bar where the built-in workspaces are:".to_string(),
+        "Enable it — it takes the built-in workspaces widget's place on the bar:".to_string(),
         format!("  omarchy plugin enable {id}"),
-        format!("  omarchy bar plugin add {id} --after omarchy.workspaces"),
-        "  omarchy bar plugin remove omarchy.workspaces".to_string(),
         String::new(),
-        // `add` positions relative to a section anchor, and the left section's
-        // anchor is omarchy.workspaces itself — so removing it first leaves
-        // nothing to anchor to and the widget lands in the centre instead.
-        "(in that order: removing the built-in first would leave the bar with".to_string(),
-        " nothing to position this next to, and it would land in the centre)".to_string(),
+        "(disabling it puts the built-in back)".to_string(),
     ])
 }
 
-/// Removes exactly what [`install`] wrote.
+/// Removes exactly what [`install`] wrote — after asking the omarchy CLI to
+/// disable the widget, which must happen while the manifest is still on disk:
+/// the shell's `clonedFrom` swap-back reads it at disable time, so disabling
+/// after deletion would drop the bar entry without restoring the built-in.
+/// (`omarchy plugin remove` sequences itself the same way.)
 pub fn uninstall(target: DesktopTarget) -> io::Result<Vec<String>> {
     let directory = plugin_dir(target).ok_or_else(missing_home)?;
     if std::fs::symlink_metadata(&directory).is_err() {
@@ -216,6 +219,9 @@ pub fn uninstall(target: DesktopTarget) -> io::Result<Vec<String>> {
     if !ours(&directory)? {
         return Err(not_ours(&directory));
     }
+
+    let id = target.plugin_id();
+    let restore_note = disable_widget(id);
 
     // Manifest first, so an interrupted removal leaves something the shell no
     // longer loads rather than a plugin missing its widget.
@@ -230,11 +236,34 @@ pub fn uninstall(target: DesktopTarget) -> io::Result<Vec<String>> {
     // exactly the outcome wanted — whatever that is, it is not amon's.
     let _ = std::fs::remove_dir(&directory);
 
-    let id = target.plugin_id();
-    Ok(vec![
-        format!("removed {} from {}", id, directory.display()),
-        format!("  omarchy bar plugin remove {id}"),
-    ])
+    let mut notes = vec![format!("removed {} from {}", id, directory.display())];
+    notes.extend(restore_note);
+    Ok(notes)
+}
+
+/// Runs `omarchy plugin disable <id>`, returning the notes to print about it.
+///
+/// Best-effort by design: removal must not be blocked by a bar that cannot be
+/// reached. No omarchy CLI means no bar to fix up, so that says nothing; a CLI
+/// that fails (shell not running, stale id) gets the manual commands — which
+/// name the *built-in*, because by the time anyone runs them this plugin's
+/// manifest is gone and only re-enabling `omarchy.workspaces` still works.
+fn disable_widget(id: &str) -> Vec<String> {
+    match std::process::Command::new("omarchy")
+        .args(["plugin", "disable", id])
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            vec!["  (restored the built-in workspaces widget)".to_string()]
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+        Ok(_) | Err(_) => vec![
+            "could not ask omarchy to restore the built-in widget; if the bar".to_string(),
+            "is missing its workspaces:".to_string(),
+            format!("  omarchy plugin disable {id}"),
+            "  omarchy plugin enable omarchy.workspaces".to_string(),
+        ],
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -319,6 +348,12 @@ mod tests {
             ASSETS.iter().any(|(name, _)| *name == entry),
             "the entry point {entry} must be a file we install"
         );
+
+        // The shell swaps a plugin declaring `clonedFrom` into the source
+        // widget's own bar slot on enable, and swaps the built-in back on
+        // disable. Losing this field silently reverts install to "lands in
+        // some section" and uninstall to "leaves a hole in the bar".
+        assert_eq!(manifest["omarchy"]["clonedFrom"], "omarchy.workspaces");
     }
 
     #[test]

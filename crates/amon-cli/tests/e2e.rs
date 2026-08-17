@@ -792,15 +792,19 @@ fn installing_the_omarchy_widget_puts_it_where_the_shell_looks() {
         "the manifest's entry point must be installed: {entry}"
     );
 
+    // The clonedFrom declaration is what lets one enable command take the
+    // built-in widget's own slot; without it the widget lands in some section
+    // and the built-in stays.
+    assert_eq!(manifest["omarchy"]["clonedFrom"], "omarchy.workspaces");
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("omarchy plugin enable sh.amon.workspaces")
-            // Positioned against the built-in before it is removed: the left
-            // section anchors on omarchy.workspaces, so removing it first
-            // leaves the widget with nowhere to go but the centre.
-            && stdout
-                .contains("omarchy bar plugin add sh.amon.workspaces --after omarchy.workspaces"),
+        stdout.contains("omarchy plugin enable sh.amon.workspaces"),
         "the user is told how to enable it: {stdout}"
+    );
+    assert!(
+        !stdout.contains("omarchy bar plugin"),
+        "the pre-Quattro bar plugin commands no longer exist: {stdout}"
     );
 }
 
@@ -883,6 +887,85 @@ fn uninstalling_removes_amons_files_and_nothing_else() {
         std::fs::read_to_string(&theirs).expect("theirs survives"),
         "mine",
         "a file amon did not write survives, and keeps the directory alive"
+    );
+}
+
+#[test]
+fn uninstalling_asks_omarchy_to_restore_the_built_in_first() {
+    // The shell's clonedFrom swap-back reads the manifest at disable time, so
+    // the disable has to land while the file is still on disk — afterwards the
+    // bar entry would be dropped without the built-in coming back. (Omarchy's
+    // own `plugin remove` sequences itself the same way.)
+    let sandbox = Sandbox::new();
+    sandbox.run(&["install", "omarchy"]);
+
+    let record = sandbox.runtime_path("omarchy-was-called");
+    let manifest = sandbox.config_path(PLUGIN_DIR).join("manifest.json");
+    sandbox.fake_agent(
+        "omarchy",
+        &format!(
+            "#!/bin/sh\nprintf '%s' \"$*\" > {record}\n\
+             [ -f {manifest} ] && printf ' manifest-still-there' >> {record}\n",
+            record = path_str(&record),
+            manifest = path_str(&manifest),
+        ),
+    );
+
+    let output = sandbox.run(&["uninstall", "omarchy"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        std::fs::read_to_string(&record).expect("the omarchy CLI was invoked"),
+        "plugin disable sh.amon.workspaces manifest-still-there"
+    );
+    assert!(!manifest.exists(), "the files still go afterwards");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("restored the built-in"),
+        "the user hears the bar was fixed up: {output:?}"
+    );
+}
+
+#[test]
+fn a_failing_omarchy_cli_does_not_block_removal() {
+    let sandbox = Sandbox::new();
+    sandbox.run(&["install", "omarchy"]);
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 1\n");
+
+    let output = sandbox.run(&["uninstall", "omarchy"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !sandbox
+            .config_path(PLUGIN_DIR)
+            .join("manifest.json")
+            .exists(),
+        "removal proceeds without the bar"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("omarchy plugin disable"),
+        "the manual fix-up is printed instead: {output:?}"
+    );
+}
+
+#[test]
+fn a_machine_without_the_omarchy_cli_uninstalls_quietly() {
+    // No CLI means no bar to fix up — that is the ordinary case off Omarchy,
+    // not something to warn about.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["install", "omarchy"]);
+
+    let mut command = sandbox.command(&["uninstall", "omarchy"]);
+    command.env("PATH", path_str(&sandbox.runtime_path("no-such-bin")));
+    let output = command.output().expect("amon runs");
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(!sandbox
+        .config_path(PLUGIN_DIR)
+        .join("manifest.json")
+        .exists());
+    assert!(
+        !String::from_utf8_lossy(&output.stdout).contains("could not"),
+        "no warning where there is nothing to warn about: {output:?}"
     );
 }
 

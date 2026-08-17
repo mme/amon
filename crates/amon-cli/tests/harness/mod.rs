@@ -48,6 +48,12 @@ impl Sandbox {
         // Sandboxed too, so an inherited value cannot leak into anything else
         // that consults it — even though the Omarchy path deliberately does not.
         command.env("XDG_CONFIG_HOME", self.runtime.join("home/.config"));
+        // The developer's machine may be an Omarchy box with a live shell, and
+        // uninstalling the widget asks the `omarchy` CLI to restore the
+        // built-in — reaching the real one would mutate the real bar. Constrain
+        // PATH so external commands resolve to stubs planted in the sandbox
+        // (via `fake_agent`) or, like Omarchy's own CLI dir, not at all.
+        command.env("PATH", format!("{}:/usr/bin:/bin", self.runtime.display()));
         command
     }
 
