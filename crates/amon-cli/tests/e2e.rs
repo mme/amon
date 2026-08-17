@@ -1128,9 +1128,39 @@ fn removing_one_agent_points_out_a_stranded_block() {
     let output = sandbox.run(&["remove", "claude"]);
 
     assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        String::from_utf8_lossy(&output.stdout).contains("remove the amon block yourself"),
-        "the surviving alias is pointed out: {output:?}"
+        stdout.contains("alias claude='amon claude'"),
+        "the surviving lines are named: {stdout}"
+    );
+    assert!(
+        !stdout.contains("amon block"),
+        "removing one agent must not instruct deleting the whole block: {stdout}"
+    );
+}
+
+#[test]
+fn doctor_reports_aliases_bash_actually_reads() {
+    // A symlinked bashrc is off-limits for editing, but its aliases are
+    // active all the same; a diagnostic saying "none" would point the wrong
+    // way.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    assert!(sandbox.run(&["setup", "claude"]).status.success());
+    let theirs = sandbox.runtime_path("dotfiles-bashrc");
+    std::fs::rename(sandbox.home_path(".bashrc"), &theirs).expect("migrate");
+    std::os::unix::fs::symlink(&theirs, sandbox.home_path(".bashrc")).expect("link");
+
+    let stdout = read_to_string(&sandbox.run(&["doctor"]).stdout[..]);
+
+    assert!(
+        stdout.contains("alias claude='amon claude'"),
+        "active aliases show even through a symlink: {stdout}"
+    );
+    assert!(
+        stdout.contains("symlink"),
+        "and the hands-off reason is stated: {stdout}"
     );
 }
 

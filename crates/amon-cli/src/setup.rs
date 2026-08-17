@@ -322,16 +322,21 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                 let hooks = amon_integration::uninstall(*target);
                 let unaliased = alias::uninstall(*target);
                 match (hooks, unaliased) {
-                    // "unaliased" only when it is true: a block stranded in a
-                    // symlinked bashrc survives `alias::uninstall`, which
-                    // refuses to write through links.
-                    (Ok(_), Ok(_)) => match alias::stranded() {
-                        Some(note) => {
+                    // "unaliased" only when it is true: lines stranded in a
+                    // symlinked bashrc survive `alias::uninstall`, which
+                    // refuses to write through links. Per-agent, so removing
+                    // one agent never instructs deleting the others' lines.
+                    (Ok(_), Ok(_)) => {
+                        let stranded = alias::stranded_for(*target);
+                        if stranded.is_empty() {
+                            println!("✓ {label} — hooks removed, unaliased");
+                        } else {
                             println!("✓ {label} — hooks removed");
-                            println!("    {note}");
+                            for note in stranded {
+                                println!("    {}", note.trim_start());
+                            }
                         }
-                        None => println!("✓ {label} — hooks removed, unaliased"),
-                    },
+                    }
                     (Err(error), _) | (_, Err(error)) => {
                         failed = true;
                         println!("✗ {label} — {error}");

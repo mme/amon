@@ -344,10 +344,11 @@ fn run_remove(target: Option<&str>, all: bool) -> Result<(), Box<dyn std::error:
             let agent = require_target(target)?;
             let mut messages = amon_integration::uninstall(agent)?;
             messages.extend(amon_integration::alias::uninstall(agent)?);
-            // A block stranded in a symlinked bashrc survives the uninstall,
-            // which refuses to write through links — say so rather than
-            // leaving the alias silently active.
-            messages.extend(amon_integration::alias::stranded());
+            // Aliases stranded in a symlinked bashrc survive the uninstall,
+            // which refuses to write through links — name this agent's lines
+            // rather than leaving them silently active (and only its lines:
+            // other agents' aliases are still wanted).
+            messages.extend(amon_integration::alias::stranded_for(agent));
             messages
         }
     };

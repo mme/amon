@@ -165,6 +165,19 @@ fn manual_note(rc: &Path, aliases: &[String]) -> Vec<String> {
     notes
 }
 
+/// The alias lines in the shell config as bash will read them — through a
+/// symlink too. Diagnostics want what is *active*; [`installed`] answers the
+/// narrower question of what amon may edit.
+pub fn present() -> Vec<String> {
+    let Some(rc) = shell_config() else {
+        return Vec::new();
+    };
+    let Ok(existing) = std::fs::read_to_string(&rc) else {
+        return Vec::new();
+    };
+    aliases_in(&existing)
+}
+
 /// The alias lines currently installed, in block order. Empty when there is no
 /// block, no shell config, or a symlinked one amon would not have written.
 pub fn installed() -> Vec<String> {
@@ -206,6 +219,36 @@ pub fn stranded() -> Option<String> {
             rc.display()
         )
     })
+}
+
+/// [`stranded`], narrowed to one agent: the notes for a targeted removal,
+/// naming only that agent's lines. Telling someone removing claude to delete
+/// the whole block would take codex's still-wanted alias with it.
+pub fn stranded_for(target: IntegrationTarget) -> Vec<String> {
+    let Some(rc) = shell_config() else {
+        return Vec::new();
+    };
+    if !is_symlink(&rc) {
+        return Vec::new();
+    }
+    let Ok(existing) = std::fs::read_to_string(&rc) else {
+        return Vec::new();
+    };
+    let theirs = aliases_in(&existing);
+    let mine: Vec<String> = crate::command_names(target)
+        .iter()
+        .map(|command| alias_line(command))
+        .filter(|wanted| theirs.contains(wanted))
+        .collect();
+    if mine.is_empty() {
+        return Vec::new();
+    }
+    let mut notes = vec![format!(
+        "{} is a symlink amon does not edit — remove these lines yourself:",
+        rc.display()
+    )];
+    notes.extend(mine.iter().map(|line| format!("  {line}")));
+    notes
 }
 
 /// Removes the whole fenced block, whichever agents' aliases are in it — the

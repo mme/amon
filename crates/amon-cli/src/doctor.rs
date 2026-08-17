@@ -80,7 +80,9 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!("aliases:");
-    let aliases = alias::installed();
+    // What bash will actually read, symlinked rc included — a diagnostic
+    // reporting "none" while aliases are active would point the wrong way.
+    let aliases = alias::present();
     if aliases.is_empty() {
         let file = alias::shell_config()
             .map(|path| path.display().to_string())
@@ -89,6 +91,9 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
     } else {
         for line in aliases {
             print_line("bashrc", &line, "");
+        }
+        if let Some(note) = alias::stranded() {
+            print_line("bashrc", &note, "");
         }
     }
     Ok(())
