@@ -303,12 +303,16 @@ pub fn enabled_in_bar(target: DesktopTarget) -> Option<bool> {
         return None;
     }
     let plugins: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
-    plugins
-        .as_array()?
-        .iter()
-        .find(|plugin| plugin["id"] == target.plugin_id())?
-        .get("enabled")?
-        .as_bool()
+    // A list that parses but lacks the widget is a real answer — not
+    // installed, so not in the bar — never "unknown".
+    Some(
+        plugins
+            .as_array()?
+            .iter()
+            .find(|plugin| plugin["id"] == target.plugin_id())
+            .and_then(|plugin| plugin["enabled"].as_bool())
+            .unwrap_or(false),
+    )
 }
 
 #[derive(Debug, Clone)]

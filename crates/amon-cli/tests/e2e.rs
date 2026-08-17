@@ -1058,6 +1058,88 @@ fn remove_all_takes_everything_back() {
 }
 
 #[test]
+fn remove_all_sweeps_up_an_orphaned_alias() {
+    // An integration whose hook files were deleted by hand no longer shows as
+    // installed, so no per-agent removal runs — but its alias is still in
+    // bashrc, still taking over the agent's name. Removing everything means
+    // exactly that.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    assert!(sandbox.run(&["setup", "claude"]).status.success());
+    std::fs::remove_dir_all(sandbox.home_path(".claude")).expect("orphan the alias");
+
+    let output = sandbox.run(&["remove", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !bashrc(&sandbox).contains("alias claude"),
+        "an orphaned alias must not survive remove --all: {}",
+        bashrc(&sandbox)
+    );
+}
+
+#[test]
+fn a_symlinked_bashrc_is_reported_not_claimed_aliased() {
+    // alias::install returns Ok with manual instructions for a symlinked
+    // bashrc; the apply report must pass those on, not say "aliased" about a
+    // file that was deliberately left alone.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    let theirs = sandbox.runtime_path("dotfiles-bashrc");
+    std::fs::write(&theirs, "# theirs\n").expect("their file");
+    std::os::unix::fs::symlink(&theirs, sandbox.home_path(".bashrc")).expect("link");
+
+    let output = sandbox.run(&["setup", "--all"]);
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("manual step"),
+        "the manual instructions are surfaced: {stdout}"
+    );
+    assert!(
+        !stdout.contains("hooks installed, aliased"),
+        "no success claim about an alias that was not written: {stdout}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&theirs).expect("untouched"),
+        "# theirs\n",
+        "the symlink target must not be edited"
+    );
+}
+
+#[test]
+fn a_failed_widget_disable_is_not_reported_as_restored() {
+    // Removal proceeds past a wedged `omarchy plugin disable`, but the report
+    // must carry the manual fix-up instead of claiming the built-in came back.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
+    assert!(sandbox.run(&["setup", "omarchy"]).status.success());
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 1\n");
+
+    let output = sandbox.run(&["remove", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("omarchy plugin disable"),
+        "the manual fix-up is visible: {stdout}"
+    );
+    assert!(
+        !stdout.contains("restored"),
+        "no restore claim when the disable failed: {stdout}"
+    );
+    assert!(
+        !sandbox
+            .config_path(PLUGIN_DIR)
+            .join("manifest.json")
+            .exists(),
+        "removal still proceeds"
+    );
+}
+
+#[test]
 fn the_setup_screen_quits_without_changes() {
     let sandbox = Sandbox::new();
     sandbox.fake_agent("claude", "#!/bin/sh\n");

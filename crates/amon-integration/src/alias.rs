@@ -180,6 +180,44 @@ pub fn installed() -> Vec<String> {
     aliases_in(&existing)
 }
 
+/// Whether every alias [`install`] would write for this agent is actually in
+/// the shell config. [`install`] returning `Ok` is not that: a symlinked
+/// `~/.bashrc` makes it print manual instructions instead of writing anything.
+pub fn is_installed(target: IntegrationTarget) -> bool {
+    let have = installed();
+    crate::command_names(target)
+        .iter()
+        .all(|command| have.contains(&alias_line(command)))
+}
+
+/// Removes the whole fenced block, whichever agents' aliases are in it — the
+/// all-or-nothing counterpart of [`uninstall`], for `amon remove` with no
+/// target. Returns the notes to print; empty when there was nothing to do.
+pub fn remove_all() -> io::Result<Vec<String>> {
+    let Some(rc) = shell_config() else {
+        return Ok(Vec::new());
+    };
+    let Ok(existing) = std::fs::read_to_string(&rc) else {
+        return Ok(Vec::new());
+    };
+    let Some(updated) = without_block(&existing) else {
+        return Ok(Vec::new());
+    };
+    if is_symlink(&rc) {
+        // The block in a symlinked rc was pasted in by hand (amon refuses to
+        // write through links), so taking it out is by hand too.
+        return Ok(vec![format!(
+            "{} is a symlink, so amon has not edited it — delete the amon block yourself",
+            rc.display()
+        )]);
+    }
+    std::fs::write(&rc, updated)?;
+    Ok(vec![format!(
+        "removed the alias block from {}",
+        rc.display()
+    )])
+}
+
 /// Aliases every command the agent answers to, so that its own name runs it
 /// under amon.
 ///

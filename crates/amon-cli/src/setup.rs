@@ -201,8 +201,14 @@ pub fn remove_everything(assume_yes: bool) -> Result<(), Box<dyn std::error::Err
     if widget_installed {
         actions.push(Action::RemoveWidget);
     }
+    // Last, so it sweeps up orphaned lines — aliases whose integration is
+    // already gone would otherwise survive "remove everything" and keep
+    // taking over their agent's name.
+    if !alias::installed().is_empty() {
+        actions.push(Action::ClearAliases);
+    }
 
-    if actions.is_empty() && alias::installed().is_empty() {
+    if actions.is_empty() {
         println!("nothing to remove");
         return Ok(());
     }
@@ -244,6 +250,10 @@ enum Action {
     },
     SetupWidget,
     RemoveWidget,
+    /// Drops the whole bashrc block. Only `amon remove` with no target queues
+    /// this, after every per-agent removal: it is what takes orphaned aliases
+    /// — lines whose integration is already gone — with it.
+    ClearAliases,
 }
 
 /// Runs every action independently, `✓`/`✗` per row, and ends on the first
@@ -251,7 +261,7 @@ enum Action {
 /// wedged integration must not hold the others hostage.
 fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
     let mut failed = false;
-    let mut first_agent: Option<&'static str> = None;
+    let mut first_command: Option<&'static str> = None;
 
     for action in actions {
         match action {
@@ -261,19 +271,36 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                 alias: with_alias,
             } => {
                 let hooks = amon_integration::install(*target);
-                let aliased = if *with_alias && hooks.is_ok() {
-                    alias::install(*target).map(|_| true)
+                let alias_notes = if *with_alias && hooks.is_ok() {
+                    alias::install(*target)
                 } else {
-                    Ok(false)
+                    Ok(Vec::new())
                 };
-                match (hooks, aliased) {
-                    (Ok(_), Ok(true)) => {
-                        println!("✓ {label} — hooks installed, aliased");
-                        first_agent.get_or_insert(label);
-                    }
-                    (Ok(_), Ok(false)) => {
-                        println!("✓ {label} — hooks installed");
-                        first_agent.get_or_insert(label);
+                match (hooks, alias_notes) {
+                    (Ok(_), Ok(notes)) => {
+                        // `install` returning Ok is not the same as the alias
+                        // being live: a symlinked bashrc gets manual
+                        // instructions instead of an edit. Verify, and pass
+                        // those instructions on rather than claiming success.
+                        if *with_alias && alias::is_installed(*target) {
+                            println!("✓ {label} — hooks installed, aliased");
+                        } else if *with_alias {
+                            println!("✓ {label} — hooks installed; the alias needs a manual step:");
+                            for note in notes {
+                                println!("    {note}");
+                            }
+                        } else {
+                            println!("✓ {label} — hooks installed");
+                        }
+                        // The handoff must name what the user actually types,
+                        // which is not always the label (cursor runs as
+                        // cursor-agent).
+                        first_command.get_or_insert(
+                            amon_integration::command_names(*target)
+                                .first()
+                                .copied()
+                                .unwrap_or(label),
+                        );
                     }
                     (Err(error), _) | (_, Err(error)) => {
                         failed = true;
@@ -304,18 +331,38 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             Action::RemoveWidget => match desktop::uninstall(DesktopTarget::Omarchy) {
-                Ok(_) => println!("✓ bar widget — removed (built-in restored)"),
+                Ok(notes) => {
+                    // The notes say whether the built-in actually came back —
+                    // a wedged `omarchy plugin disable` still lets removal
+                    // proceed, with manual fix-up commands instead of a
+                    // restore. Claiming "restored" here would bury them.
+                    println!("✓ bar widget — removed");
+                    for note in notes.iter().skip(1) {
+                        println!("    {}", note.trim_start());
+                    }
+                }
                 Err(error) => {
                     failed = true;
                     println!("✗ bar widget — {error}");
                 }
             },
+            Action::ClearAliases => match alias::remove_all() {
+                Ok(notes) => {
+                    for note in notes {
+                        println!("✓ aliases — {note}");
+                    }
+                }
+                Err(error) => {
+                    failed = true;
+                    println!("✗ aliases — {error}");
+                }
+            },
         }
     }
 
-    if let Some(agent) = first_agent {
+    if let Some(command) = first_command {
         println!();
-        println!("open a new shell and run `{agent}` —");
+        println!("open a new shell and run `{command}` —");
         println!("then `amon status` shows every agent.");
     }
     if failed {
@@ -456,17 +503,55 @@ fn read_key() -> io::Result<Key> {
         b'k' => Key::Up,
         b'j' => Key::Down,
         0x1b => {
-            // Either a lone Esc (quit) or the start of an arrow sequence.
-            let mut rest = [0u8; 2];
-            match io::stdin().read(&mut rest)? {
-                2 if rest[0] == b'[' && rest[1] == b'A' => Key::Up,
-                2 if rest[0] == b'[' && rest[1] == b'B' => Key::Down,
-                0 => Key::Quit,
+            // Either a lone Esc (quit) or the start of an arrow sequence. The
+            // two cannot be told apart without waiting, and waiting under
+            // VMIN=1 blocks until the *next* keypress — a lone Esc would hang
+            // the picker and then eat that key. So the continuation is read
+            // under a deadline: an arrow's remaining bytes are already in
+            // flight and arrive at once; silence means the Esc was alone.
+            match read_escape_continuation()? {
+                [b'[', b'A'] => Key::Up,
+                [b'[', b'B'] => Key::Down,
+                [0, 0] => Key::Quit,
                 _ => Key::Other,
             }
         }
         _ => Key::Other,
     })
+}
+
+/// Reads up to two bytes following an Esc, giving up after a tenth of a
+/// second (VMIN=0, VTIME=1) instead of blocking for a key that may never
+/// come. Unread positions stay 0, which no continuation byte can be.
+fn read_escape_continuation() -> io::Result<[u8; 2]> {
+    let mut current: libc::termios = unsafe { std::mem::zeroed() };
+    if unsafe { libc::tcgetattr(0, &mut current) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut impatient = current;
+    impatient.c_cc[libc::VMIN] = 0;
+    impatient.c_cc[libc::VTIME] = 1;
+    if unsafe { libc::tcsetattr(0, libc::TCSANOW, &impatient) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+
+    let mut rest = [0u8; 2];
+    let mut filled = 0;
+    while filled < rest.len() {
+        match io::stdin().read(&mut rest[filled..]) {
+            Ok(0) => break,
+            Ok(read) => filled += read,
+            Err(error) => {
+                unsafe { libc::tcsetattr(0, libc::TCSANOW, &current) };
+                return Err(error);
+            }
+        }
+    }
+
+    if unsafe { libc::tcsetattr(0, libc::TCSANOW, &current) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(rest)
 }
 
 /// Puts stdin into raw-enough mode for single-key input and guarantees the

@@ -95,14 +95,17 @@ pub fn candidates() -> Vec<Candidate> {
         .map(|recommendation| Candidate {
             target: recommendation.target,
             label: recommendation.label,
-            // `available` folds "installed" in, so it cannot flag an orphan;
-            // a plain PATH scan over the agent's command names can. The
-            // vendored layout special cases (a standalone codex, hermes) still
-            // decide row *presence* via `available`; at worst this flag reads
-            // "agent not found" for an agent installed some exotic way.
-            detected: command_names(recommendation.target)
-                .iter()
-                .any(|command| on_path(command)),
+            // A candidate that is not installed is only here because the
+            // registry detected it, so it is a Detected Agent by definition —
+            // layout special cases (a standalone codex, hermes) included. For
+            // installed rows `available` is always true and can no longer
+            // tell, so a PATH scan over the agent's command names refines the
+            // orphan flag; at worst that flag reads "agent not found" for an
+            // agent installed some exotic way.
+            detected: recommendation.state == integration::IntegrationStatusKind::NotInstalled
+                || command_names(recommendation.target)
+                    .iter()
+                    .any(|command| on_path(command)),
             state: match recommendation.state {
                 integration::IntegrationStatusKind::NotInstalled => InstallState::NotInstalled,
                 integration::IntegrationStatusKind::Current => InstallState::Current,
