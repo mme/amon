@@ -1058,6 +1058,57 @@ fn remove_all_takes_everything_back() {
 }
 
 #[test]
+fn a_no_alias_setup_hints_the_wrapped_command() {
+    // Without an alias, the bare name launches the agent outside amon; the
+    // handoff must say `amon claude`, or following it proves nothing.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+
+    let output = sandbox.run(&["setup", "--all", "--no-alias"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("run `amon claude`"),
+        "the handoff must name the wrapped form: {stdout}"
+    );
+}
+
+#[test]
+fn remove_all_does_not_claim_unaliased_for_a_stranded_block() {
+    // A bashrc that later moved behind a symlink strands the alias block
+    // where amon will not write; removal must say so, not claim "unaliased".
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    assert!(sandbox.run(&["setup", "claude"]).status.success());
+    // Migrate the bashrc into a dotfiles checkout, block and all.
+    let theirs = sandbox.runtime_path("dotfiles-bashrc");
+    std::fs::rename(sandbox.home_path(".bashrc"), &theirs).expect("migrate");
+    std::os::unix::fs::symlink(&theirs, sandbox.home_path(".bashrc")).expect("link");
+
+    let output = sandbox.run(&["remove", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("unaliased"),
+        "no claim about lines that are still there: {stdout}"
+    );
+    assert!(
+        stdout.contains("remove the amon block yourself"),
+        "the stranded block is pointed out: {stdout}"
+    );
+    assert!(
+        std::fs::read_to_string(&theirs)
+            .expect("untouched")
+            .contains("alias claude"),
+        "the symlink target must not be edited"
+    );
+}
+
+#[test]
 fn remove_all_sweeps_up_an_orphaned_alias() {
     // An integration whose hook files were deleted by hand no longer shows as
     // installed, so no per-agent removal runs — but its alias is still in

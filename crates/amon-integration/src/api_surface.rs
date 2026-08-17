@@ -100,8 +100,12 @@ pub fn candidates() -> Vec<Candidate> {
             // layout special cases (a standalone codex, hermes) included. For
             // installed rows `available` is always true and can no longer
             // tell, so a PATH scan over the agent's command names refines the
-            // orphan flag; at worst that flag reads "agent not found" for an
-            // agent installed some exotic way.
+            // orphan flag. Accepted imprecision: an *installed* agent living
+            // only in a special layout reads "agent not found", and the
+            // detected-filter in `setup --all` then skips refreshing it — the
+            // wrapper's outdated notice names the per-target fix. Doing
+            // better needs the vendored `integration_target_available`, which
+            // upstream does not re-export (ADR-0005 forbids reaching in).
             detected: recommendation.state == integration::IntegrationStatusKind::NotInstalled
                 || command_names(recommendation.target)
                     .iter()

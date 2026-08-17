@@ -261,7 +261,7 @@ enum Action {
 /// wedged integration must not hold the others hostage.
 fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
     let mut failed = false;
-    let mut first_command: Option<&'static str> = None;
+    let mut first_command: Option<String> = None;
 
     for action in actions {
         match action {
@@ -282,7 +282,8 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                         // being live: a symlinked bashrc gets manual
                         // instructions instead of an edit. Verify, and pass
                         // those instructions on rather than claiming success.
-                        if *with_alias && alias::is_installed(*target) {
+                        let aliased = *with_alias && alias::is_installed(*target);
+                        if aliased {
                             println!("✓ {label} — hooks installed, aliased");
                         } else if *with_alias {
                             println!("✓ {label} — hooks installed; the alias needs a manual step:");
@@ -292,15 +293,19 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             println!("✓ {label} — hooks installed");
                         }
-                        // The handoff must name what the user actually types,
-                        // which is not always the label (cursor runs as
-                        // cursor-agent).
-                        first_command.get_or_insert(
-                            amon_integration::command_names(*target)
-                                .first()
-                                .copied()
-                                .unwrap_or(label),
-                        );
+                        // The handoff must name what the user actually types:
+                        // not always the label (cursor runs as cursor-agent),
+                        // and without a live alias the bare name would launch
+                        // the agent outside amon — the prefix is the truth.
+                        let command = amon_integration::command_names(*target)
+                            .first()
+                            .copied()
+                            .unwrap_or(label);
+                        first_command.get_or_insert(if aliased {
+                            command.to_string()
+                        } else {
+                            format!("amon {command}")
+                        });
                     }
                     (Err(error), _) | (_, Err(error)) => {
                         failed = true;
@@ -312,7 +317,16 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                 let hooks = amon_integration::uninstall(*target);
                 let unaliased = alias::uninstall(*target);
                 match (hooks, unaliased) {
-                    (Ok(_), Ok(_)) => println!("✓ {label} — hooks removed, unaliased"),
+                    // "unaliased" only when it is true: a block stranded in a
+                    // symlinked bashrc survives `alias::uninstall`, which
+                    // refuses to write through links.
+                    (Ok(_), Ok(_)) => match alias::stranded() {
+                        Some(note) => {
+                            println!("✓ {label} — hooks removed");
+                            println!("    {note}");
+                        }
+                        None => println!("✓ {label} — hooks removed, unaliased"),
+                    },
                     (Err(error), _) | (_, Err(error)) => {
                         failed = true;
                         println!("✗ {label} — {error}");

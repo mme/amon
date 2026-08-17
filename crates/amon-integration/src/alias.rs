@@ -190,6 +190,24 @@ pub fn is_installed(target: IntegrationTarget) -> bool {
         .all(|command| have.contains(&alias_line(command)))
 }
 
+/// A note when aliases sit in a shell config amon cannot edit — a symlinked
+/// rc whose block was pasted in by hand per [`install`]'s instructions.
+/// `None` when nothing is stranded. Callers use this to avoid claiming
+/// "unaliased" about lines that are still there.
+pub fn stranded() -> Option<String> {
+    let rc = shell_config()?;
+    if !is_symlink(&rc) {
+        return None;
+    }
+    let existing = std::fs::read_to_string(&rc).ok()?;
+    (!aliases_in(&existing).is_empty()).then(|| {
+        format!(
+            "aliases remain in {} (a symlink amon does not edit) — remove the amon block yourself",
+            rc.display()
+        )
+    })
+}
+
 /// Removes the whole fenced block, whichever agents' aliases are in it — the
 /// all-or-nothing counterpart of [`uninstall`], for `amon remove` with no
 /// target. Returns the notes to print; empty when there was nothing to do.
