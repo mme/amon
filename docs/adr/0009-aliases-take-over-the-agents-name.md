@@ -45,10 +45,13 @@ that is not there and bash says so. This is loud, immediate, and worked around
 by `command claude` — unlike a `PATH` script, which would have had to carry its
 own fallback so that a broken amon could not stop an agent from running.
 
-**It is opt-out, not opt-in.** `amon install <agent>` writes the alias and
-`--no-alias` declines. Redefining a command name is a surprising thing to find
-later, so install prints the line it wrote, and `amon uninstall <agent>` takes
-it away again.
+**It is opt-out, not opt-in.** Setting up an agent writes the alias, and
+`--no-alias` declines — on the non-interactive path only. In the interactive
+`amon setup` screen the alias is unconditional: selecting an agent means
+wrapping it, and the screen discloses the bashrc edit instead of offering a
+checkbox (amended by ADR-0010). Redefining a command name is a surprising
+thing to find later, so setup prints the line it wrote, and removing the
+agent's Integration takes it away again.
 
 **amon edits a file it does not own.** `~/.bashrc` is the user's. amon writes
 one fenced block, rewrites only what is between the fences, and leaves a

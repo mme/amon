@@ -21,6 +21,13 @@ _Avoid_: server, hub
 An AI coding agent CLI being wrapped (claude, codex, gemini, …). Identified by
 herdr's agent registry.
 
+**Detected Agent**:
+An Agent whose CLI the registry finds on this machine. The set `amon setup`
+offers and `--all` covers; a supported but undetected Agent can still be named
+explicitly.
+_Avoid_: available agent, installed agent (installed describes Integrations,
+not Agents)
+
 **Agent State**:
 The detected condition of a wrapped agent: `Idle` (finished, prompt visible),
 `Working` (actively processing), `Blocked` (needs human input), `Unknown`
@@ -51,12 +58,13 @@ Terminal's screen into an Agent State.
 _Avoid_: pattern file, rules file
 
 **Integration**:
-What `amon install <target>` writes into something else's configuration, in
-either direction: an *agent* Integration (hook scripts, config edits) lets the
+What `amon setup` writes into something else's configuration, in either
+direction: an *agent* Integration (hook scripts, config edits) lets the
 agent report session events to the Daemon, while a *desktop* Integration is a
 Subscriber amon ships, consuming those events rather than producing them.
 Either way amon owns the artifact and reports whether the installed copy is
-current.
+current. Never the amon binary itself — getting that onto the machine is the
+package manager's job.
 _Avoid_: plugin, extension (what the host calls it is the host's word)
 
 **Alias**:
