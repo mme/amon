@@ -275,8 +275,29 @@ pub fn cli_present() -> bool {
 /// Runs `omarchy plugin enable` for the installed widget. The manifest's
 /// `clonedFrom` makes that one command the whole story: the shell swaps the
 /// widget into the built-in's bar slot.
+///
+/// Discovery first, though: the shell finds plugins via a debounced file
+/// watcher, and `omarchy plugin enable` does not rescan — a plugin written
+/// milliseconds ago fails with "not known". Omarchy's own clone script
+/// rescans and polls before enabling for exactly this reason; this mirrors
+/// it, best-effort, and lets enable produce the canonical error if discovery
+/// still has not happened.
 pub fn enable(target: DesktopTarget) -> io::Result<Vec<String>> {
     let id = target.plugin_id();
+
+    let _ = std::process::Command::new("omarchy-shell")
+        .args(["shell", "rescanPlugins"])
+        .output();
+    for _ in 0..40 {
+        // Only keep waiting while the shell answers with a real list that
+        // lacks the id: that is the one state polling can improve. No CLI,
+        // an error, or unparseable output ends the wait immediately.
+        match discovered(id) {
+            Some(false) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            _ => break,
+        }
+    }
+
     let output = std::process::Command::new("omarchy")
         .args(["plugin", "enable", id])
         .output()?;
@@ -291,10 +312,13 @@ pub fn enable(target: DesktopTarget) -> io::Result<Vec<String>> {
     ])
 }
 
-/// Whether the widget currently sits in the bar, asked of the running shell.
-/// `None` when there is no answer to be had — no CLI, no shell, unparseable
-/// output — which a caller reports as "unknown", never as "no".
-pub fn enabled_in_bar(target: DesktopTarget) -> Option<bool> {
+/// Whether the shell's registry knows this plugin id at all. `None` when the
+/// list cannot be read.
+fn discovered(id: &str) -> Option<bool> {
+    Some(plugin_list()?.iter().any(|plugin| plugin["id"] == id))
+}
+
+fn plugin_list() -> Option<Vec<serde_json::Value>> {
     let output = std::process::Command::new("omarchy")
         .args(["plugin", "list", "--json"])
         .output()
@@ -303,11 +327,17 @@ pub fn enabled_in_bar(target: DesktopTarget) -> Option<bool> {
         return None;
     }
     let plugins: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    plugins.as_array().cloned()
+}
+
+/// Whether the widget currently sits in the bar, asked of the running shell.
+/// `None` when there is no answer to be had — no CLI, no shell, unparseable
+/// output — which a caller reports as "unknown", never as "no".
+pub fn enabled_in_bar(target: DesktopTarget) -> Option<bool> {
     // A list that parses but lacks the widget is a real answer — not
     // installed, so not in the bar — never "unknown".
     Some(
-        plugins
-            .as_array()?
+        plugin_list()?
             .iter()
             .find(|plugin| plugin["id"] == target.plugin_id())
             .and_then(|plugin| plugin["enabled"].as_bool())

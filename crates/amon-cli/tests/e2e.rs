@@ -1020,11 +1020,16 @@ fn setup_all_covers_detected_agents_and_the_widget() {
         bashrc(&sandbox).contains("alias claude='amon claude'"),
         "--all aliases by default"
     );
+    let calls = std::fs::read_to_string(&record).expect("omarchy invoked");
+    let list = calls
+        .find("plugin list --json")
+        .expect("discovery is checked first — the shell's watcher is debounced");
+    let enable = calls
+        .find("plugin enable sh.amon.workspaces")
+        .expect("--all is the explicit go-ahead, so the enable runs");
     assert!(
-        std::fs::read_to_string(&record)
-            .expect("omarchy invoked")
-            .contains("plugin enable sh.amon.workspaces"),
-        "--all is the explicit go-ahead, so the enable runs"
+        list < enable,
+        "enable must wait for discovery, not race the watcher: {calls}"
     );
 }
 
@@ -1105,6 +1110,79 @@ fn remove_all_does_not_claim_unaliased_for_a_stranded_block() {
             .expect("untouched")
             .contains("alias claude"),
         "the symlink target must not be edited"
+    );
+}
+
+#[test]
+fn removing_one_agent_points_out_a_stranded_block() {
+    // Targeted removal cannot edit a symlinked bashrc either; the alias it
+    // leaves behind must be named, not silently skipped.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    assert!(sandbox.run(&["setup", "claude"]).status.success());
+    let theirs = sandbox.runtime_path("dotfiles-bashrc");
+    std::fs::rename(sandbox.home_path(".bashrc"), &theirs).expect("migrate");
+    std::os::unix::fs::symlink(&theirs, sandbox.home_path(".bashrc")).expect("link");
+
+    let output = sandbox.run(&["remove", "claude"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("remove the amon block yourself"),
+        "the surviving alias is pointed out: {output:?}"
+    );
+}
+
+#[test]
+fn remove_all_with_only_a_stranded_block_is_not_nothing() {
+    // Orphaned hooks deleted by hand, bashrc behind a symlink: nothing amon
+    // can edit remains, but "nothing to remove" would be a lie while the
+    // alias still takes over the agent's name.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    assert!(sandbox.run(&["setup", "claude"]).status.success());
+    let theirs = sandbox.runtime_path("dotfiles-bashrc");
+    std::fs::rename(sandbox.home_path(".bashrc"), &theirs).expect("migrate");
+    std::os::unix::fs::symlink(&theirs, sandbox.home_path(".bashrc")).expect("link");
+    std::fs::remove_dir_all(sandbox.home_path(".claude")).expect("orphan everything");
+
+    let output = sandbox.run(&["remove", "--all"]);
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("nothing to remove"),
+        "a stranded block is something: {stdout}"
+    );
+    assert!(
+        stdout.contains("remove the amon block yourself"),
+        "and the manual step is named: {stdout}"
+    );
+}
+
+#[test]
+fn doctor_tells_a_wedged_daemon_from_an_absent_one() {
+    // A socket that accepts and then says nothing blocks on-demand starts;
+    // calling that "not running" would send the user in exactly the wrong
+    // direction.
+    let sandbox = Sandbox::new();
+    let socket_dir = sandbox.runtime_path("amon");
+    std::fs::create_dir_all(&socket_dir).expect("socket dir");
+    let _wedged = std::os::unix::net::UnixListener::bind(socket_dir.join("amond.sock"))
+        .expect("bind a daemon-shaped socket that never answers");
+
+    let output = sandbox.run(&["doctor"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("unresponsive"),
+        "accepted-but-silent is its own diagnosis: {stdout}"
+    );
+    assert!(
+        !stdout.contains("not running"),
+        "and not misreported as absent: {stdout}"
     );
 }
 

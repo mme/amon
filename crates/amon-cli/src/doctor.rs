@@ -40,13 +40,21 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("daemon:");
     let socket = amon_protocol::paths::daemon_socket();
-    match daemon_version(version) {
-        Some(running) => print_line(
+    match probe_daemon(version) {
+        DaemonProbe::Running(running) => print_line(
             "amond",
             &format!("running (v{running})"),
             &socket.display().to_string(),
         ),
-        None => print_line(
+        // A socket that accepts and then will not talk is a wedged daemon,
+        // which is the opposite of "starts on demand" — it *blocks* on-demand
+        // starts, since the socket looks taken.
+        DaemonProbe::Unresponsive => print_line(
+            "amond",
+            "unresponsive (accepts connections, hello failed — kill it)",
+            &socket.display().to_string(),
+        ),
+        DaemonProbe::NotRunning => print_line(
             "amond",
             "not running (starts on demand)",
             &socket.display().to_string(),
@@ -86,10 +94,20 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+enum DaemonProbe {
+    Running(String),
+    /// The socket accepted, then the handshake failed, timed out, or made no
+    /// sense — a daemon that exists but cannot be talked to.
+    Unresponsive,
+    NotRunning,
+}
+
 /// Asks a *running* daemon for its version. Deliberately not connect-or-spawn:
 /// a diagnostic that starts the thing it is diagnosing reports only on itself.
-fn daemon_version(version: &str) -> Option<String> {
-    let stream = UnixStream::connect(amon_protocol::paths::daemon_socket()).ok()?;
+fn probe_daemon(version: &str) -> DaemonProbe {
+    let Ok(stream) = UnixStream::connect(amon_protocol::paths::daemon_socket()) else {
+        return DaemonProbe::NotRunning;
+    };
     let timeout = Some(std::time::Duration::from_secs(2));
     let _ = stream.set_read_timeout(timeout);
     let _ = stream.set_write_timeout(timeout);
@@ -101,13 +119,19 @@ fn daemon_version(version: &str) -> Option<String> {
             version: version.to_string(),
         }),
     );
-    let mut writer = &stream;
-    writer.write_all(request.to_line().as_bytes()).ok()?;
-    let mut line = String::new();
-    BufReader::new(stream).read_line(&mut line).ok()?;
-    let response: Response = serde_json::from_str(&line).ok()?;
-    let result: HelloResult = serde_json::from_value(response.result?).ok()?;
-    Some(result.version)
+    let handshake = || -> Option<String> {
+        let mut writer = &stream;
+        writer.write_all(request.to_line().as_bytes()).ok()?;
+        let mut line = String::new();
+        BufReader::new(&stream).read_line(&mut line).ok()?;
+        let response: Response = serde_json::from_str(&line).ok()?;
+        let result: HelloResult = serde_json::from_value(response.result?).ok()?;
+        Some(result.version)
+    };
+    match handshake() {
+        Some(running) => DaemonProbe::Running(running),
+        None => DaemonProbe::Unresponsive,
+    }
 }
 
 fn describe_state(state: InstallState, installed: &str, expected: &str) -> String {

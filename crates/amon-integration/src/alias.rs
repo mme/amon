@@ -225,7 +225,7 @@ pub fn remove_all() -> io::Result<Vec<String>> {
         // The block in a symlinked rc was pasted in by hand (amon refuses to
         // write through links), so taking it out is by hand too.
         return Ok(vec![format!(
-            "{} is a symlink, so amon has not edited it — delete the amon block yourself",
+            "{} is a symlink, so amon has not edited it — remove the amon block yourself",
             rc.display()
         )]);
     }

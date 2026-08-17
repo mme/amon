@@ -203,8 +203,10 @@ pub fn remove_everything(assume_yes: bool) -> Result<(), Box<dyn std::error::Err
     }
     // Last, so it sweeps up orphaned lines — aliases whose integration is
     // already gone would otherwise survive "remove everything" and keep
-    // taking over their agent's name.
-    if !alias::installed().is_empty() {
+    // taking over their agent's name. A block stranded in a symlinked bashrc
+    // counts too: amon cannot delete it, but "nothing to remove" would be a
+    // lie — the action surfaces the manual step instead.
+    if !alias::installed().is_empty() || alias::stranded().is_some() {
         actions.push(Action::ClearAliases);
     }
 
@@ -224,6 +226,9 @@ pub fn remove_everything(assume_yes: bool) -> Result<(), Box<dyn std::error::Err
         }
         for alias_line in alias::installed() {
             println!("  {alias_line}");
+        }
+        if let Some(note) = alias::stranded() {
+            println!("  {note}");
         }
         print!("remove everything? [y/N] ");
         io::stdout().flush()?;
