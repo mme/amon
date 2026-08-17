@@ -156,12 +156,18 @@ fn without_block(existing: &str) -> Option<String> {
     Some(out)
 }
 
+/// The instructions for a symlinked rc. The full fenced block, not bare alias
+/// lines: everything that later *recognizes* hand-pasted aliases —
+/// [`present`], [`stranded_for`], `amon doctor` — reads only inside the
+/// fences, so instructing fenceless lines would create aliases amon can see
+/// working in bash but never account for.
 fn manual_note(rc: &Path, aliases: &[String]) -> Vec<String> {
     let mut notes = vec![format!(
-        "{} is a symlink, so amon has not edited it — add these yourself:",
+        "{} is a symlink, so amon has not edited it — add this block yourself",
         rc.display()
     )];
-    notes.extend(aliases.iter().map(|alias| format!("  {alias}")));
+    notes.push("(or just its alias lines, into an existing amon block):".to_string());
+    notes.extend(block(aliases).lines().map(|line| format!("  {line}")));
     notes
 }
 
@@ -407,5 +413,24 @@ mod tests {
         // `PATH` lookup never consults aliases, so the `claude` inside is the
         // real one. That is why an alias needs no loop guard at all.
         assert_eq!(alias_line("claude"), "alias claude='amon claude'");
+    }
+
+    #[test]
+    fn the_manual_instructions_paste_a_block_the_scanners_recognize() {
+        // A user who follows the symlink instructions to the letter must end
+        // up visible to everything that reads inside the fences — doctor,
+        // stranded_for, present. Bare lines outside a fence would work in
+        // bash and be invisible to all of them.
+        let notes = manual_note(Path::new("/dot/.bashrc"), &[alias_line("claude")]);
+        let pasted: String = notes
+            .iter()
+            .skip(2)
+            .map(|line| format!("{}\n", line.trim_start()))
+            .collect();
+        assert_eq!(
+            aliases_in(&pasted),
+            vec![alias_line("claude")],
+            "what the note says to paste is what the fence scanners parse"
+        );
     }
 }
