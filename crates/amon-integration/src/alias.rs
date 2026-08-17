@@ -239,6 +239,17 @@ pub fn is_installed(target: IntegrationTarget) -> bool {
         .all(|command| have.contains(&alias_line(command)))
 }
 
+/// Whether *any* of the agent's alias lines is still in the shell config —
+/// the removal-side question. [`is_installed`] answers the install side,
+/// where every line must be there; after a refused removal even one
+/// surviving line means the agent's name is still taken over.
+pub fn any_installed(target: IntegrationTarget) -> bool {
+    let have = installed();
+    crate::command_names(target)
+        .iter()
+        .any(|command| have.contains(&alias_line(command)))
+}
+
 /// A note when aliases sit in a shell config amon cannot edit — a symlinked
 /// rc whose block was pasted in by hand per [`install`]'s instructions.
 /// `None` when nothing is stranded. Callers use this to avoid claiming

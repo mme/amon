@@ -334,7 +334,7 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                             for note in stranded {
                                 println!("    {}", note.trim_start());
                             }
-                        } else if alias::is_installed(*target) {
+                        } else if alias::any_installed(*target) {
                             println!("✓ {label} — hooks removed");
                             for note in alias_notes {
                                 println!("    {}", note.trim_start());
