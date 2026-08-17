@@ -17,6 +17,9 @@ use amon_protocol::{
 };
 use clap::{Parser, Subcommand};
 
+mod doctor;
+mod setup;
+
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const AFTER_HELP: &str = "\
@@ -49,21 +52,29 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Install an integration: an agent's hooks, or a desktop's widget
-    Install {
-        /// What to install for, e.g. `claude` or `omarchy`
-        target: String,
+    /// Set up integrations — interactively, all detected, or one target
+    Setup {
+        /// One target, e.g. `claude` or `omarchy`; omit for the interactive
+        /// screen
+        target: Option<String>,
+        /// Every detected agent plus the bar widget, without a screen
+        #[arg(long, conflicts_with = "target")]
+        all: bool,
         /// Do not alias the agent's own name to run it under amon
+        /// (non-interactive forms only — the screen always aliases)
         #[arg(long)]
         no_alias: bool,
     },
-    /// Remove an installed integration
-    Uninstall {
-        /// What to uninstall from
-        target: String,
+    /// Remove integrations — everything after one confirmation, or one target
+    Remove {
+        /// One target, e.g. `claude` or `omarchy`; omit to remove everything
+        target: Option<String>,
+        /// Skip the confirmation (for scripts)
+        #[arg(long, conflicts_with = "target")]
+        all: bool,
     },
-    /// Which integrations are installed, and how current
-    Integrations,
+    /// Integration, daemon, widget, and alias health in one report
+    Doctor,
     /// Run the daemon in the foreground
     Daemon,
     /// Relay an installed hook's report to its wrapper (used by hook scripts)
@@ -131,9 +142,13 @@ fn main() -> ExitCode {
     let result = match cli.command {
         Command::Agent(argv) => return run_agent(&argv),
         Command::Status { json } => run_status(json),
-        Command::Install { target, no_alias } => run_install(&target, no_alias),
-        Command::Uninstall { target } => run_uninstall(&target),
-        Command::Integrations => run_integrations(),
+        Command::Setup {
+            target,
+            all,
+            no_alias,
+        } => run_setup(target.as_deref(), all, no_alias),
+        Command::Remove { target, all } => run_remove(target.as_deref(), all),
+        Command::Doctor => doctor::run(VERSION),
         Command::Daemon => run_daemon(),
         Command::Hook(report) => run_hook(report),
     };
@@ -264,7 +279,33 @@ fn fetch_status() -> Result<Vec<AgentEntry>, Box<dyn std::error::Error>> {
     Ok(status.agents)
 }
 
-fn run_install(target: &str, no_alias: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn run_setup(
+    target: Option<&str>,
+    all: bool,
+    no_alias: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if all {
+        return setup::all(no_alias);
+    }
+    let Some(target) = target else {
+        if !setup::is_tty() {
+            return Err("the interactive screen needs a terminal; \
+                 run `amon setup --all` or name a target (`amon setup claude`)"
+                .into());
+        }
+        if no_alias {
+            // The screen always aliases (ADR-0009, as amended); a silently
+            // dropped flag would be worse than saying so.
+            return Err("--no-alias only applies with a target or --all".into());
+        }
+        return setup::interactive();
+    };
+    setup_one(target, no_alias)
+}
+
+/// `amon setup <target>` — today's per-target form, and the escape hatch for
+/// agents not detected on this machine.
+fn setup_one(target: &str, no_alias: bool) -> Result<(), Box<dyn std::error::Error>> {
     // A desktop target installs a subscriber rather than an agent hook; same
     // verb, different direction. It gets no alias: nothing is typed to start a
     // bar widget.
@@ -286,7 +327,15 @@ fn run_install(target: &str, no_alias: bool) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
-fn run_uninstall(target: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn run_remove(target: Option<&str>, all: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let Some(target) = target else {
+        if !all && !setup::is_tty() {
+            return Err("removing everything needs a confirmation; \
+                 run `amon remove --all` or name a target (`amon remove claude`)"
+                .into());
+        }
+        return setup::remove_everything(all);
+    };
     // No flag on the way out: an alias left behind for an agent amon no longer
     // hooks would keep taking over its name for nothing.
     let messages = match amon_integration::desktop::parse_target(target) {
@@ -322,53 +371,6 @@ fn known_targets() -> String {
             .map(amon_integration::DesktopTarget::label),
     );
     format!("known targets: {}", names.join(", "))
-}
-
-fn run_integrations() -> Result<(), Box<dyn std::error::Error>> {
-    for status in amon_integration::statuses() {
-        let installed = status
-            .installed_version
-            .map(|version| version.to_string())
-            .unwrap_or_else(|| "?".into());
-        print_integration(
-            status.label,
-            &describe_state(
-                status.state,
-                &installed,
-                &status.expected_version.to_string(),
-            ),
-            &status.path,
-        );
-    }
-    // Desktop integrations report the same three states; only their version is
-    // a string rather than a number.
-    for status in amon_integration::desktop::statuses() {
-        let installed = status.installed_version.unwrap_or_else(|| "?".into());
-        print_integration(
-            status.label,
-            &describe_state(status.state, &installed, &status.expected_version),
-            &status.path,
-        );
-    }
-    Ok(())
-}
-
-fn describe_state(
-    state: amon_integration::InstallState,
-    installed: &str,
-    expected: &str,
-) -> String {
-    match state {
-        amon_integration::InstallState::NotInstalled => "not installed".to_string(),
-        amon_integration::InstallState::Current => format!("current (v{expected})"),
-        amon_integration::InstallState::Outdated => {
-            format!("outdated (v{installed} < v{expected})")
-        }
-    }
-}
-
-fn print_integration(label: &str, state: &str, path: &std::path::Path) {
-    println!("{:<12} {:<24} {}", label, state, path.display());
 }
 
 /// The relay for hooks that cannot speak the socket protocol directly and

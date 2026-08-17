@@ -1,7 +1,7 @@
 # Lift herdr's integration install/uninstall/status machinery verbatim
 
-`amon install <agent>` / `amon uninstall <agent>` / `amon integrations` are
-herdr's `integration install|uninstall|status` lifted wholesale rather than
+`amon setup <agent>` / `amon remove <agent>` / `amon doctor` (so named since
+ADR-0010) are herdr's `integration install|uninstall|status` lifted wholesale rather than
 reimplemented: per-target installers that enforce minimum agent CLI versions,
 write version-stamped hook scripts into the agent's config dir, and surgically
 edit the agent's own config (JSON/TOML merges that preserve user content,

@@ -31,6 +31,10 @@ impl Sandbox {
         ));
         let _ = std::fs::remove_dir_all(&runtime);
         std::fs::create_dir_all(&runtime).expect("runtime dir");
+        // The sandboxed HOME must exist up front: portable-pty falls back to
+        // $HOME as the child's working directory, and spawning into a
+        // directory that is not there fails with a bare ENOENT.
+        std::fs::create_dir_all(runtime.join("home")).expect("home dir");
         Self { runtime }
     }
 
@@ -282,6 +286,14 @@ impl PtySession {
         command.args(argv);
         command.env("XDG_RUNTIME_DIR", sandbox.runtime_dir());
         command.env("XDG_STATE_HOME", sandbox.runtime_path("state"));
+        // The same sandboxing as `Sandbox::command`: a home of the session's
+        // own and a PATH that resolves to planted stubs or nothing.
+        command.env("HOME", sandbox.runtime_path("home"));
+        command.env("XDG_CONFIG_HOME", sandbox.runtime_path("home/.config"));
+        command.env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", sandbox.runtime_dir().display()),
+        );
         // A compositor lookup would reach past the sandbox to the developer's
         // own desktop, and these tests are about focus, not windows.
         command.env_remove("HYPRLAND_INSTANCE_SIGNATURE");

@@ -29,7 +29,7 @@ const END: &str = "# <<< amon <<<";
 
 const PREFACE: &str = "\
 # Added by amon so that running an agent by its own name runs it under amon.
-# `amon uninstall <agent>` removes its line; deleting this block undoes the lot.
+# `amon remove <agent>` removes its line; deleting this block undoes the lot.
 # amon rewrites what is between these two markers and nothing else in this file.";
 
 fn home() -> Option<PathBuf> {
@@ -163,6 +163,21 @@ fn manual_note(rc: &Path, aliases: &[String]) -> Vec<String> {
     )];
     notes.extend(aliases.iter().map(|alias| format!("  {alias}")));
     notes
+}
+
+/// The alias lines currently installed, in block order. Empty when there is no
+/// block, no shell config, or a symlinked one amon would not have written.
+pub fn installed() -> Vec<String> {
+    let Some(rc) = shell_config() else {
+        return Vec::new();
+    };
+    if is_symlink(&rc) {
+        return Vec::new();
+    }
+    let Ok(existing) = std::fs::read_to_string(&rc) else {
+        return Vec::new();
+    };
+    aliases_in(&existing)
 }
 
 /// Aliases every command the agent answers to, so that its own name runs it

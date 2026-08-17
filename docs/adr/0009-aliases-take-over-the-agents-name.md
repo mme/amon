@@ -2,8 +2,8 @@
 
 amon only sees an agent it started (ADR-0006), which means remembering to type
 `amon` first. Forget once and that session is invisible: no state, no
-workspace, nothing in the bar. So `amon install <agent>` also writes
-`alias claude='amon claude'` into the user's `~/.bashrc`.
+workspace, nothing in the bar. So setting up an agent (`amon setup`, ADR-0010)
+also writes `alias claude='amon claude'` into the user's `~/.bashrc`.
 
 Adopting a session already running was considered first, and ruled out by
 measurement rather than assumption. Reading another process' output after the

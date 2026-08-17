@@ -772,7 +772,7 @@ const PLUGIN_DIR: &str = "omarchy/plugins/sh.amon.workspaces";
 fn installing_the_omarchy_widget_puts_it_where_the_shell_looks() {
     let sandbox = Sandbox::new();
 
-    let output = sandbox.run(&["install", "omarchy"]);
+    let output = sandbox.run(&["setup", "omarchy"]);
     assert!(output.status.success(), "{output:?}");
 
     let plugin = sandbox.config_path(PLUGIN_DIR);
@@ -818,7 +818,7 @@ fn installing_the_omarchy_widget_leaves_the_bar_config_alone() {
     std::fs::create_dir_all(shell_json.parent().unwrap()).expect("config dir");
     std::fs::write(&shell_json, "{\"mine\":true}").expect("write shell.json");
 
-    sandbox.run(&["install", "omarchy"]);
+    sandbox.run(&["setup", "omarchy"]);
 
     assert_eq!(
         std::fs::read_to_string(&shell_json).expect("still there"),
@@ -832,12 +832,12 @@ fn reinstalling_restores_a_widget_someone_broke() {
     let sandbox = Sandbox::new();
     let plugin = sandbox.config_path(PLUGIN_DIR);
 
-    sandbox.run(&["install", "omarchy"]);
+    sandbox.run(&["setup", "omarchy"]);
     let widget = plugin.join("AgentStates.qml");
     let original = std::fs::read_to_string(&widget).expect("installed");
     std::fs::write(&widget, "corrupted").expect("corrupt it");
 
-    sandbox.run(&["install", "omarchy"]);
+    sandbox.run(&["setup", "omarchy"]);
 
     assert_eq!(
         std::fs::read_to_string(&widget).expect("still there"),
@@ -851,14 +851,14 @@ fn a_widget_someone_broke_is_not_reported_current() {
     // The point of reporting currency is catching a widget that no longer
     // matches the daemon it parses; a version string alone cannot do that.
     let sandbox = Sandbox::new();
-    sandbox.run(&["install", "omarchy"]);
+    sandbox.run(&["setup", "omarchy"]);
     let widget = sandbox.config_path(PLUGIN_DIR).join("Workspaces.qml");
     std::fs::write(&widget, "not the widget we shipped").expect("corrupt it");
 
-    let listed = read_to_string(&sandbox.run(&["integrations"]).stdout[..]);
+    let listed = read_to_string(&sandbox.run(&["doctor"]).stdout[..]);
     let line = listed
         .lines()
-        .find(|line| line.starts_with("omarchy"))
+        .find(|line| line.trim_start().starts_with("omarchy "))
         .unwrap_or_default();
 
     assert!(
@@ -871,13 +871,13 @@ fn a_widget_someone_broke_is_not_reported_current() {
 fn uninstalling_removes_amons_files_and_nothing_else() {
     let sandbox = Sandbox::new();
     let plugin = sandbox.config_path(PLUGIN_DIR);
-    sandbox.run(&["install", "omarchy"]);
+    sandbox.run(&["setup", "omarchy"]);
 
     // Something the user put there. Whatever it is, it is not amon's to delete.
     let theirs = plugin.join("notes.md");
     std::fs::write(&theirs, "mine").expect("write");
 
-    let output = sandbox.run(&["uninstall", "omarchy"]);
+    let output = sandbox.run(&["remove", "omarchy"]);
 
     assert!(output.status.success(), "{output:?}");
     for ours in ["manifest.json", "AgentStates.qml", "Workspaces.qml"] {
@@ -897,7 +897,7 @@ fn uninstalling_asks_omarchy_to_restore_the_built_in_first() {
     // bar entry would be dropped without the built-in coming back. (Omarchy's
     // own `plugin remove` sequences itself the same way.)
     let sandbox = Sandbox::new();
-    sandbox.run(&["install", "omarchy"]);
+    sandbox.run(&["setup", "omarchy"]);
 
     let record = sandbox.runtime_path("omarchy-was-called");
     let manifest = sandbox.config_path(PLUGIN_DIR).join("manifest.json");
@@ -911,7 +911,7 @@ fn uninstalling_asks_omarchy_to_restore_the_built_in_first() {
         ),
     );
 
-    let output = sandbox.run(&["uninstall", "omarchy"]);
+    let output = sandbox.run(&["remove", "omarchy"]);
 
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
@@ -928,10 +928,10 @@ fn uninstalling_asks_omarchy_to_restore_the_built_in_first() {
 #[test]
 fn a_failing_omarchy_cli_does_not_block_removal() {
     let sandbox = Sandbox::new();
-    sandbox.run(&["install", "omarchy"]);
+    sandbox.run(&["setup", "omarchy"]);
     sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 1\n");
 
-    let output = sandbox.run(&["uninstall", "omarchy"]);
+    let output = sandbox.run(&["remove", "omarchy"]);
 
     assert!(output.status.success(), "{output:?}");
     assert!(
@@ -952,9 +952,9 @@ fn a_machine_without_the_omarchy_cli_uninstalls_quietly() {
     // No CLI means no bar to fix up — that is the ordinary case off Omarchy,
     // not something to warn about.
     let sandbox = Sandbox::new();
-    sandbox.run(&["install", "omarchy"]);
+    sandbox.run(&["setup", "omarchy"]);
 
-    let mut command = sandbox.command(&["uninstall", "omarchy"]);
+    let mut command = sandbox.command(&["remove", "omarchy"]);
     command.env("PATH", path_str(&sandbox.runtime_path("no-such-bin")));
     let output = command.output().expect("amon runs");
 
@@ -970,6 +970,166 @@ fn a_machine_without_the_omarchy_cli_uninstalls_quietly() {
 }
 
 #[test]
+fn setup_without_a_terminal_names_the_flags() {
+    // A script that forgot its flag gets told what to type, never a silently
+    // assumed --all: bashrc edits from an implicit default is exactly the
+    // surprise the rest of amon refuses (ADR-0010).
+    let sandbox = Sandbox::new();
+
+    let output = sandbox.run(&["setup"]);
+
+    assert!(!output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--all"), "the fix is named: {stderr}");
+}
+
+#[test]
+fn remove_without_a_terminal_names_the_flags() {
+    let sandbox = Sandbox::new();
+
+    let output = sandbox.run(&["remove"]);
+
+    assert!(!output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--all"), "the fix is named: {stderr}");
+}
+
+#[test]
+fn setup_all_covers_detected_agents_and_the_widget() {
+    let sandbox = Sandbox::new();
+    // A detected agent: its command on PATH, its config dir in place.
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    // An omarchy CLI to offer the widget row and record the enable.
+    let record = sandbox.runtime_path("omarchy-calls");
+    sandbox.fake_agent(
+        "omarchy",
+        &format!("#!/bin/sh\necho \"$*\" >> {}\n", path_str(&record)),
+    );
+
+    let output = sandbox.run(&["setup", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("✓ claude — hooks installed, aliased"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("✓ bar widget"), "{stdout}");
+    assert!(
+        bashrc(&sandbox).contains("alias claude='amon claude'"),
+        "--all aliases by default"
+    );
+    assert!(
+        std::fs::read_to_string(&record)
+            .expect("omarchy invoked")
+            .contains("plugin enable sh.amon.workspaces"),
+        "--all is the explicit go-ahead, so the enable runs"
+    );
+}
+
+#[test]
+fn remove_all_takes_everything_back() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
+    assert!(sandbox.run(&["setup", "--all"]).status.success());
+
+    let output = sandbox.run(&["remove", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("✓ claude — hooks removed, unaliased"),
+        "{stdout}"
+    );
+    assert!(
+        !sandbox
+            .config_path(PLUGIN_DIR)
+            .join("manifest.json")
+            .exists(),
+        "the widget goes too"
+    );
+    assert!(
+        !bashrc(&sandbox).contains("alias claude"),
+        "no alias may outlive the hooks it pointed at"
+    );
+}
+
+#[test]
+fn the_setup_screen_quits_without_changes() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+
+    let mut session = harness::PtySession::start(&sandbox, &["setup"]);
+    session.wait_for_output(b"Set up amon");
+    session.send(b"q");
+    session.wait();
+
+    assert!(
+        !bashrc(&sandbox).contains("alias claude"),
+        "quitting must change nothing"
+    );
+}
+
+#[test]
+fn the_setup_screen_applies_the_preselection_on_enter() {
+    // The dead-simple first run: everything detected is preselected, so the
+    // whole setup is one Enter.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+
+    let mut session = harness::PtySession::start(&sandbox, &["setup"]);
+    session.wait_for_output(b"Set up amon");
+    session.send(b"\r");
+    session.wait();
+
+    let output = session.output();
+    let text = String::from_utf8_lossy(&output);
+    assert!(
+        text.contains("✓ claude"),
+        "the apply reports itself: {text}"
+    );
+    assert!(
+        text.contains("open a new shell"),
+        "the first-success handoff prints: {text}"
+    );
+    assert!(
+        bashrc(&sandbox).contains("alias claude='amon claude'"),
+        "interactive setup always aliases"
+    );
+}
+
+#[test]
+fn the_setup_screen_removes_what_gets_unchecked() {
+    // The reconciler half: an installed row, unchecked, is removed on apply —
+    // immediately, with no second confirmation (ADR-0010, deliberate).
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    assert!(sandbox.run(&["setup", "claude"]).status.success());
+    assert!(bashrc(&sandbox).contains("alias claude"));
+
+    let mut session = harness::PtySession::start(&sandbox, &["setup"]);
+    session.wait_for_output(b"installed");
+    session.send(b" \r"); // uncheck the first row, apply
+
+    session.wait();
+    let text = String::from_utf8_lossy(&session.output()).to_string();
+    assert!(
+        text.contains("hooks removed, unaliased"),
+        "unchecking removes: {text}"
+    );
+    assert!(
+        !bashrc(&sandbox).contains("alias claude"),
+        "the alias goes with the hooks"
+    );
+}
+
+#[test]
 fn someone_elses_plugin_under_the_same_id_is_left_alone() {
     let sandbox = Sandbox::new();
     let plugin = sandbox.config_path(PLUGIN_DIR);
@@ -977,9 +1137,9 @@ fn someone_elses_plugin_under_the_same_id_is_left_alone() {
     let theirs = r#"{"id":"someone.else"}"#;
     std::fs::write(plugin.join("manifest.json"), theirs).expect("their file");
 
-    let install = sandbox.run(&["install", "omarchy"]);
+    let install = sandbox.run(&["setup", "omarchy"]);
     assert!(!install.status.success(), "install refuses");
-    let uninstall = sandbox.run(&["uninstall", "omarchy"]);
+    let uninstall = sandbox.run(&["remove", "omarchy"]);
     assert!(!uninstall.status.success(), "uninstall refuses");
 
     assert_eq!(
@@ -1001,8 +1161,8 @@ fn a_symlinked_plugin_directory_is_left_alone() {
     std::fs::create_dir_all(plugin.parent().unwrap()).expect("plugins dir");
     std::os::unix::fs::symlink(&elsewhere, &plugin).expect("link it into place");
 
-    assert!(!sandbox.run(&["install", "omarchy"]).status.success());
-    assert!(!sandbox.run(&["uninstall", "omarchy"]).status.success());
+    assert!(!sandbox.run(&["setup", "omarchy"]).status.success());
+    assert!(!sandbox.run(&["remove", "omarchy"]).status.success());
 
     assert_eq!(
         std::fs::read_to_string(elsewhere.join("manifest.json")).expect("untouched"),
@@ -1016,14 +1176,14 @@ fn a_symlinked_widget_file_is_never_written_through() {
     // The same hazard one level down: the directory is amon's, but a file in
     // it points into someone's repository.
     let sandbox = Sandbox::new();
-    sandbox.run(&["install", "omarchy"]);
+    sandbox.run(&["setup", "omarchy"]);
     let plugin = sandbox.config_path(PLUGIN_DIR);
     let theirs = sandbox.runtime_path("their-widget.qml");
     std::fs::write(&theirs, "their widget").expect("their file");
     std::fs::remove_file(plugin.join("Workspaces.qml")).expect("make room");
     std::os::unix::fs::symlink(&theirs, plugin.join("Workspaces.qml")).expect("link");
 
-    assert!(!sandbox.run(&["install", "omarchy"]).status.success());
+    assert!(!sandbox.run(&["setup", "omarchy"]).status.success());
 
     assert_eq!(
         std::fs::read_to_string(&theirs).expect("untouched"),
@@ -1039,30 +1199,30 @@ fn an_install_that_died_half_way_can_be_finished() {
     // amon out of its own half-finished work.
     let sandbox = Sandbox::new();
     let plugin = sandbox.config_path(PLUGIN_DIR);
-    sandbox.run(&["install", "omarchy"]);
+    sandbox.run(&["setup", "omarchy"]);
     std::fs::remove_file(plugin.join("manifest.json")).expect("kill it half way");
 
-    let output = sandbox.run(&["install", "omarchy"]);
+    let output = sandbox.run(&["setup", "omarchy"]);
 
     assert!(output.status.success(), "{output:?}");
     assert!(plugin.join("manifest.json").exists(), "install completes");
 }
 
 #[test]
-fn integrations_reports_the_desktop_widget_alongside_the_agents() {
+fn doctor_reports_the_desktop_widget_alongside_the_agents() {
     let sandbox = Sandbox::new();
 
-    let before = read_to_string(&sandbox.run(&["integrations"]).stdout[..]);
+    let before = read_to_string(&sandbox.run(&["doctor"]).stdout[..]);
     assert!(
         before.contains("omarchy") && before.contains("not installed"),
         "an uninstalled widget is listed as such: {before}"
     );
 
-    sandbox.run(&["install", "omarchy"]);
-    let after = read_to_string(&sandbox.run(&["integrations"]).stdout[..]);
+    sandbox.run(&["setup", "omarchy"]);
+    let after = read_to_string(&sandbox.run(&["doctor"]).stdout[..]);
     let line = after
         .lines()
-        .find(|line| line.starts_with("omarchy"))
+        .find(|line| line.trim_start().starts_with("omarchy "))
         .unwrap_or_default();
     assert!(line.contains("current"), "now current: {after}");
     // Agent integrations are still listed; the desktop one is an addition.
@@ -1073,7 +1233,7 @@ fn integrations_reports_the_desktop_widget_alongside_the_agents() {
 fn unknown_install_targets_are_rejected_with_the_list() {
     let sandbox = Sandbox::new();
 
-    let output = sandbox.run(&["install", "notanagent"]);
+    let output = sandbox.run(&["setup", "notanagent"]);
 
     assert!(!output.status.success());
     let stderr = read_to_string(&output.stderr[..]);
@@ -1085,7 +1245,7 @@ fn unknown_install_targets_are_rejected_with_the_list() {
     );
 }
 
-/// `amon install <agent>` refuses when the agent itself is not there, so a
+/// `amon setup <agent>` refuses when the agent itself is not there, so a
 /// test about aliases has to put its config directory in place first.
 fn agent_is_installed(sandbox: &Sandbox, config: &str) {
     std::fs::create_dir_all(sandbox.home_path(config)).expect("agent config dir");
@@ -1100,7 +1260,7 @@ fn installing_an_agent_aliases_its_own_name() {
     let sandbox = Sandbox::new();
     agent_is_installed(&sandbox, ".claude");
 
-    let output = sandbox.run(&["install", "claude"]);
+    let output = sandbox.run(&["setup", "claude"]);
 
     assert!(output.status.success(), "{output:?}");
     let rc = bashrc(&sandbox);
@@ -1115,7 +1275,7 @@ fn aliasing_can_be_declined() {
     let sandbox = Sandbox::new();
     agent_is_installed(&sandbox, ".claude");
 
-    sandbox.run(&["install", "claude", "--no-alias"]);
+    sandbox.run(&["setup", "claude", "--no-alias"]);
 
     assert!(
         !sandbox.home_path(".bashrc").exists(),
@@ -1128,8 +1288,8 @@ fn reinstalling_does_not_repeat_the_block() {
     let sandbox = Sandbox::new();
     agent_is_installed(&sandbox, ".claude");
 
-    sandbox.run(&["install", "claude"]);
-    sandbox.run(&["install", "claude"]);
+    sandbox.run(&["setup", "claude"]);
+    sandbox.run(&["setup", "claude"]);
 
     let rc = bashrc(&sandbox);
     assert_eq!(rc.matches("# >>> amon >>>").count(), 1, "{rc}");
@@ -1142,8 +1302,8 @@ fn a_second_agent_joins_the_same_block() {
     agent_is_installed(&sandbox, ".claude");
     agent_is_installed(&sandbox, ".codex");
 
-    sandbox.run(&["install", "claude"]);
-    sandbox.run(&["install", "codex"]);
+    sandbox.run(&["setup", "claude"]);
+    sandbox.run(&["setup", "codex"]);
 
     let rc = bashrc(&sandbox);
     assert_eq!(
@@ -1160,10 +1320,10 @@ fn uninstalling_one_agent_leaves_the_others_alias_alone() {
     let sandbox = Sandbox::new();
     agent_is_installed(&sandbox, ".claude");
     agent_is_installed(&sandbox, ".codex");
-    sandbox.run(&["install", "claude"]);
-    sandbox.run(&["install", "codex"]);
+    sandbox.run(&["setup", "claude"]);
+    sandbox.run(&["setup", "codex"]);
 
-    let output = sandbox.run(&["uninstall", "claude"]);
+    let output = sandbox.run(&["remove", "claude"]);
 
     assert!(output.status.success(), "{output:?}");
     let rc = bashrc(&sandbox);
@@ -1179,9 +1339,9 @@ fn uninstalling_the_last_agent_takes_the_block_with_it() {
     let sandbox = Sandbox::new();
     agent_is_installed(&sandbox, ".claude");
     std::fs::write(sandbox.home_path(".bashrc"), "# theirs\nexport EDITOR=hx\n").expect("write");
-    sandbox.run(&["install", "claude"]);
+    sandbox.run(&["setup", "claude"]);
 
-    sandbox.run(&["uninstall", "claude"]);
+    sandbox.run(&["remove", "claude"]);
 
     assert_eq!(
         bashrc(&sandbox),
@@ -1200,7 +1360,7 @@ fn a_symlinked_shell_config_is_not_followed() {
     std::fs::write(&real, "# theirs\n").expect("write");
     std::os::unix::fs::symlink(&real, sandbox.home_path(".bashrc")).expect("symlink");
 
-    let output = sandbox.run(&["install", "claude"]);
+    let output = sandbox.run(&["setup", "claude"]);
 
     assert!(output.status.success(), "{output:?}");
     assert_eq!(

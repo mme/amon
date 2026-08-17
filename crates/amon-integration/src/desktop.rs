@@ -3,7 +3,7 @@
 //! An agent Integration writes a hook into an agent's config so the agent
 //! reports to amon. A desktop Integration is the other direction: an artifact
 //! that *subscribes*, showing amon's state where the user already looks. Both
-//! are installed by `amon install <target>` and both report whether the copy on
+//! are installed by `amon setup` and both report whether the copy on
 //! disk is current, which is the whole reason they share vocabulary.
 //!
 //! It lives here rather than as another `IntegrationTarget`: that list is
@@ -264,6 +264,51 @@ fn disable_widget(id: &str) -> Vec<String> {
             "  omarchy plugin enable omarchy.workspaces".to_string(),
         ],
     }
+}
+
+/// Whether the `omarchy` CLI is on this machine — the gate for offering the
+/// widget at all, and for anything below that shells out to it.
+pub fn cli_present() -> bool {
+    crate::api_surface::on_path("omarchy")
+}
+
+/// Runs `omarchy plugin enable` for the installed widget. The manifest's
+/// `clonedFrom` makes that one command the whole story: the shell swaps the
+/// widget into the built-in's bar slot.
+pub fn enable(target: DesktopTarget) -> io::Result<Vec<String>> {
+    let id = target.plugin_id();
+    let output = std::process::Command::new("omarchy")
+        .args(["plugin", "enable", id])
+        .output()?;
+    if !output.status.success() {
+        return Err(io::Error::other(format!(
+            "omarchy plugin enable {id} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(vec![
+        "enabled on your bar, in the built-in workspaces widget's place".to_string(),
+    ])
+}
+
+/// Whether the widget currently sits in the bar, asked of the running shell.
+/// `None` when there is no answer to be had — no CLI, no shell, unparseable
+/// output — which a caller reports as "unknown", never as "no".
+pub fn enabled_in_bar(target: DesktopTarget) -> Option<bool> {
+    let output = std::process::Command::new("omarchy")
+        .args(["plugin", "list", "--json"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let plugins: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    plugins
+        .as_array()?
+        .iter()
+        .find(|plugin| plugin["id"] == target.plugin_id())?
+        .get("enabled")?
+        .as_bool()
 }
 
 #[derive(Debug, Clone)]
