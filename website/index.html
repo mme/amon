@@ -65,7 +65,17 @@
 
   /* ---- masthead ---------------------------------------------------- */
   .masthead{display:flex; flex-direction:column; align-items:center; gap:1.75rem; text-align:center}
-  .masthead .lockup{width:min(210px,42vw); height:auto; color:var(--ink)}
+  /* The viewBox carries 40 units of empty headroom so the antenna's rings have
+     somewhere to expand into — the ball sat flush with the old top edge. That
+     space is pulled back out with a negative margin in the same proportion
+     (40/214.75), so the mark lands exactly where it did before.
+     Only the top constrains them: the rings stroke in currentColor, the same
+     colour as the head, so the part that reaches it is swallowed by it and
+     reads as the head occluding the wave. */
+  .masthead .lockup{--lw:min(210px,42vw); width:var(--lw); height:auto; color:var(--ink);
+                    margin-top:calc(var(--lw) * -0.1863)}
+  /* a circle's fill-box centre is its own (cx,cy), which is the ball's centre */
+  .wave,#amon-ball,#amon-head{transform-box:fill-box; transform-origin:50% 50%}
   /* Each ear pulses from the edge that faces the head, so it grows outward
      instead of swelling around its own middle. fill-box keeps the origin
      relative to the ear itself, independent of the viewBox's offset. */
@@ -233,11 +243,11 @@
       at render time, but the ears would never move. One instance on the page,
       so the indirection bought nothing anyway.
     -->
-    <svg class="lockup" viewBox="22.75 16 214.75 272.25" role="img" aria-label="amon">
+    <svg class="lockup" viewBox="22.75 -24 214.75 312.25" role="img" aria-label="amon">
       <defs>
         <clipPath id="amon-head-clip"><path d="M 205.5 133 C 205.5 163.75 205.56 180.06 194.64 189.81 C 182.77 200.41 159.67 199.5 131 199.5 C 102.33 199.5 79.23 200.41 67.36 189.81 C 56.44 180.06 56.5 163.75 56.5 133 C 56.5 102.25 56.44 85.94 67.36 76.19 C 79.23 65.59 102.33 66.5 131 66.5 C 159.67 66.5 182.77 65.59 194.64 76.19 C 205.56 85.94 205.5 102.25 205.5 133 Z"/></clipPath>
       </defs>
-      <path fill="currentColor" d="M 205.5 133 C 205.5 163.75 205.56 180.06 194.64 189.81 C 182.77 200.41 159.67 199.5 131 199.5 C 102.33 199.5 79.23 200.41 67.36 189.81 C 56.44 180.06 56.5 163.75 56.5 133 C 56.5 102.25 56.44 85.94 67.36 76.19 C 79.23 65.59 102.33 66.5 131 66.5 C 159.67 66.5 182.77 65.59 194.64 76.19 C 205.56 85.94 205.5 102.25 205.5 133 Z"/>
+      <path id="amon-head" fill="currentColor" d="M 205.5 133 C 205.5 163.75 205.56 180.06 194.64 189.81 C 182.77 200.41 159.67 199.5 131 199.5 C 102.33 199.5 79.23 200.41 67.36 189.81 C 56.44 180.06 56.5 163.75 56.5 133 C 56.5 102.25 56.44 85.94 67.36 76.19 C 79.23 65.59 102.33 66.5 131 66.5 C 159.67 66.5 182.77 65.59 194.64 76.19 C 205.56 85.94 205.5 102.25 205.5 133 Z"/>
       <!--
         The eyes are painted onto the head in the page's own colour, not cut out
         of it. As knockouts they could never reach the rim: a hole touching the
@@ -284,7 +294,12 @@
       <!-- separate paths so each ear can pulse from its own inner edge -->
       <path id="amon-ear-l" fill="currentColor" d="M 33.75 120.5 A 7.25 7.25 0 0 1 48.25 120.5 L 48.25 145.5 A 7.25 7.25 0 0 1 33.75 145.5 Z"/>
       <path id="amon-ear-r" fill="currentColor" d="M 213.75 120.5 A 7.25 7.25 0 0 1 228.25 120.5 L 228.25 145.5 A 7.25 7.25 0 0 1 213.75 145.5 Z"/>
-      <circle fill="currentColor" cx="131" cy="29" r="13"/>
+      <!-- rings the antenna throws off; invisible until a beacon runs -->
+      <circle class="wave" cx="131" cy="29" r="13" fill="none" stroke="currentColor"
+              stroke-width="7" vector-effect="non-scaling-stroke" opacity="0"/>
+      <circle class="wave" cx="131" cy="29" r="13" fill="none" stroke="currentColor"
+              stroke-width="7" vector-effect="non-scaling-stroke" opacity="0"/>
+      <circle id="amon-ball" fill="currentColor" cx="131" cy="29" r="13"/>
       <path fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" d="M 131 42 L 131 56"/>
       <g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="44.5" cy="266.5" r="18.25"/>
@@ -599,12 +614,74 @@
       return landed + HOLD + SQUASH * 2;
     }
 
+    // The antenna transmits: two rings leave the ball, expand and fade, one
+    // behind the other. Two rather than three, and further apart — at full
+    // opacity a third crowds the other two and the burst reads as a target
+    // rather than as something travelling. The circles are drawn at the ball's own radius and scaled up
+    // rather than having their r animated, which keeps it to a transform — and
+    // non-scaling-stroke stops the ring fattening as it grows, so it reads as
+    // a wavefront thinning out rather than a swelling blob.
+    var waves = document.querySelectorAll('.wave'),
+        WAVE = 900, WAVE_GAP = 320, REACH = 2.56;
+
+    function beacon(){
+      // the ball kicks once as the first ring leaves it — a beacon that throws
+      // off waves while sitting perfectly still reads as detached from them
+      var ball = document.getElementById('amon-ball');
+      if (ball) ball.animate([
+        { transform: 'scale(1)',    offset: 0,  easing: 'ease-out' },
+        { transform: 'scale(1.18)', offset: .35, easing: 'ease-in' },
+        { transform: 'scale(1)',    offset: 1 }
+      ], { duration: 420 });
+
+      waves.forEach(function(ring, i){
+        // Solid for most of the journey, then gone. Fading the whole way makes
+        // a ring read as a gradient rather than as a wavefront — it is at full
+        // strength from 8% to 72% and only lets go over the last quarter.
+        ring.animate([
+          { transform: 'scale(1)',    opacity: 0, offset: 0 },
+          { transform: 'scale(1.08)', opacity: 1, offset: .08 },
+          { transform: 'scale(' + (1 + (REACH - 1) * .72) + ')', opacity: 1, offset: .72 },
+          { transform: 'scale(' + REACH + ')', opacity: 0, offset: 1 }
+        ], { duration: WAVE, delay: i * WAVE_GAP, easing: 'cubic-bezier(.15,.6,.35,1)' });
+      });
+      return WAVE + WAVE_GAP * (waves.length - 1);
+    }
+
+    // The head turns half a circle and nothing else moves — not the ears, not
+    // the antenna, not the eyes riding on it. Same shape as the reel: winds
+    // back slowly enough to be seen loading, lets go, runs, then brakes past
+    // the mark and settles onto it.
+    //
+    // A half turn lands looking identical: the squircle is symmetric about both
+    // axes, and its Bezier fit was mirrored from one quadrant, so it is exactly
+    // so. The animation therefore needs no fill — when it ends and the
+    // transform drops away, the head is already where it appears to be. It also
+    // halves the diagonals, and the diagonals are where the head's corners
+    // reach 99.9 and briefly swallow the ears at 97.25.
+    function spin(){
+      var head = document.getElementById('amon-head'), TURN = 180;
+      if (!head) return 0;
+      head.animate([
+        { transform: 'rotate(0deg)',        offset: 0,   easing: 'cubic-bezier(.25,.6,.4,1)' },
+        { transform: 'rotate(-14deg)',      offset: .17, easing: 'cubic-bezier(.7,0,.9,.35)' },
+        { transform: 'rotate(' + (TURN * .10) + 'deg)', offset: .34, easing: 'linear' },
+        { transform: 'rotate(' + (TURN * .74) + 'deg)', offset: .70, easing: 'cubic-bezier(.2,.55,.3,1)' },
+        { transform: 'rotate(' + (TURN + 8) + 'deg)',   offset: .94, easing: 'ease-out' },
+        { transform: 'rotate(' + TURN + 'deg)',         offset: 1 }
+      // 750, not 1500: the turn halved, so the duration has to halve with it or
+      // the head sweeps at half the speed. The cruise leg covers .64 of the
+      // turn in .36 of the run either way — 0.43 degrees/ms, unchanged.
+      ], { duration: 750 });
+      return 750;
+    }
+
     // Pick a gesture at random. Repeats are allowed — the cooldown already
     // keeps them apart, and forbidding them makes the sequence predictable.
     // Each returns how long it occupies the mark, and the next wait is added on
     // top: the reel runs some 3.5s all told, well past the 3s floor, and a
     // glance landing in the middle of it would fight it for the same elements.
-    var gestures = [glance, pulse, reels];
+    var gestures = [glance, pulse, reels, beacon, spin];
     function fire(){
       var busy = gestures[Math.floor(Math.random() * gestures.length)]() || 0;
       schedule(busy);
