@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Omarchy">
+  <!--
+    Omarchy's mark, taken from the source the bar itself draws: the menu widget
+    renders glyph U+E900 of the "omarchy" font family (plugins/menu/BarWidget.qml).
+    This is that glyph's own outline, lifted from omarchy.ttf's glyf table and
+    flipped into SVG space — 5 contours, all straight lines, verified against the
+    font's own rendering. Needs nonzero winding, as TrueType does.
+
+    currentColor so an inlining page can colour it. index.html pulls this file in
+    as a CSS mask instead, where only the alpha is read — opaque either way.
+  -->
+  <path fill="currentColor" fill-rule="nonzero" d="M70 954L549 954L549 1024L0 1024L0 0L1024 0L1024 1024L626 1024L626 954L954 954L954 70L70 70L70 954ZM884 884L140 884L140 140L551 140L551 210L210 210L210 814L814 814L814 210L736 210L736 140L884 140L884 884ZM471 884L549 884L549 954L471 954L471 884ZM473 70L551 70L551 140L473 140L473 70ZM0 473L210 473L210 551L0 551L0 473Z"/>
+</svg>

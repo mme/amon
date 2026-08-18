@@ -72,10 +72,20 @@
      Only the top constrains them: the rings stroke in currentColor, the same
      colour as the head, so the part that reaches it is swallowed by it and
      reads as the head occluding the wave. */
-  .masthead .lockup{--lw:min(210px,42vw); width:var(--lw); height:auto; color:var(--ink);
-                    margin-top:calc(var(--lw) * -0.1863)}
+  /* And 56 units of empty runway either side in x, so the conveyor's capsules have
+     somewhere to slide in from and out to. Widening x alone leaves the scale
+     untouched — rendered size is width / viewBox-width and both grow by the same
+     factor — so --art stays the artwork's own width, the mark draws exactly as it
+     did, and the 40/214.75 headroom compensation above still holds. The element is
+     simply wider than the mark inside it. */
+  .masthead .lockup{--art:min(210px,42vw);
+                    width:calc(var(--art) * 326.75 / 214.75); height:auto; color:var(--ink);
+                    margin-top:calc(var(--art) * -0.1863)}
   /* a circle's fill-box centre is its own (cx,cy), which is the ball's centre */
   .wave,#amon-ball,#amon-head{transform-box:fill-box; transform-origin:50% 50%}
+  /* while it is watching the cursor the eyes are driven directly, so they get
+     a short transition instead of an animation to take the jitter off */
+  .watching{transition:transform 90ms ease-out}
   /* Each ear pulses from the edge that faces the head, so it grows outward
      instead of swelling around its own middle. fill-box keeps the origin
      relative to the ear itself, independent of the viewBox's offset. */
@@ -84,7 +94,25 @@
   #amon-ear-r{transform-origin:0 50%}
   /* symbols flatten about their own centres, never about the reel */
   .eye,.squash{transform-box:fill-box; transform-origin:50% 50%}
-  .masthead p{margin:.75rem 0 0; max-width:54ch; color:var(--muted); font-size:14px}
+  /* The conveyor's own row, dormant until it runs. One class swaps the mark
+     over: the four real elements step aside and the row takes their places,
+     which it can do invisibly because it lands on exactly their geometry. */
+  #amon-row-ink rect,#amon-row-gnd rect{transform-box:fill-box; transform-origin:50% 50%}
+  #amon-row-ink,#amon-row-gnd{display:none}
+  .conveying #amon-row-ink,.conveying #amon-row-gnd{display:block}
+  .conveying #amon-ear-l,.conveying #amon-ear-r,
+  .conveying #amon-eye-l,.conveying #amon-eye-r{display:none}
+  /* 58ch, not 54: two characters of slack is what lets "one keystroke away."
+     close on the third line instead of spilling a word onto the fourth. Any
+     width from 56ch to 60ch renders the same three lines, so the measure is
+     not balanced on a knife edge. text-wrap:pretty does nothing at this size
+     but keeps "away." off a line of its own once the paragraph gets narrow. */
+  .masthead p{margin:.75rem 0 0; max-width:58ch; color:var(--muted); font-size:14px;
+              text-wrap:pretty}
+  /* The Omarchy line closes the paragraph, so it gets a line to itself at every
+     width — a block, rather than a wrap that only happens to fall in the right
+     place. The lifted "amon" at the start stays inline. */
+  .masthead p .lift:last-child{display:block}
   /* raises a phrase out of the muted body text to full ink */
   .lift{color:var(--ink)}
   /* Three actions, ranked: bare icons for the two that ask little, and one
@@ -99,15 +127,46 @@
   .glyph:hover{color:var(--ink)}
   .glyph:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
 
-  .cta{display:inline-flex; align-items:center; gap:.6rem; padding:.5rem .7rem .5rem .6rem;
+  /* Hover grows the button, not its contents: --grow adds padding on every side
+     and an equal negative margin takes it back off the layout box, so the block
+     swells around fixed-size text and the row it sits in never moves. */
+  .cta{--grow:0px;
+       display:inline-flex; align-items:center; gap:.5rem;
+       padding:calc(.35rem + var(--grow)) calc(.5rem + var(--grow))
+               calc(.35rem + var(--grow)) calc(.45rem + var(--grow));
+       margin:calc(0px - var(--grow));
        background:var(--ink); color:var(--ground); border:0; border-radius:6px;
-       font:inherit; cursor:pointer}
-  .cta:hover{opacity:.9}
+       font:inherit; cursor:pointer;
+       transition:padding 130ms ease-out, margin 130ms ease-out}
+  .cta:hover{--grow:6px}
   .cta:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
-  .cta .mark{width:17px; height:17px; display:block; flex:none}
+  .cta .mark{width:19px; height:19px; display:block; flex:none}
+  /* Omarchy's mark is the one glyph kept in its own file (omarchy-logo.svg).
+     Masked rather than <img>ed: an image is its own document and could not see
+     the theme, while a mask reads only alpha and lets currentColor do the rest.
+     Unscoped, because the schematic bar draws the same mark at the same size the
+     real bar does — one asset, two places, each taking its own colour. */
+  .mark-omarchy{background:currentColor;
+                -webkit-mask:url(omarchy-logo.svg) center/contain no-repeat;
+                        mask:url(omarchy-logo.svg) center/contain no-repeat}
   .cta .mark-check{display:none}
   .cta.copied .mark-omarchy{display:none}
   .cta.copied .mark-check{display:block}
+
+  /* "Install" and "Copied" sit in the same grid cell, so the cell is as wide as
+     the longer of them and the row does not twitch when they swap. Tied to the
+     same .copied class as the check, so the word and the mark change together. */
+  .cta .label{display:grid; justify-items:start; font-size:13px; letter-spacing:-.01em}
+  .cta .label > span{grid-area:1/1}
+  .cta .label-copied{visibility:hidden}
+  .cta.copied .label-install{visibility:hidden}
+  .cta.copied .label-copied{visibility:visible}
+
+  /* the same "you can press this" signal without the movement */
+  @media (prefers-reduced-motion: reduce){
+    .cta{transition:none}
+    .cta:hover{--grow:0px; opacity:.9}
+  }
 
   /* the command as inline code: a tint of the button's own text colour, so it
      holds in both themes without naming a colour of its own */
@@ -121,54 +180,105 @@
   /* ---- plate ------------------------------------------------------- */
   .plate{display:flex; flex-direction:column; gap:1.25rem}
   .plate > header{display:flex; flex-direction:column; gap:.4rem; border-top:1px solid var(--rule); padding-top:1rem}
-  .plate h2{margin:0; font-size:1rem; font-weight:700; letter-spacing:-.01em}
+  /* Only the first plate gets a rule: it divides the masthead from the argument.
+     Between plates the space does the work, and a second rule would read as a
+     repeating frame rather than as a break. */
+  .plate + .plate > header{border-top:0; padding-top:0}
+  .plate h2{margin:0; font-size:1.25rem; font-weight:700; letter-spacing:-.01em}
   .plate header p{margin:0; color:var(--muted); font-size:13.5px; max-width:62ch}
   .plate header p + p{margin-top:.35rem}   /* on top of the header's own gap */
 
-  /* ---- the desktop ------------------------------------------------- */
-  .sim{margin:0; display:flex; flex-direction:column; gap:1rem; align-items:center;
-       padding:2rem 1.25rem; border:1px solid var(--rule); border-radius:2px; background:var(--raised)}
-  .screen{width:100%; max-width:460px; aspect-ratio:16/10; background:var(--sunk);
-          border:1px solid var(--rule); border-radius:3px; overflow:hidden;
-          display:flex; flex-direction:column}
+  /* ---- the top bar, schematic -------------------------------------- */
+  /* A diagram of the bar, not a picture of one. It has no ground and no edge of
+     its own — only marks, in the page's own ink — because the point being made
+     is what sits where, and a panel drawn around it would be one more thing to
+     read. Drawn well above life size for the same reason: legibility beats
+     fidelity here, so nothing is pixel-matched to the real bar.
 
-  .bar{height:30px; flex:none; display:grid; grid-template-columns:1fr auto 1fr;
-       align-items:center; padding:0 8px; border-bottom:1px solid var(--rule-soft)}
-  .bar-left{display:flex; align-items:center; gap:2px}
-  .bar-clock{font-size:10.5px; color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums}
-  .menu{display:grid; place-items:center; width:22px; height:22px; color:var(--muted)}
+     The layout is the one thing kept exact: three grid columns with the middle
+     sized to its content, so the clock holds the centre line whatever the two
+     sides carry — which is how the widget itself behaves, and what makes room
+     for the left side to grow later. An outline and no ground: the rule says
+     where the bar is, the page shows through it. */
+  .topbar{margin:0; display:flex; flex-direction:column}
+  .bar{display:grid; grid-template-columns:1fr auto 1fr; align-items:center;
+       height:52px; padding:0 14px; border-radius:3px;
+       border:1px solid var(--rule)}
+  .bar-left{display:flex; align-items:center; gap:5px}
+  .bar-right{display:flex; align-items:center; justify-content:flex-end; gap:5px}
+  .bar-mid{display:flex; align-items:center; gap:.7rem; white-space:nowrap}
+  /* The clock, the weather and the tray are context, not subject — dimmed a
+     step below the muted body so the workspace indicators carry the diagram. */
+  .bar-mid,.bar-right{opacity:.55}
 
-  /* one workspace button: fixed box, glyph centred — the bar keeps its
-     width whatever the glyph, exactly as the real widget does */
-  .ws{position:relative; display:grid; place-items:center; width:26px; height:22px;
-      color:var(--ink); opacity:.5}
-  .ws[data-occupied]{opacity:1}
-  .ws svg{display:block; width:15px; height:15px}
-  .ws .num{font-size:12px; line-height:1}
-  .ws[data-state="idle"] .num{font-weight:700}
+  .bar .logo{width:22px; height:22px; display:block; flex:none;
+             color:var(--ink); margin-right:8px}
 
-  .stage{flex:1; display:grid; place-items:stretch; padding:10px; min-height:0}
-  .win{width:100%; height:100%; background:var(--raised); border:1px solid var(--rule);
-       border-radius:2px; display:flex; flex-direction:column; overflow:hidden}
-  .win-title{flex:none; font-size:9.5px; color:var(--muted); padding:5px 8px;
-             border-bottom:1px solid var(--rule-soft); white-space:nowrap; overflow:hidden;
-             text-overflow:ellipsis}
-  .win-body{flex:1; padding:9px 8px; display:flex; flex-direction:column; gap:5px;
-            justify-content:flex-start; overflow:hidden}
-  .line{height:3.5px; border-radius:1px; background:var(--rule); flex:none}
-  .line.lit{background:var(--muted); opacity:.8}
-  .line.gap{background:none; height:5px}
-  .line.caret{background:var(--ink); width:5px; opacity:.85}
+  /* one workspace: a fixed box with the glyph centred, so the row keeps its
+     width whether the slot shows a digit or a marker */
+  .ws{display:grid; place-items:center; width:32px; height:32px; border-radius:4px;
+      color:var(--ink); font-size:17px; line-height:1;
+      font-variant-numeric:tabular-nums;
+      transition:color 220ms ease}
+  /* Every face a slot can wear is in the slot, stacked in one grid cell, and
+     data-state picks which is lit. Swapping state is then a crossfade rather
+     than a rebuild — and because they share the cell, nothing reflows and the
+     row keeps its width whichever face is showing. */
+  .ws-face{grid-area:1/1; display:block; transition:opacity 340ms ease; opacity:0}
+  .ws[data-state="idle"]    .ws-idle,
+  .ws[data-state="working"] .ws-working,
+  .ws[data-state="done"]    .ws-done,
+  .ws[data-state="focused"] .ws-focused{opacity:1}
+  .ws-done,.ws-idle{width:19px; height:19px}
+  /* a braille cell is a narrow column of dots in the middle of its box, so it
+     needs the extra size to carry at the same weight as a digit */
+  .ws-working{width:24px; height:24px}
+  /* the focus marker fills only 54% of its viewBox, so at the glyph size the
+     others use it reads as a dot — sized up until the square is square */
+  .ws-focused{width:25px; height:25px}
+  .ws[data-state="idle"]{color:var(--muted)}
 
-  /* ---- legend ------------------------------------------------------ */
-  .legend{display:flex; flex-wrap:wrap; justify-content:center; gap:.5rem 1.5rem;
-          width:100%; margin:0; padding:0}
-  .legend li{display:flex; align-items:center; gap:.5rem; list-style:none;
-             font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted)}
-  .legend svg{width:12px; height:12px; color:var(--ink); flex:none}
-  .legend ul{display:contents}
-  .sim figcaption{font-size:11.5px; color:var(--muted); text-align:center; max-width:52ch}
-  .sim figcaption b{color:var(--ink); font-weight:700}
+  .bar .clock{font-size:16px; color:var(--muted);
+              font-variant-numeric:tabular-nums}
+  .bar .tray{display:block; width:20px; height:20px; color:var(--muted)}
+
+  /* The explainer, step one. It points at whichever workspace data-explains
+     names; both the stem and the paragraph ride a single --point-x, which is
+     measured off that slot rather than written down here, so moving to the next
+     workspace is a change of attribute and nothing else. Both transition, so
+     when it does move it walks along the bar instead of jumping. */
+  .explain{position:relative; padding-top:24px}
+  .explain-stem{position:absolute; top:0; left:calc(var(--point-x, 0px) - .5px);
+                width:1px; height:17px; background:var(--muted);
+                transition:left 520ms cubic-bezier(.4,0,.2,1)}
+
+  /* Position and content are separated, which is what lets the two crossfade.
+     The wrapper carries the offset and travels; the two lines inside it share
+     one grid cell and swap by opacity, so the outgoing and incoming copy are
+     alive at the same moment instead of one waiting for the other to finish.
+
+     Opacity only, and deliberately: the lines used to drift vertically as they
+     faded, which put them on a diagonal — travelling right while rising or
+     settling — and two diagonals running opposite ways read as a rotation. One
+     axis. The caption slides right and its words change; nothing turns. Being
+     monospace and left-aligned, the shared opening of each step lands on itself
+     during the overlap, so the change reads as the words that differ. */
+  .explain-copy{display:grid; margin-left:var(--point-x, 0px);
+                transition:margin-left 520ms cubic-bezier(.4,0,.2,1)}
+  /* no measure cap: a step is one short line and is meant to stay one line, so
+     the copy is written to fit rather than wrapped to a column */
+  .explain-line{grid-area:1/1; margin:0; font-size:13.5px; color:var(--muted);
+                opacity:0; transition:opacity 340ms ease}
+  /* the incoming line waits for the outgoing one to be most of the way gone */
+  .explain-line.is-on{opacity:1; transition-delay:130ms}
+  /* kbd for the keys, so a screen reader and a stylesheet both know what they
+     are — but drawn as plain lifted text, since a boxed key at this size would
+     outweigh the indicator the line is about */
+  .explain b,.explain kbd{color:var(--ink); font:inherit}
+  @media (prefers-reduced-motion: reduce){
+    .explain-stem,.explain-copy,.explain-line{transition:none}
+  }
+
 </style>
 </head>
 <body>
@@ -210,6 +320,20 @@
   <g id="gl-menu">
     <circle cx="12" cy="12" r="5.4" fill="none" stroke="currentColor" stroke-width="1.8"/>
   </g>
+  <!-- the bar's centre pair: today's weather, and one of the right-hand tray
+       items. Schematic stand-ins, drawn at the same weight as the rest. -->
+  <g id="gl-sun">
+    <circle cx="12" cy="12" r="4.1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+          d="M12 2.9v2.4M12 18.7v2.4M2.9 12h2.4M18.7 12h2.4
+             M5.6 5.6l1.7 1.7M16.7 16.7l1.7 1.7M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7"/>
+  </g>
+  <g id="gl-screen">
+    <rect x="2.9" y="4.6" width="18.2" height="12.6" rx="2" fill="none"
+          stroke="currentColor" stroke-width="1.8"/>
+    <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+          d="M9 20.4h6"/>
+  </g>
 
   <!-- GitHub's mark (Octicons, MIT) -->
   <path id="gl-github" fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.66-.21-2.2.82-.6-.17-1.23-.25-1.87-.25s-1.27.09-1.87.25C4.7 3.09 4.04 3.3 4.04 3.3c-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/>
@@ -217,14 +341,6 @@
   <!-- X's mark -->
   <path id="gl-x" fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
 
-  <!--
-    Omarchy's mark, taken from the source the bar itself draws: the menu widget
-    renders glyph U+E900 of the "omarchy" font family (plugins/menu/BarWidget.qml).
-    This is that glyph's own outline, lifted from omarchy.ttf's glyf table and
-    flipped into SVG space — 5 contours, all straight lines, verified against the
-    font's own rendering. Needs nonzero winding, as TrueType does.
-  -->
-  <path id="gl-omarchy" fill="currentColor" fill-rule="nonzero" d="M70 954L549 954L549 1024L0 1024L0 0L1024 0L1024 1024L626 1024L626 954L954 954L954 70L70 70L70 954ZM884 884L140 884L140 140L551 140L551 210L210 210L210 814L814 814L814 210L736 210L736 140L884 140L884 884ZM471 884L549 884L549 954L471 954L471 884ZM473 70L551 70L551 140L473 140L473 70ZM0 473L210 473L210 551L0 551L0 473Z"/>
 
   <!-- sized to fill its box the way the Omarchy mark fills its own, so the
        swap on copy does not read as a jump in size -->
@@ -243,7 +359,7 @@
       at render time, but the ears would never move. One instance on the page,
       so the indirection bought nothing anyway.
     -->
-    <svg class="lockup" viewBox="22.75 -24 214.75 312.25" role="img" aria-label="amon">
+    <svg class="lockup" viewBox="-33.25 -24 326.75 312.25" role="img" aria-label="amon">
       <defs>
         <clipPath id="amon-head-clip"><path d="M 205.5 133 C 205.5 163.75 205.56 180.06 194.64 189.81 C 182.77 200.41 159.67 199.5 131 199.5 C 102.33 199.5 79.23 200.41 67.36 189.81 C 56.44 180.06 56.5 163.75 56.5 133 C 56.5 102.25 56.44 85.94 67.36 76.19 C 79.23 65.59 102.33 66.5 131 66.5 C 159.67 66.5 182.77 65.59 194.64 76.19 C 205.56 85.94 205.5 102.25 205.5 133 Z"/></clipPath>
       </defs>
@@ -294,6 +410,16 @@
       <!-- separate paths so each ear can pulse from its own inner edge -->
       <path id="amon-ear-l" fill="currentColor" d="M 33.75 120.5 A 7.25 7.25 0 0 1 48.25 120.5 L 48.25 145.5 A 7.25 7.25 0 0 1 33.75 145.5 Z"/>
       <path id="amon-ear-r" fill="currentColor" d="M 213.75 120.5 A 7.25 7.25 0 0 1 228.25 120.5 L 228.25 145.5 A 7.25 7.25 0 0 1 213.75 145.5 Z"/>
+      <!--
+        The conveyor's row. Every capsule exists twice at identical coordinates:
+        once here in the ink, once in the layer below in the page's own ground,
+        clipped to the head. Ink laid over the ink head is invisible, so one
+        capsule crossing the rim is ear on the outside and eye on the inside with
+        no colour animating anywhere — the outline splits it. The rects are
+        generated, since their count follows STEP.
+      -->
+      <g id="amon-row-ink" fill="currentColor"></g>
+      <g id="amon-row-gnd" clip-path="url(#amon-head-clip)" fill="var(--ground)"></g>
       <!-- rings the antenna throws off; invisible until a beacon runs -->
       <circle class="wave" cx="131" cy="29" r="13" fill="none" stroke="currentColor"
               stroke-width="7" vector-effect="non-scaling-stroke" opacity="0"/>
@@ -316,6 +442,7 @@
       <div class="eyebrow">Agent Monitor</div>
       <p><span class="lift">amon</span> runs your agent untouched — no multiplexer or
          dashboard. You know when it is working, idle, or needs your attention.
+         Any of them, one keystroke away.
          <span class="lift">Built for Omarchy Linux.</span></p>
     </div>
     <div class="actions">
@@ -329,10 +456,10 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-x"/></svg>
         </a>
       </div>
-      <button class="cta" id="install" type="button"
-              title="Copy" aria-label="Copy the install command: yay -S amon-bin">
-        <svg class="mark mark-omarchy" viewBox="0 0 1024 1024" aria-hidden="true"><use href="#gl-omarchy"/></svg>
+      <button class="cta" id="install" type="button" title="Copy to clipboard">
+        <span class="mark mark-omarchy" aria-hidden="true"></span>
         <svg class="mark mark-check" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-copied"/></svg>
+        <span class="label"><span class="label-install">Install</span><span class="label-copied">Copied</span></span>
         <code>yay -S amon-bin</code>
       </button>
       <span class="sr" role="status" id="install-status"></span>
@@ -341,63 +468,77 @@
 
   <section class="plate">
     <header>
-      <h2>omarchy + amon = your agent orchestrator</h2>
-      <p>You don't need another environment to manage your agents — Omarchy already gave you the
-         perfect container. A workspace holds everything you need: agent terminals, a browser,
-         the logs — tiled or side-scrolling, however you like to work.</p>
-      <p><span class="lift">amon</span> just adds the last missing piece: showing you which
-         agent needs your attention, at a glance, beautifully integrated.</p>
+      <h2>omarchy + amon = agent-native OS</h2>
+      <p><span class="lift">Omarchy</span> gives you the perfect container for using agents. A workspace holds everything
+         your project needs: agent terminals, a browser, the logs — tiled or side-scrolling,
+         set up the way you want.</p>
+      <p><span class="lift">amon</span> just adds the missing piece: it knows what your agents
+         are doing, which one needs your attention — and lets you quickly jump between them.</p>
+    </header>
+  </section>
+
+  <section class="plate">
+    <header>
+      <h2>agent-aware top bar</h2>
     </header>
 
-    <figure class="sim">
-      <div class="screen" role="img"
-           aria-label="A desktop bar: workspace 1 shows an agent needs input, workspace 2 shows an agent working, workspace 3 is focused and holds your own window.">
-        <div class="bar">
-          <div class="bar-left">
-            <span class="menu"><svg viewBox="0 0 24 24"><use href="#gl-menu"/></svg></span>
-            <span class="ws" data-state="blocked" data-occupied><svg viewBox="0 0 24 24"><use href="#gl-blocked"/></svg></span>
-            <span class="ws" data-state="working" data-occupied><svg viewBox="0 0 24 24" id="spinner"><g id="spinner-dots"></g></svg></span>
-            <span class="ws" data-state="focused" data-occupied><svg viewBox="0 0 24 24"><use href="#gl-focus"/></svg></span>
-          </div>
-          <div class="bar-clock">Monday 20:14</div>
-          <div></div>
+    <!--
+      The bar, schematic. Every slot that will later have something to say
+      carries a data attribute rather than a class, so behaviour can be hung on
+      it without touching the styling: data-ws is the workspace number and
+      data-state is what the indicator is showing.
+    -->
+    <figure class="topbar">
+      <div class="bar" role="img"
+           aria-label="The Omarchy top bar: the Omarchy menu, workspaces one to five with the first focused, the date and time, the weather, and the display indicator.">
+        <div class="bar-left">
+          <span class="logo mark-omarchy" aria-hidden="true"></span>
+          <span class="ws" data-ws="1" data-state="working">
+            <span class="ws-face ws-idle">1</span>
+            <svg class="ws-face ws-working" viewBox="0 0 24 24" aria-hidden="true"><g class="spinner"></g></svg>
+            <svg class="ws-face ws-done" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg>
+          </span>
+          <span class="ws" data-ws="2" data-state="idle">
+            <span class="ws-face ws-idle">2</span>
+            <svg class="ws-face ws-working" viewBox="0 0 24 24" aria-hidden="true"><g class="spinner"></g></svg>
+            <svg class="ws-face ws-done" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg>
+          </span>
+          <span class="ws" data-ws="3" data-state="idle">
+            <span class="ws-face ws-idle">3</span>
+            <svg class="ws-face ws-working" viewBox="0 0 24 24" aria-hidden="true"><g class="spinner"></g></svg>
+            <svg class="ws-face ws-done" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg>
+          </span>
+          <span class="ws" data-ws="4" data-state="idle">
+            <span class="ws-face ws-idle">4</span>
+            <svg class="ws-face ws-working" viewBox="0 0 24 24" aria-hidden="true"><g class="spinner"></g></svg>
+            <svg class="ws-face ws-done" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg>
+          </span>
+          <span class="ws" data-ws="5" data-state="idle">
+            <span class="ws-face ws-idle">5</span>
+            <svg class="ws-face ws-working" viewBox="0 0 24 24" aria-hidden="true"><g class="spinner"></g></svg>
+            <svg class="ws-face ws-done" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg>
+          </span>
         </div>
-        <div class="stage">
-          <div class="win">
-            <div class="win-title">~/Projects/scriptcast</div>
-            <!-- Your own work, abstracted: lit lines are what you typed,
-                 dim ones what came back. Deliberately unreadable — the eye
-                 belongs on the bar, not in here. -->
-            <div class="win-body">
-              <div class="line lit" style="width:34%"></div>
-              <div class="line" style="width:68%"></div>
-              <div class="line" style="width:52%"></div>
-              <div class="line" style="width:74%"></div>
-              <div class="line gap"></div>
-              <div class="line lit" style="width:46%"></div>
-              <div class="line" style="width:61%"></div>
-              <div class="line" style="width:39%"></div>
-              <div class="line" style="width:70%"></div>
-              <div class="line" style="width:55%"></div>
-              <div class="line" style="width:28%"></div>
-              <div class="line gap"></div>
-              <div class="line lit" style="width:41%"></div>
-              <div class="line" style="width:66%"></div>
-              <div class="line" style="width:47%"></div>
-              <div class="line caret"></div>
-            </div>
-          </div>
+
+        <div class="bar-mid">
+          <span class="clock">Tuesday 22:49</span>
+          <svg class="tray" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-sun"/></svg>
+        </div>
+
+        <div class="bar-right">
+          <svg class="tray" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-screen"/></svg>
         </div>
       </div>
 
-      <ul class="legend">
-        <li><svg viewBox="0 0 24 24"><use href="#gl-blocked"/></svg> Needs you</li>
-        <li><svg viewBox="0 0 24 24"><g id="legend-dots"></g></svg> Working</li>
-        <li><svg viewBox="0 0 24 24"><use href="#gl-focus"/></svg> You are here</li>
-      </ul>
-
-      <figcaption>Two agents running, and you are on neither. <b>Static frame</b> — the
-        sequence will play through run, leave, needs&nbsp;you, return.</figcaption>
+      <!-- Step one. data-explains is the whole interface: set it to another
+           workspace number and the stem and the copy walk over to it. -->
+      <figcaption class="explain" data-explains="1">
+        <span class="explain-stem" aria-hidden="true"></span>
+        <div class="explain-copy">
+          <p class="explain-line is-on">The agent is <b>working</b>. Watch with <kbd>Super</kbd>+<kbd>1</kbd>.</p>
+          <p class="explain-line" aria-hidden="true"></p>
+        </div>
+      </figcaption>
     </figure>
   </section>
 </main>
@@ -406,40 +547,117 @@
   // Braille spinner, drawn rather than typed: the widget shows U+2800-block
   // characters, which a web font may not carry. Dots 1-3 are the left column
   // top-down, 4-6 the right — decoded straight from herdr's ten frames.
-  var FRAMES = [0x280B,0x2819,0x2839,0x2838,0x283C,0x2834,0x2826,0x2827,0x2807,0x280F];
-  // A braille cell is taller than it is wide: two columns, three rows.
-  var COLS = [8.7, 15.3], ROWS = [6.9, 12, 17.1], R = 2.35;
+  (function(){
+    var FRAMES = [0x280B,0x2819,0x2839,0x2838,0x283C,0x2834,0x2826,0x2827,0x2807,0x280F];
+    // A braille cell is taller than it is wide: two columns, three rows.
+    var COLS = [8.7, 15.3], ROWS = [6.9, 12, 17.1], R = 2.35;
 
-  function dotsFor(code){
-    var bits = code - 0x2800, out = [];
-    for (var i = 0; i < 6; i++) if (bits >> i & 1) out.push(i);
-    return out;                       // 0,1,2 = left column; 3,4,5 = right
-  }
-  function paint(group, code){
-    group.textContent = '';
-    dotsFor(code).forEach(function(d){
-      var c = document.createElementNS('http://www.w3.org/2000/svg','circle');
-      c.setAttribute('cx', COLS[d > 2 ? 1 : 0]);
-      c.setAttribute('cy', ROWS[d % 3]);
-      c.setAttribute('r', R);
-      c.setAttribute('fill', 'currentColor');
-      group.appendChild(c);
-    });
-  }
-  // The spinner turns even in this static frame — it is not part of the
-  // sequence, it is simply what a working agent's indicator does at rest.
-  // One timer drives every instance, so they step together exactly as the
-  // real bar does (one tick for the whole bar, herdr's 80ms).
-  var spun = [document.getElementById('spinner-dots'), document.getElementById('legend-dots')],
-      frame = 2;
-  spun.forEach(function(g){ paint(g, FRAMES[frame]); });
+    function dotsFor(code){
+      var bits = code - 0x2800, out = [];
+      for (var i = 0; i < 6; i++) if (bits >> i & 1) out.push(i);
+      return out;                       // 0,1,2 = left column; 3,4,5 = right
+    }
+    function paint(group, code){
+      group.textContent = '';
+      dotsFor(code).forEach(function(d){
+        var c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+        c.setAttribute('cx', COLS[d > 2 ? 1 : 0]);
+        c.setAttribute('cy', ROWS[d % 3]);
+        c.setAttribute('r', R);
+        c.setAttribute('fill', 'currentColor');
+        group.appendChild(c);
+      });
+    }
 
-  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    // One timer drives every spinner on the page, so they step together exactly
+    // as the real bar does — one tick for the whole bar, herdr's 80ms.
+    var spun = [].slice.call(document.querySelectorAll('.spinner')), frame = 2;
+    if (!spun.length) return;
+    spun.forEach(function(g){ paint(g, FRAMES[frame]); });
+
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setInterval(function(){
+        frame = (frame + 1) % FRAMES.length;
+        spun.forEach(function(g){ paint(g, FRAMES[frame]); });
+      }, 80);
+    }
+  })();
+
+  // The explainer aims itself. It reads which workspace it is about off
+  // data-explains, measures that slot, and hands the offset to the CSS as
+  // --point-x — so the stem and the copy line up with the indicator whatever
+  // the bar's width, and moving to the next step is one attribute away. An
+  // observer watches the attribute, which is why nothing here is exported.
+  (function(){
+    var bar = document.querySelector('.topbar .bar'),
+        explain = document.querySelector('.topbar .explain');
+    if (!bar || !explain) return;
+
+    function aim(){
+      var slot = bar.querySelector('.ws[data-ws="' + explain.dataset.explains + '"]');
+      if (!slot) return;
+      var s = slot.getBoundingClientRect(), b = bar.getBoundingClientRect();
+      explain.style.setProperty('--point-x', (s.left + s.width / 2 - b.left) + 'px');
+    }
+
+    aim();
+    new MutationObserver(aim).observe(explain, { attributeFilter: ['data-explains'] });
+    addEventListener('resize', aim);
+    // web fonts land after first paint and the slots are type-sized, so the
+    // first measurement can be of the fallback face
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(aim);
+  })();
+
+  // The explainer's cycle. Each step owns the whole picture — which workspaces
+  // are in which state, where the pointer sits, and what the line says — so the
+  // bar and the copy can never disagree about which step is showing. A step
+  // lights exactly one workspace and leaves the rest as plain numbers: the line
+  // below names one state, so the bar should have one state to find.
+  //
+  // One move, three beats: the copy fades out, the pointer walks to the next
+  // workspace while the copy is invisible (so nothing is read mid-flight), and
+  // the new line fades up once the pointer has arrived. The slot's own glyph
+  // crossfades under it, timed to land before the pointer does.
+  (function(){
+    var bar = document.querySelector('.topbar .bar'),
+        explain = document.querySelector('.topbar .explain'),
+        lines = explain && [].slice.call(explain.querySelectorAll('.explain-line'));
+    if (!bar || !explain || !lines || lines.length < 2) return;
+
+    var STEPS = [
+      { ws: 1, states: { 1: 'working' },
+        html: 'The agent is <b>working</b>. Watch with <kbd>Super</kbd>+<kbd>1</kbd>.' },
+      { ws: 2, states: { 2: 'done' },
+        html: 'The agent is <b>done</b>. Review with <kbd>Super</kbd>+<kbd>2</kbd>.' }
+    ];
+    // Long enough to read the line twice and still look at the bar.
+    var DWELL = 7000, at = 0, live = 0;
+
+    function show(step){
+      [].forEach.call(bar.querySelectorAll('.ws'), function(w){
+        w.dataset.state = step.states[w.dataset.ws] || 'idle';
+      });
+      // the copy alternates between the two lines rather than being rewritten,
+      // so the one going out is still on screen while the one coming in arrives
+      var next = lines[1 - live];
+      next.innerHTML = step.html;
+      next.removeAttribute('aria-hidden');
+      lines[live].setAttribute('aria-hidden', 'true');
+      lines[live].classList.remove('is-on');
+      next.classList.add('is-on');
+      live = 1 - live;
+      explain.dataset.explains = step.ws;   // the aim observer follows this
+    }
+
+    // A carousel that advances itself is the thing the preference is asking us
+    // not to do, so under reduce it holds on the first step instead.
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
     setInterval(function(){
-      frame = (frame + 1) % FRAMES.length;
-      spun.forEach(function(g){ paint(g, FRAMES[frame]); });
-    }, 80);
-  }
+      at = (at + 1) % STEPS.length;
+      show(STEPS[at]);
+    }, DWELL);
+  })();
 
   // Theme toggle. The page follows the OS until you say otherwise.
   // The mark glances. Left first, then alternating, so a glance always reads
@@ -455,8 +673,8 @@
     var SHIFT = 18,         // user units, so ~18px at the masthead's size
         LEAD = .88,         // the eye it looks toward travels less...
         TRAIL = 1.12,       // ...and the far one swings further round
-        COOLDOWN = 3000,    // never sooner than this after the last one
-        SPREAD = 5000,      // plus up to this much, at random
+        COOLDOWN = 2000,    // never sooner than this after the last one
+        SPREAD = 4000,      // plus up to this much, at random
         dir = -1;           // negative x is left; the first glance looks left
 
     // The two never move as one rigid pair. A head turning left foreshortens on
@@ -676,13 +894,204 @@
       return 750;
     }
 
+    // ---- the conveyor ----------------------------------------------------
+    //
+    // Left ear, both eyes, right ear are four capsules on one axis — they all
+    // sit at cy 133 — so the row can shift along it. Whatever crosses the head's
+    // rim changes colour on the way through, and that costs nothing: each
+    // capsule is drawn twice, ink and ground, and the clip does the rest.
+    //
+    // The slots are unevenly spaced (63.5, 53, 63.5), so a shift always has the
+    // row moving at two speeds, and the further it travels the less that shows:
+    // one slot is 63.5 against 53, a 17% spread; two is 127 against 116.5, 8%;
+    // three is 190.5 against 180, under 6%. At three the left ear also crosses
+    // the whole face — ear, eye, eye, ear in one run — and comes out the far side
+    // as the right ear, which is the trip that shows the idea off.
+    var SLOT = [41, 104.5, 157.5, 221],   // ear, eye, eye, ear
+        PITCH = 63.5,                     // spacing assumed for the slots beyond
+        ROW_CY = 133,
+        EAR_W = 14.5, EAR_H = 39.5,
+        EYE_W = 16, EYE_H = 36.5,
+        VIEW_L = -33.25, VIEW_R = 293.5,  // the lockup's viewBox in x, runway included
+        EDGE_PAD = 3,                     // clearance kept from the edge that clips
+        FADE = 12,                        // and how far the fade itself runs
+        STEP = 3,
+        ROLL = 1500;
+
+    function slotX(k){
+      if (k >= 0 && k <= 3) return SLOT[k];
+      return k < 0 ? SLOT[0] + k * PITCH : SLOT[3] + (k - 3) * PITCH;
+    }
+    function slotW(k){ return (k <= 0 || k >= 3) ? EAR_W : EYE_W; }
+    function slotH(k){ return (k <= 0 || k >= 3) ? EAR_H : EYE_H; }
+    function unit(v){ return v < 0 ? 0 : v > 1 ? 1 : v; }
+
+    // The row: STEP capsules waiting off the left edge, then the four on show.
+    // Each is built at its starting slot and carries where it has to end up.
+    var row = (function(){
+      var NS = 'http://www.w3.org/2000/svg',
+          into = [document.getElementById('amon-row-ink'),
+                  document.getElementById('amon-row-gnd')],
+          out = [], s, e, els, i, r;
+      if (!into[0] || !into[1]) return out;
+      for (s = -STEP; s <= 3; s++) {
+        e = s + STEP;
+        els = [];
+        for (i = 0; i < 2; i++) {
+          r = document.createElementNS(NS, 'rect');
+          r.setAttribute('x', slotX(s) - slotW(s) / 2);
+          r.setAttribute('y', ROW_CY - slotH(s) / 2);
+          r.setAttribute('width', slotW(s));
+          r.setAttribute('height', slotH(s));
+          r.setAttribute('rx', slotW(s) / 2);     // rx = half the width: a capsule
+          into[i].appendChild(r);
+          els.push(r);
+        }
+        out.push({ els: els, x0: slotX(s), x1: slotX(e),
+                   sx: slotW(e) / slotW(s),       // an ear is 10% narrower than an
+                   sy: slotH(e) / slotH(s),       // eye and 8% taller, so it morphs
+                   half: slotW(s) / 2,
+                   fadeIn: s < 0, fadeOut: e > 3 });
+      }
+      return out;
+    })();
+
+    // Opacity follows x, not progress, and both fades happen out in the runway,
+    // hard against the edge rather than beside the artwork: in over cx -23 to -11,
+    // out over 271 to 283. A capsule is solid for the whole of its visible
+    // approach — some 50 units before it lands, 50 more after it leaves home — and
+    // it is already gone before the edge could clip it.
+    //
+    // Fading beside the artwork was the mistake: with 11 units of space left of the
+    // resting ear, an arriving capsule had to materialise on top of where it
+    // stopped, so it read as appearing rather than as arriving.
+    //
+    // Both windows are also far clear of the head, so a capsule is never
+    // part-transparent over it, where the ink and ground layers would show through
+    // each other.
+    function place(it, t){
+      var cx = it.x0 + (it.x1 - it.x0) * t, op = 1, a, b;
+      if (it.fadeIn)  { a = VIEW_L + it.half + EDGE_PAD; b = a + FADE;
+                        op = unit((cx - a) / (b - a)); }
+      if (it.fadeOut) { b = VIEW_R - it.half - EDGE_PAD; a = b - FADE;
+                        op = 1 - unit((cx - a) / (b - a)); }
+      var tf = 'translateX(' + (cx - it.x0) + 'px) scale(' +
+               (1 + (it.sx - 1) * t) + ',' + (1 + (it.sy - 1) * t) + ')';
+      it.els[0].style.transform = it.els[1].style.transform = tf;
+      it.els[0].style.opacity = it.els[1].style.opacity = op;
+    }
+
+    // cubic-bezier(.45,.05,.35,1) solved by hand: this is the one gesture that
+    // drives its own frames, because its opacity depends on where a capsule has
+    // got to rather than on how long it has been going, and keyframes cannot
+    // express that without sampling the curve.
+    function smooth(x){
+      var x1 = .45, y1 = .05, x2 = .35, y2 = 1,
+          cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx,
+          cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by,
+          t = x, i, err, d;
+      for (i = 0; i < 6; i++) {
+        err = ((ax * t + bx) * t + cx) * t - x;
+        d = (3 * ax * t + 2 * bx) * t + cx;
+        if (d === 0 || Math.abs(err) < 1e-5) break;
+        t -= err / d;
+      }
+      t = unit(t);
+      return ((ay * t + by) * t + cy) * t;
+    }
+
+    function conveyor(){
+      if (!row.length || !lockup) return 0;
+      row.forEach(function(it){ place(it, 0); });
+      lockup.classList.add('conveying');
+      var t0 = performance.now();
+      requestAnimationFrame(function frame(now){
+        var g = (now - t0) / ROLL;
+        if (g > 1) g = 1;
+        var p = smooth(g);
+        row.forEach(function(it){ place(it, p); });
+        if (g < 1) { requestAnimationFrame(frame); return; }
+        // Every capsule has landed on a slot the real elements already occupy,
+        // so handing back to them draws the identical picture and the swap is
+        // invisible. Re-homing the row afterwards happens out of sight.
+        lockup.classList.remove('conveying');
+        row.forEach(function(it){ place(it, 0); });
+      });
+      return ROLL;
+    }
+
+    // Watching the cursor. Come within WATCH_PAD of the install button and the
+    // mark stops whatever it was doing and follows the pointer instead — the
+    // idling is what a mark does when nobody is paying attention, so it should
+    // stop the moment somebody is.
+    var lockup = document.querySelector('.masthead .lockup'),
+        cta = document.getElementById('install'),
+        WATCH_PAD = 20,      // px, measured from the button's edge, not its centre
+        REACH_X = 16,        // how far an eye travels at full stretch
+        REACH_Y = 13,        // still less than REACH_X, but the button sits below
+                             // the mark, so this is the direction it mostly looks
+        watching = false;
+
+    // distance from a point to a rectangle, zero anywhere inside it
+    function gapTo(x, y, r){
+      var dx = Math.max(r.left - x, 0, x - r.right),
+          dy = Math.max(r.top - y, 0, y - r.bottom);
+      return Math.hypot(dx, dy);
+    }
+
+    function eyes(){ return ['l','r'].map(function(side){
+      return document.getElementById('amon-eye-' + side); }); }
+
+    // Each eye aims at the cursor from where it actually sits, so the two toe
+    // in slightly on anything close — one shared direction would have them
+    // staring parallel like a printed pair.
+    function lookAt(x, y){
+      ['l','r'].forEach(function(side){
+        var g = document.getElementById('amon-eye-' + side),
+            box = g.querySelector('.eye').getBoundingClientRect(),
+            dx = x - (box.left + box.width / 2),
+            dy = y - (box.top + box.height / 2),
+            d = Math.hypot(dx, dy) || 1;
+        g.style.transform = 'translate(' + (dx / d * REACH_X) + 'px,' +
+                                           (dy / d * REACH_Y) + 'px)';
+      });
+    }
+
+    function startWatching(){
+      watching = true;
+      // drop whatever the mark was mid-way through, including a reel holding a
+      // suit — cancelling puts every group back where it rests
+      lockup.getAnimations({ subtree: true }).forEach(function(a){ a.cancel(); });
+      eyes().forEach(function(g){ g.classList.add('watching'); });
+    }
+
+    function stopWatching(){
+      watching = false;
+      eyes().forEach(function(g){
+        g.style.transform = 'translate(0,0)';           // ride the transition home
+        setTimeout(function(){
+          g.classList.remove('watching');
+          g.style.transform = '';                      // then hand control back
+        }, 120);
+      });
+    }
+
+    addEventListener('mousemove', function(e){
+      if (!cta) return;
+      var near = gapTo(e.clientX, e.clientY, cta.getBoundingClientRect()) < WATCH_PAD;
+      if (near && !watching) startWatching();
+      else if (!near && watching) stopWatching();
+      if (near) lookAt(e.clientX, e.clientY);
+    }, { passive: true });
+
     // Pick a gesture at random. Repeats are allowed — the cooldown already
     // keeps them apart, and forbidding them makes the sequence predictable.
     // Each returns how long it occupies the mark, and the next wait is added on
-    // top: the reel runs some 3.5s all told, well past the 3s floor, and a
+    // top: the reel runs some 3.5s all told, well past the 2s floor, and a
     // glance landing in the middle of it would fight it for the same elements.
-    var gestures = [glance, pulse, reels, beacon, spin];
+    var gestures = [glance, pulse, reels, beacon, spin, conveyor];
     function fire(){
+      if (watching) { schedule(0); return; }   // it has an audience; hold still
       var busy = gestures[Math.floor(Math.random() * gestures.length)]() || 0;
       schedule(busy);
     }
