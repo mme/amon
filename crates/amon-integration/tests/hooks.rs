@@ -1,7 +1,7 @@
 //! Conformance between the installed hook scripts and the protocol.
 //!
 //! The hooks are shell and Python, so nothing at compile time connects them to
-//! the Rust wire types. These tests install a hook the way `amon install` does,
+//! the Rust wire types. These tests install a hook the way `amon setup` does,
 //! run it the way the agent would, and parse what comes out of the socket with
 //! the very types the daemon and wrapper use — which is a stronger check than
 //! validating against the generated schema, because it is the same code path

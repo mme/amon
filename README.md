@@ -6,7 +6,8 @@ Know what every coding agent you are running is doing:
 amon claude          # wrap any agent — output passes through untouched
 amon codex --resume
 amon status          # what's blocked, working, or idle right now?
-amon install claude  # optional per-agent hooks, for richer session data
+amon setup           # optional: agent hooks, aliases, the bar widget
+amon doctor          # integration, daemon, widget, and alias health
 ```
 
 `amon` runs an agent in a PTY and passes its output through unchanged, keeping

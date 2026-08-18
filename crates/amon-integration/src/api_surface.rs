@@ -71,6 +71,74 @@ pub fn target_label(target: IntegrationTarget) -> &'static str {
     integration::integration_target_label(target)
 }
 
+/// One row of what `amon setup` has to offer: a Detected Agent, an installed
+/// Integration, or both at once.
+#[derive(Debug, Clone)]
+pub struct Candidate {
+    pub target: IntegrationTarget,
+    pub label: &'static str,
+    /// Whether the agent's own CLI is on this machine. An installed
+    /// Integration whose agent has vanished stays a Candidate — flagged, so
+    /// the one screen can still remove it — which is why this is separate
+    /// from [`Candidate::state`].
+    pub detected: bool,
+    pub state: InstallState,
+}
+
+/// Every agent worth offering: the union of Detected Agents and installed
+/// Integrations. Agents that are neither do not appear — `amon setup <name>`
+/// remains the escape hatch for pre-installing one.
+pub fn candidates() -> Vec<Candidate> {
+    integration::integration_recommendations()
+        .into_iter()
+        .filter(|recommendation| recommendation.available)
+        .map(|recommendation| Candidate {
+            target: recommendation.target,
+            label: recommendation.label,
+            // A candidate that is not installed is only here because the
+            // registry detected it, so it is a Detected Agent by definition —
+            // layout special cases (a standalone codex, hermes) included. For
+            // installed rows `available` is always true and can no longer
+            // tell, so a PATH scan over the agent's command names refines the
+            // orphan flag. Accepted imprecision: an *installed* agent living
+            // only in a special layout reads "agent not found", and the
+            // detected-filter in `setup --all` then skips refreshing it — the
+            // wrapper's outdated notice names the per-target fix. Doing
+            // better needs the vendored `integration_target_available`, which
+            // upstream does not re-export (ADR-0005 forbids reaching in).
+            detected: recommendation.state == integration::IntegrationStatusKind::NotInstalled
+                || command_names(recommendation.target)
+                    .iter()
+                    .any(|command| on_path(command)),
+            state: match recommendation.state {
+                integration::IntegrationStatusKind::NotInstalled => InstallState::NotInstalled,
+                integration::IntegrationStatusKind::Current => InstallState::Current,
+                integration::IntegrationStatusKind::Outdated => InstallState::Outdated,
+            },
+        })
+        .collect()
+}
+
+pub(crate) fn on_path(command: &str) -> bool {
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path).any(|dir| is_executable(&dir.join(command)))
+}
+
+#[cfg(unix)]
+fn is_executable(path: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable(path: &std::path::Path) -> bool {
+    path.is_file()
+}
+
 /// Parses a CLI argument like `claude` into a target.
 pub fn parse_target(name: &str) -> Option<IntegrationTarget> {
     IntegrationTarget::ALL
@@ -91,7 +159,7 @@ pub fn outdated_notice(agent: &str) -> Option<String> {
         .find(|status| status.target == target)?;
     (status.state == InstallState::Outdated).then(|| {
         format!(
-            "amon: {agent} integration is outdated (v{} < v{}); run `amon install {agent}`",
+            "amon: {agent} integration is outdated (v{} < v{}); run `amon setup {agent}`",
             status
                 .installed_version
                 .map(|version| version.to_string())

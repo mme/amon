@@ -31,6 +31,27 @@ impl Sandbox {
         ));
         let _ = std::fs::remove_dir_all(&runtime);
         std::fs::create_dir_all(&runtime).expect("runtime dir");
+        // The sandboxed HOME must exist up front: portable-pty falls back to
+        // $HOME as the child's working directory, and spawning into a
+        // directory that is not there fails with a bare ENOENT.
+        std::fs::create_dir_all(runtime.join("home")).expect("home dir");
+        // A bin of symlinks to exactly the tools test scripts use, so PATH
+        // can exclude the system directories entirely. It has to: Omarchy
+        // ships /usr/bin/omarchy, and a sandbox whose PATH reaches it would
+        // let a test drive the developer's real desktop. A tool missing here
+        // fails that one script loudly; the real omarchy leaking in fails
+        // silently somewhere much worse.
+        let bin = runtime.join("bin");
+        std::fs::create_dir_all(&bin).expect("bin dir");
+        for tool in ["sh", "sleep", "cat", "socat", "timeout", "kill", "env"] {
+            for system in ["/usr/bin", "/bin"] {
+                let source = Path::new(system).join(tool);
+                if source.exists() {
+                    let _ = std::os::unix::fs::symlink(&source, bin.join(tool));
+                    break;
+                }
+            }
+        }
         Self { runtime }
     }
 
@@ -48,7 +69,22 @@ impl Sandbox {
         // Sandboxed too, so an inherited value cannot leak into anything else
         // that consults it — even though the Omarchy path deliberately does not.
         command.env("XDG_CONFIG_HOME", self.runtime.join("home/.config"));
+        // The developer's machine may be an Omarchy box with a live shell —
+        // one that ships /usr/bin/omarchy — and setup and remove shell out to
+        // the `omarchy` CLI. A PATH with any system directory on it would let
+        // a test drive the developer's real desktop, so PATH holds only the
+        // sandbox: planted stubs first, then the symlinked tool bin.
+        command.env("PATH", self.sandbox_path());
         command
+    }
+
+    /// The only PATH a sandboxed process gets: stub dir, then the tool bin.
+    pub fn sandbox_path(&self) -> String {
+        format!(
+            "{}:{}",
+            self.runtime.display(),
+            self.runtime.join("bin").display()
+        )
     }
 
     /// Where a desktop integration installs to, inside this sandbox.
@@ -276,6 +312,11 @@ impl PtySession {
         command.args(argv);
         command.env("XDG_RUNTIME_DIR", sandbox.runtime_dir());
         command.env("XDG_STATE_HOME", sandbox.runtime_path("state"));
+        // The same sandboxing as `Sandbox::command`: a home of the session's
+        // own and a PATH that resolves to planted stubs or nothing.
+        command.env("HOME", sandbox.runtime_path("home"));
+        command.env("XDG_CONFIG_HOME", sandbox.runtime_path("home/.config"));
+        command.env("PATH", sandbox.sandbox_path());
         // A compositor lookup would reach past the sandbox to the developer's
         // own desktop, and these tests are about focus, not windows.
         command.env_remove("HYPRLAND_INSTANCE_SIGNATURE");

@@ -1,6 +1,6 @@
 //! Per-agent integration install, uninstall, and status — vendored from herdr.
 //!
-//! `amon install claude` writes a version-stamped hook script into the agent's
+//! `amon setup claude` writes a version-stamped hook script into the agent's
 //! own config directory and edits that agent's config to register it, without
 //! disturbing anything the user put there. Reinstalling overwrites only the
 //! managed file. This is herdr's machinery unchanged (ADR-0004): the surgical
@@ -35,7 +35,7 @@ pub mod desktop;
 
 pub use api::schema::IntegrationTarget;
 pub use api_surface::{
-    all_targets, command_names, install, outdated_notice, parse_target, statuses, target_label,
-    uninstall, InstallState, Status,
+    all_targets, candidates, command_names, install, outdated_notice, parse_target, statuses,
+    target_label, uninstall, Candidate, InstallState, Status,
 };
 pub use desktop::{DesktopStatus, DesktopTarget};

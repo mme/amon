@@ -117,9 +117,33 @@ the obvious upgrade if the fork ever falls behind in a way anyone notices.
 
 The widget is a protocol client, so it must not drift from the daemon it
 parses. It therefore ships inside amon and installs with
-`amon install omarchy`, which puts `amon integrations` in charge of reporting
+`amon setup omarchy`, which puts `amon doctor` in charge of reporting
 whether the installed copy is current — the same machinery that already covers
-agent hooks. Installing writes the plugin directory and then prints the
-`omarchy plugin enable` and `omarchy bar plugin add` lines rather than editing
+agent hooks. Installing writes the plugin directory without editing
 `shell.json`, because that file becomes canonical the moment a user touches it
-and Omarchy does not deep-merge.
+and Omarchy does not deep-merge; every `shell.json` change goes through
+Omarchy's own CLI.
+
+## Postscript: Omarchy 4.0 made the placement first-class
+
+This ADR was written against a pre-release Quattro whose bar offered no
+replacement mechanism, and its placement analysis is superseded. Released
+Omarchy 4.0 honors an `omarchy.clonedFrom` manifest field for any plugin —
+the machinery behind `omarchy plugin clone`, but read generically: enabling a
+plugin that declares `clonedFrom: omarchy.workspaces` swaps it into the
+built-in widget's own bar slot (same section, same index, per-entry settings
+carried over), disabling swaps the built-in back, and IPC addressed to the
+built-in id is routed to the enabled clone. amon's manifest declares exactly
+that, so the three-command add/remove sequence this ADR described — and its
+anchor-ordering caveat — collapsed to one `omarchy plugin enable`. The
+pre-Quattro `omarchy bar plugin add/remove` commands no longer exist.
+
+What is *not* superseded is the fork itself: a workspace's label is still
+computed in one private expression from `Hyprland.workspaces`, so showing
+agent state on the indicators still means shipping a forked `Workspaces.qml`.
+`clonedFrom` changed only how the fork gets into the bar, not why it exists.
+One caution for re-syncs: `clonedFrom` is honored generically in
+`PluginRegistry.qml` and passes `omarchy plugin validate`, but the manual
+documents it only in the clone-script section — semi-documented, so a future
+Omarchy could narrow it; the enable/disable path is worth re-checking when
+Omarchy majors.
