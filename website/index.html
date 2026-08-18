@@ -72,6 +72,8 @@
   #amon-ear-l,#amon-ear-r{transform-box:fill-box}
   #amon-ear-l{transform-origin:100% 50%}
   #amon-ear-r{transform-origin:0 50%}
+  /* symbols flatten about their own centres, never about the reel */
+  .eye,.squash{transform-box:fill-box; transform-origin:50% 50%}
   .masthead p{margin:.75rem 0 0; max-width:54ch; color:var(--muted); font-size:14px}
   /* raises a phrase out of the muted body text to full ink */
   .lift{color:var(--ink)}
@@ -246,29 +248,37 @@
         (website/amon-logo.svg keeps real holes — that one has to work anywhere.)
       -->
       <!--
+        Each reel is wrapped twice: an outer translate parks the origin on the
+        eye's resting centre so the blink scales about the symbol on show,
+        whichever one that is. The slot is the copy the reel lands on, and it is
+        the one that gets swapped for a suit.
+
         A reel, not a swap: six eyes spaced 160 apart ride each group, so
         driving the group down by a whole number of 160s brings the next one
-        exactly into place. The spacing is deliberate — 160 leaves a 139.5 gap
-        between symbols, wider than the 132.6 of head they cross, so two are
-        never in view at once however fast it spins.
+        exactly into place. The spacing is deliberate — between two eyes it
+        leaves a 139.5 gap, wider than the 132.6 of head they cross, so two are
+        never in view at once however fast it spins. A suit is taller and eats
+        into that margin — at SUIT_SCALE 1.5 it leaves 134 against the same
+        132.6, so the rule still holds, but only by 1.4. Scale the suits up much
+        further and a symbol will start showing above its neighbour mid-spin.
       -->
       <g clip-path="url(#amon-head-clip)" fill="var(--ground)">
-        <g id="amon-eye-l">
+      <g id="amon-eye-l">
           <path class="eye" d="M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z"/>
           <g transform="translate(0 -160)"><path d="M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z"/></g>
           <g transform="translate(0 -320)"><path d="M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z"/></g>
-          <g transform="translate(0 -480)"><path d="M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z"/></g>
+          <g class="slot" transform="translate(0 -480)"><path d="M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z"/></g>
           <g transform="translate(0 -640)"><path d="M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z"/></g>
           <g transform="translate(0 -800)"><path d="M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z"/></g>
-        </g>
-        <g id="amon-eye-r">
+      </g>
+      <g id="amon-eye-r">
           <path class="eye" d="M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/>
           <g transform="translate(0 -160)"><path d="M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/></g>
           <g transform="translate(0 -320)"><path d="M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/></g>
           <g transform="translate(0 -480)"><path d="M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/></g>
           <g transform="translate(0 -640)"><path d="M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/></g>
-          <g transform="translate(0 -800)"><path d="M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/></g>
-        </g>
+          <g class="slot" transform="translate(0 -800)"><path d="M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/></g>
+      </g>
       </g>
 
       <!-- separate paths so each ear can pulse from its own inner edge -->
@@ -457,6 +467,7 @@
       move(near, SHIFT * dir * LEAD);
       move(far,  SHIFT * dir * TRAIL);
       dir = -dir;
+      return 1600;
     }
 
     // Two quick pulses, close together. Each ear scales from its inner edge
@@ -479,6 +490,7 @@
           { transform: 'scale(1)',            offset: 1 }
         ], { duration: 780 });
       });
+      return 780;
     }
 
     // Slot machine. Both reels spin the same way, as real ones do, and each
@@ -490,7 +502,7 @@
 
     function reel(group, turns, dur, delay){
       var D = SPACING * turns, PULL = 12;
-      group.animate([
+      return group.animate([
         // Winds back first, slowly, so you catch it loading up before anything
         // happens — the pull is only 12, small enough that no second symbol can
         // creep into view while it hangs there.
@@ -503,27 +515,104 @@
         { transform: 'translateY(' + (D + 5) + 'px)',   offset: .94, easing: 'ease-out' },
         // ...and snaps back onto it
         { transform: 'translateY(' + D + 'px)',         offset: 1 }
-      ], { duration: dur, delay: delay || 0 });
+      ], { duration: dur, delay: delay || 0, fill: 'forwards' });
     }
+
+    // Suits, drawn rather than typed — the same reason the bar glyphs are:
+    // ♠♥♦♣ in a font is a gamble on what the visitor has installed. Each is
+    // centred on (0,0) at about the eye's footprint and dealt at SUIT_SCALE, so
+    // the drawing stays readable and only one number decides how big they land.
+    var SUITS = [
+      // spade
+      '<path d="M 0 -10.5 C 4.5 -5.5 10 -2.5 10 2 C 10 5.5 7.5 7.5 4.8 7.5 C 2.8 7.5 1.2 6.6 .2 5.2' +
+        ' C .9 8 2.2 9.6 3.6 10.5 L -3.6 10.5 C -2.2 9.6 -.9 8 -.2 5.2 C -1.2 6.6 -2.8 7.5 -4.8 7.5' +
+        ' C -7.5 7.5 -10 5.5 -10 2 C -10 -2.5 -4.5 -5.5 0 -10.5 Z"/>',
+      // heart
+      '<path d="M 0 10.5 C -3 7 -10 2.5 -10 -3 C -10 -7.5 -6.5 -10.5 -3 -10.5 C -1.2 -10.5 -.3 -9.4 0 -8.4' +
+        ' C .3 -9.4 1.2 -10.5 3 -10.5 C 6.5 -10.5 10 -7.5 10 -3 C 10 2.5 3 7 0 10.5 Z"/>',
+      // diamond
+      '<path d="M 0 -11 C 2.5 -6 5.5 -2.5 8.5 0 C 5.5 2.5 2.5 6 0 11 C -2.5 6 -5.5 2.5 -8.5 0' +
+        ' C -5.5 -2.5 -2.5 -6 0 -11 Z"/>',
+      // club
+      '<circle cx="0" cy="-5.2" r="5"/><circle cx="-6" cy="3" r="5"/><circle cx="6" cy="3" r="5"/>' +
+        '<path d="M -3.6 10.5 C -2 8.5 -.8 5.5 -.5 2 L .5 2 C .8 5.5 2 8.5 3.6 10.5 Z"/>'
+    ];
+
+    var EYE_D = {
+      l: 'M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z',
+      r: 'M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z'
+    };
+    var CENTRE = { l: 104.5, r: 157.5 }, SUIT_SCALE = 1.5;
+
+    function setSlot(side, html){
+      var slot = document.querySelector('#amon-eye-' + side + ' .slot');
+      if (slot) slot.innerHTML = html;
+    }
+    function dealSuit(side){
+      // three nested groups on purpose: the outer puts the origin on the
+      // symbol's centre, the middle is the only one animated, the inner carries
+      // the size. Animating an element that already has a transform attribute
+      // would clobber it, so the squash gets a group of its own.
+      setSlot(side, '<g transform="translate(' + CENTRE[side] + ' 133)"><g class="squash">' +
+                    '<g transform="scale(' + SUIT_SCALE + ')">' +
+                    SUITS[Math.floor(Math.random() * SUITS.length)] + '</g></g></g>');
+    }
+    function restoreEye(side){ setSlot(side, '<path d="' + EYE_D[side] + '"/>'); }
 
     // The two run at different speeds on purpose — the right covers five turns
     // where the left covers three, and not proportionally slower for it, so it
     // is plainly the quicker reel. It also sets off a third of a second late
     // and locks well after: nothing about the pair is ever in step.
+    //
+    // Each reel lands on a suit, holds it long enough to be read, and then both
+    // blink — and the blink is what does the tidying. While the eyes are shut
+    // the reels are cancelled (snapping back to their resting symbol) and the
+    // suits are swapped out, so the swap is never seen, only its result.
+    var HOLD = 1100, SQUASH = 170;
+
     function reels(){
-      reel(L, 3, 1400);        // ~0.61 units/ms while rolling
-      reel(R, 5, 1800, 320);   // ~0.79 units/ms, and away 320ms later
+      dealSuit('l'); dealSuit('r');
+      var a = reel(L, 3, 1400),        // ~0.61 units/ms while rolling
+          b = reel(R, 5, 1800, 320);   // ~0.79 units/ms, and away 320ms later
+      var landed = 320 + 1800;
+
+      setTimeout(function(){
+        // the suits flatten to a line about their own centres...
+        ['l','r'].forEach(function(side){
+          var sq = document.querySelector('#amon-eye-' + side + ' .slot .squash');
+          if (sq) sq.animate([{ transform: 'scaleY(1)' }, { transform: 'scaleY(0)' }],
+                             { duration: SQUASH, easing: 'ease-in', fill: 'forwards' });
+        });
+        // ...and while nothing is showing, the reels are put back and the suits
+        // swapped out, so the eyes rise from the same flat line the suits left
+        setTimeout(function(){
+          a.cancel(); b.cancel();
+          restoreEye('l'); restoreEye('r');
+          ['l','r'].forEach(function(side){
+            var eye = document.querySelector('#amon-eye-' + side + ' > .eye');
+            if (eye) eye.animate([{ transform: 'scaleY(0)' }, { transform: 'scaleY(1)' }],
+                                 { duration: SQUASH, easing: 'ease-out' });
+          });
+        }, SQUASH);
+      }, landed + HOLD);
+
+      return landed + HOLD + SQUASH * 2;
     }
 
     // Pick a gesture at random. Repeats are allowed — the cooldown already
     // keeps them apart, and forbidding them makes the sequence predictable.
+    // Each returns how long it occupies the mark, and the next wait is added on
+    // top: the reel runs some 3.5s all told, well past the 3s floor, and a
+    // glance landing in the middle of it would fight it for the same elements.
     var gestures = [glance, pulse, reels];
     function fire(){
-      gestures[Math.floor(Math.random() * gestures.length)]();
-      schedule();
+      var busy = gestures[Math.floor(Math.random() * gestures.length)]() || 0;
+      schedule(busy);
     }
-    function schedule(){ setTimeout(fire, COOLDOWN + Math.random() * SPREAD); }
-    schedule();
+    function schedule(busy){
+      setTimeout(fire, (busy || 0) + COOLDOWN + Math.random() * SPREAD);
+    }
+    schedule(0);
   })();
 
   // The CTA is a command, not a link: clicking copies it. The Omarchy mark
