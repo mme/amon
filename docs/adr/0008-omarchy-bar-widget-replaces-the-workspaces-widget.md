@@ -300,10 +300,16 @@ An agent at rest borrows nothing. It asks for nothing, and against that the
 marker is the more useful thing to be showing — the same reasoning that gives
 a resting agent an underline rather than a glyph.
 
-Two details worth keeping if this is ever re-derived. The state phase leads:
-arriving on a workspace and waiting out the marker to learn what is happening
-there would be the wrong way round. And the spinner is *not* paused while the
-marker shows — it is one tick for the whole bar, and stopping it would drift
+Two details worth keeping if this is ever re-derived. **The marker phase leads,
+and restarts on arrival.** The state leading was tried first, reasoning that
+arriving somewhere should tell you what is happening there; using it showed the
+opposite. Moving between two workspaces that both hold busy agents never stops
+the timer, so the new workspace inherited the old one's place in the cycle and
+could land mid-state-phase — leaving a switch with no visual cue at all, since
+both the workspace left and the one arrived at were showing agent glyphs. A full
+marker phase from the first frame is the cue that the focus moved, and the state
+is a second away regardless. And the spinner is *not* paused while the marker
+shows — it is one tick for the whole bar, and stopping it would drift
 this workspace out of step with every other working one.
 
 The cost is that the marker is no longer constant, and it is now the smaller

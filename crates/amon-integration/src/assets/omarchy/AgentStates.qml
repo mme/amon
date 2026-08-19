@@ -155,6 +155,20 @@ Item {
   /// Beats elapsed in the current phase, counted rather than timed.
   property int phaseBeats: 0
 
+  /// Back to a full marker phase, from its first frame.
+  ///
+  /// Called on arrival as well as when the alternation starts, because moving
+  /// between two workspaces that both hold busy agents never stops the timer —
+  /// without this the new workspace would inherit the old one's place in the
+  /// cycle and could land showing a glyph, which is indistinguishable from not
+  /// having switched.
+  function restartPhase() {
+    root.showingState = false
+    root.phaseBeats = 0
+  }
+
+  onFocusedWorkspaceChanged: root.restartPhase()
+
   // Events that arrived before the seed. Applying them first and the seed
   // afterwards would let the snapshot resurrect an agent that has already gone,
   // or rewind one that has already moved on.
@@ -346,12 +360,14 @@ Item {
     interval: root.beat
     repeat: true
     running: root.focusedWants
-    // Starting with the state: arriving on a workspace and waiting out the
-    // marker to find what is happening there would be the wrong way round.
-    onRunningChanged: {
-      root.showingState = running
-      root.phaseBeats = 0
-    }
+    // Starting on the marker, and starting it over. The state leading was
+    // tried first, on the reasoning that arriving somewhere should tell you
+    // what is happening there — but arriving is itself the thing that needs
+    // announcing. Landing mid-state-phase gives a switch no visual cue at all:
+    // the workspace you left and the one you arrived at both just show agent
+    // glyphs, and nothing says the focus moved. A full marker phase from the
+    // first frame is that cue, and the state is a second away regardless.
+    onRunningChanged: root.restartPhase()
     onTriggered: {
       root.phaseBeats += 1
       if (root.phaseBeats < (root.showingState ? root.stateBeats : root.markerBeats))
