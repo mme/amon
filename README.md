@@ -6,7 +6,7 @@ Know what every coding agent you are running is doing:
 amon claude          # wrap any agent — output passes through untouched
 amon codex --resume
 amon status          # what's blocked, working, or idle right now?
-amon focus 3         # go to workspace 3 and land on the agent that wants you
+amon focus 3         # go to workspace 3, landing on the agent that needs you
 amon setup           # optional: agent hooks, aliases, the bar widget
 amon doctor          # integration, daemon, widget, and alias health
 ```
@@ -28,11 +28,11 @@ On Hyprland each agent also carries the window it is running in and that
 window's workspace — the column before the directory — so "which one is
 blocked" comes with "and it is over there". On Omarchy, `amon setup` turns that
 into somewhere to go: the workspace indicators in the bar show each workspace's
-most urgent agent state in place of its number, and `Super+N` lands on the
-agent that wants you rather than on whatever was focused there last — blocked
-first, then finished-but-unseen, then working, and never an agent at rest. With
-no such agent it is the plain workspace switch, and so is every way this can
-fail. Subscribers get two more facts the
+most urgent agent state in place of its number, and `Super+0-9` lands on the
+agent that needs your attention rather than on whatever was focused there last —
+blocked first, then finished-but-unseen, then working, and never an agent at
+rest. With no such agent it is the plain workspace switch, and so is every way
+this can fail. Subscribers get two more facts the
 terminal itself reports: whether the agent's view has focus, and whether it has
 had focus since the agent last changed state, which is what tells an agent that
 finished unnoticed from one you watched finish.

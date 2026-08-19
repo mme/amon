@@ -73,8 +73,8 @@ enum Command {
         #[arg(long, conflicts_with = "target")]
         all: bool,
     },
-    /// Go to a workspace, landing on the agent that wants you rather than on
-    /// whatever was focused there last
+    /// Go to a workspace, landing on the agent that needs your attention
+    /// rather than on whatever was focused there last
     Focus {
         /// Workspace number, e.g. `3`
         workspace: u32,

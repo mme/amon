@@ -27,8 +27,8 @@ const FENCE: fence::Fence = fence::DASH;
 /// What the user's own bindings file gains — one line, and the markers saying
 /// which line is not theirs.
 const PREFACE: [&str; 3] = [
-    "-- Added by amon, so Super+N lands on the agent that wants you rather than",
-    "-- on whatever was focused last. Deleting this block undoes it.",
+    "-- Added by amon, so Super+0-9 lands on the agent that needs your attention",
+    "-- rather than on whatever was focused last. Deleting this block undoes it.",
     "-- amon rewrites what is between these two markers and nothing else here.",
 ];
 
@@ -98,7 +98,7 @@ fn lua(binary: &str) -> String {
     format!(
         r#"-- Managed by amon. `amon setup` rewrites this file; `amon remove` deletes it.
 --
--- Super+N goes to a workspace and lands on the agent that most wants a human
+-- Super+0-9 goes to a workspace and lands on the agent that most wants a human
 -- there: blocked first, then finished-but-unseen, then working. An agent at
 -- rest is never jumped to, and a workspace without one is the plain switch
 -- Omarchy binds by default — which is also what `amon focus` falls back to
@@ -110,7 +110,7 @@ fn lua(binary: &str) -> String {
 local amon = {path}
 
 -- Only rebind if that binary is really there. An amon deleted without
--- `amon remove` would otherwise take Super+N with it, and losing the ability
+-- `amon remove` would otherwise take those keys with it, and losing the ability
 -- to change workspace is a far worse failure than losing the jump-to-agent.
 local binary = io.open(amon, "r")
 if binary then
@@ -161,7 +161,7 @@ pub fn install() -> io::Result<Vec<String>> {
     std::fs::write(&theirs, FENCE.with_block(&existing, &block))?;
 
     Ok(vec![
-        "Super+N now lands on the agent that wants you".to_string()
+        "Super+0-9 now lands on the agent that needs your attention".to_string(),
     ])
 }
 
@@ -189,7 +189,7 @@ pub fn uninstall() -> io::Result<Vec<String>> {
     }
 
     match std::fs::remove_file(&ours) {
-        Ok(()) => notes.push("Super+N goes back to Omarchy's own binding".to_string()),
+        Ok(()) => notes.push("Super+0-9 goes back to Omarchy's own bindings".to_string()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),
     }

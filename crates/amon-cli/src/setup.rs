@@ -201,7 +201,7 @@ pub fn remove_everything(assume_yes: bool) -> Result<(), Box<dyn std::error::Err
             match action {
                 Action::RemoveAgent { label, .. } => println!("  {label} — hooks and alias"),
                 Action::RemoveWidget => println!("  workspace switcher widget"),
-                Action::RemoveBindings => println!("  Super+N agent bindings"),
+                Action::RemoveBindings => println!("  Super+0-9 agent bindings"),
                 _ => {}
             }
         }
