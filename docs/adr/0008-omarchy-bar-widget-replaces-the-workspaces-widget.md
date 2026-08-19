@@ -171,3 +171,130 @@ end-to-end suite down to `crates/amon-integration/tests/desktop.rs`, where they
 drive `desktop::install` and `desktop::uninstall` directly. They keep their own
 `HOME` *and* their own `PATH`: uninstall shells out to `omarchy`, and a
 developer's machine may ship a real one.
+
+## Postscript: four marked changes, and the click is one of them
+
+Two statements in the body are now false, and both were load-bearing.
+
+**"Clicking a workspace does what it did before — switch to it,"** and the
+consequence drawn from it, *"That is also why the click behaviour was left
+alone."* It is not left alone. A click now runs `amon focus <id>`, the same
+command Super+N runs (ADR-0011), so that the two ways of reaching a workspace
+cannot land in different places. The fork is therefore **four** marked changes,
+not three: `moduleName`, the `text` expression, the `AgentStates` object, and
+`focusWorkspace`. The drift tests and the file's own re-derivation notes count
+four; a re-sync re-applies four.
+
+The zero-behavioural-diff rule the body sets out is what makes that a change
+worth stating rather than smuggling. It was never quite zero — the label is the
+feature — and the honest form of the rule is: the fork changes only what the
+feature requires, each change is marked, and a test counts them. Where the
+click lands is now part of the feature. The fallback keeps it a superset of
+upstream's behaviour: `bar.run` is `bash -lc`, so the command is
+`amon focus <id> || hyprctl dispatch …`, and a machine without amon on its
+login-shell `PATH` switches workspace exactly as upstream does.
+
+**The spinner is no longer herdr's ten braille frames at 80ms.** Those light
+only dots 1-6, and a braille cell is four rows tall, so their ink fills the top
+three quarters and the spinner visibly rides high above the digits beside it —
+the bar centres the glyph's box, which does not centre its ink. It is now four
+frames, `⠒⠰⠤⠆`, a two-dot bar rotating through the cell's two middle rows:
+centred by construction, and light enough not to read as a blob at bar size.
+Filling all four rows was tried first and was correctly centred but too heavy.
+
+The cadence is re-derived rather than inherited: 200ms, so four frames turn
+once every 800ms, which is what herdr's ten at 80ms do. Keeping herdr's
+interval would have spun a quarter as many frames four times as fast.
+
+What survives is the reason braille was chosen at all. Nine of herdr's
+manifests decide an agent is working by finding *any* character from the block
+in its title, so the bar still answers in the alphabet it listens to. What no
+longer holds is the stronger claim: codex's manifest matches those ten
+characters exactly, and the frames the bar draws are no longer among them.
+
+## Postscript: a rescan does not reload a changed widget
+
+`enable` asks the shell to rescan, and a rescan looks like it should be enough
+— `reloadPlugins` unregisters every plugin widget, calls
+`Qt.clearComponentCache()`, and scans again. It is not. Measured against a
+shell answering IPC normally: rewriting both the entry component and the nested
+import it pulls in, then rescanning, left the bar drawing the previous copy of
+each. Only `omarchy restart shell` picked them up.
+
+Left unhandled this makes every widget change ship stale — a user upgrading
+amon keeps the old widget until they happen to restart their shell, while setup
+reports `installed and enabled`. So `amon setup` restarts the shell, but only
+when it replaced files under a running one: the widget's status *before*
+install is read, and only `Outdated` qualifies. A first install has nothing
+cached to be stale and an unchanged one rewrites the same bytes, so neither
+disturbs the session. That case reports itself differently —
+`updated and restarted` rather than `installed and enabled` — because a bar
+blinking mid-setup should be accounted for rather than mysterious.
+
+This is worth raising upstream, and if a rescan ever does pick up changed
+plugin QML the restart deletes itself.
+
+## Postscript: an idle agent is set apart after all
+
+The body says a workspace whose agents are all idle-and-seen "shows its plain
+number, the same as a workspace with no agents at all", and that setting the
+two apart was tried in italic and dropped. They are set apart: an idle agent's
+workspace shows its number underlined.
+
+The reasoning in the body was that an agent at rest asks for nothing, so
+nothing should be asked of the reader. That still holds for *urgency* — an idle
+workspace must not compete with a blocked one — but it conflated urgency with
+presence. "There is an agent here and it wants nothing" is worth knowing, and
+is not the same fact as "there is nothing here"; collapsing them threw away the
+only thing the bar could say about a resting agent.
+
+Bold was the first attempt and could not be seen. Not for want of a bold face —
+the family resolves to one that has it, so nothing was synthesized — but
+because weight is a property of a glyph whose shape you already know, and a
+lone digit on a bar has nothing beside it to be heavier than. An underline adds
+a mark rather than thickening one, so it reads with no comparison available,
+and it draws in descender space so the digit does not move.
+
+Opacity was rejected on the same grounds the body uses to justify leaving
+occupancy alone: upstream already dims a workspace holding no windows, so a
+fainter number would place an idle agent between empty and occupied — quieter
+in exactly the place more presence was wanted.
+
+## Postscript: the focus marker lends its slot back
+
+The body's rule was that focus wins outright — *"which workspace you are on is
+something only this widget can say, while an agent's state is also one
+`amon status` away."* The reasoning is sound and it is still most of the
+policy, but taken absolutely it produced a hole: the workspace you are sitting
+on is the one workspace whose agent the bar refuses to tell you about.
+
+Usually that costs nothing, because you are there and can see the terminal.
+Not always — the agent's terminal may be behind a full-screen browser, or on
+the other end of a tiled row you are not looking at. In exactly that case the
+bar is the only thing that could tell you, and it was the one place that
+stayed silent.
+
+So the focused workspace time-shares. When it holds an agent in any state
+other than idle, it shows that state for one cycle and its marker for four,
+and repeats. A cycle is one turn of the spinner — 800ms — so a working agent
+gets exactly one revolution rather than a duration that happens to look like
+one. The split is two named properties rather than numbers in a timer, because
+those two numbers *are* the decision: the marker is what the widget alone can
+say, so it keeps the large majority, and the state borrows enough to be
+noticed.
+
+An agent at rest borrows nothing. It asks for nothing, and against that the
+marker is the more useful thing to be showing — the same reasoning that gives
+a resting agent an underline rather than a glyph.
+
+Two details worth keeping if this is ever re-derived. The state phase leads:
+arriving on a workspace and waiting four cycles to learn what is happening
+there would be the wrong way round. And the spinner is *not* paused while the
+marker shows — it is one tick for the whole bar, and stopping it would drift
+this workspace out of step with every other working one, so a state phase
+begins at whatever frame the bar has reached and still runs one full
+revolution.
+
+The cost is that the marker is no longer constant. On a workspace with a busy
+agent, "where am I" is answered four fifths of the time instead of all of it.
+That is the trade, and it is the reason the split is lopsided rather than even.

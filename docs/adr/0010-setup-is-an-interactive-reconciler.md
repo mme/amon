@@ -48,3 +48,29 @@ setup's job: packages ship `/usr/bin/amon` and their post-install prints "run
 `amon setup`" — pacman scriptlets run as root and may neither touch `$HOME` nor
 prompt, which is exactly the boundary between the package's half and setup's
 half.
+
+## Postscript: what applying the screen does, and what has no row
+
+The body describes the screen as "one row per Detected Agent plus, when the
+`omarchy` CLI is on PATH, the bar widget". The widget's row is gone, and it was
+not replaced by another one. On a machine with the `omarchy` CLI, applying the
+screen also installs the bar widget (ADR-0008) and the Super+N bindings
+(ADR-0011) — neither is a question, because neither is a choice worth putting
+to someone who has just said yes to setting amon up. `amon setup --all` does
+the same. Taking either back off is `amon remove`'s job, which is the one
+capability this costs: there is no way to have amon's agent hooks and decline
+its desktop half short of removing it afterwards.
+
+The reasoning is the same one the body applies to the agent rows. A row is a
+question, and a question implies an answer worth having. "Do you want the bar
+to show agent state" and "do you want Super+N to land on the agent" are not
+questions a person setting up amon on Omarchy is served by; they are what
+setting amon up on Omarchy *means*. What earned a row — which agents to hook,
+and therefore whose name gets aliased (ADR-0009) — is genuinely per-agent and
+genuinely reversible.
+
+"One failed item does not stop the rest" now spans three kinds of item rather
+than two, and one of them edits a file amon does not own. A refused
+`bindings.lua` — truncated fence, symlinked into a dotfiles repository — is
+reported as a note and the run continues; it is not an error, because there is
+nothing wrong except that amon has correctly declined to touch it.

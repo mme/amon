@@ -383,3 +383,75 @@ fn an_install_that_died_half_way_can_be_finished() {
 
     assert!(manifest.exists(), "install completes");
 }
+
+/// The widget's copy of the one ranking.
+const AGENT_STATES: &str = include_str!("../src/assets/omarchy/AgentStates.qml");
+
+/// The state names the widget draws, in the order it ranks them.
+fn order_in_the_widget() -> Vec<String> {
+    let line = AGENT_STATES
+        .lines()
+        .find(|line| {
+            line.trim_start()
+                .starts_with("readonly property var order:")
+        })
+        .expect("the widget ranks the states somewhere");
+    line.split(['[', ']'])
+        .nth(1)
+        .expect("the ranking is an array literal")
+        .split(',')
+        .map(|state| state.trim().trim_matches('"').to_string())
+        .collect()
+}
+
+/// The same ranking as Rust computes it, named the way the widget names them.
+fn order_in_rust() -> Vec<String> {
+    let at = |state, seen| amon_protocol::AgentEntry {
+        id: "a".into(),
+        agent: "claude".into(),
+        state,
+        state_since: 0,
+        cwd: "/".into(),
+        pid: 1,
+        args: Vec::new(),
+        hostname: "h".into(),
+        started_at: 0,
+        title: None,
+        agent_session_id: None,
+        agent_session_path: None,
+        window: None,
+        workspace: None,
+        focused: None,
+        seen,
+    };
+    let mut agents = [
+        at(amon_protocol::AgentState::Idle, Some(true)),
+        at(amon_protocol::AgentState::Working, None),
+        at(amon_protocol::AgentState::Blocked, None),
+        at(amon_protocol::AgentState::Idle, Some(false)),
+    ];
+    agents.sort_by_key(|agent| agent.attention());
+    agents
+        .iter()
+        .map(|agent| match (agent.state, agent.seen) {
+            (amon_protocol::AgentState::Blocked, _) => "blocked",
+            (amon_protocol::AgentState::Working, _) => "working",
+            (amon_protocol::AgentState::Idle, Some(false)) => "done",
+            _ => "idle",
+        })
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn the_widget_ranks_states_the_way_rust_does() {
+    // QML cannot call `AgentEntry::attention`, so the one ranking is written
+    // twice and this is the only thing holding the copies together. They must
+    // agree or the bar and `amon focus` answer differently for the same
+    // workspace: a spinner drawn where the click lands on a finished agent.
+    assert_eq!(
+        order_in_the_widget(),
+        order_in_rust(),
+        "the widget's `order` array has drifted from AgentEntry::attention"
+    );
+}

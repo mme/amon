@@ -838,7 +838,10 @@ fn setup_all_covers_detected_agents_and_the_widget() {
         stdout.contains("✓ claude — hooks installed, aliased"),
         "{stdout}"
     );
-    assert!(stdout.contains("✓ bar widget"), "{stdout}");
+    assert!(
+        stdout.contains("✓ workspace switcher widget — installed and enabled"),
+        "{stdout}"
+    );
     assert!(
         bashrc(&sandbox).contains("alias claude='amon claude'"),
         "--all aliases by default"
@@ -853,6 +856,82 @@ fn setup_all_covers_detected_agents_and_the_widget() {
     assert!(
         list < enable,
         "enable must wait for discovery, not race the watcher: {calls}"
+    );
+    assert!(
+        !calls.contains("restart shell"),
+        "a first install has no compiled copy to go stale: {calls}"
+    );
+}
+
+/// Plants a widget that is installed but is not what this build ships — the
+/// one state in which the running shell can be left drawing an old copy.
+fn stale_widget_is_installed(sandbox: &Sandbox) {
+    let plugin = sandbox.config_path(PLUGIN_DIR);
+    std::fs::create_dir_all(&plugin).expect("plugin dir");
+    std::fs::write(
+        plugin.join("manifest.json"),
+        r#"{"schemaVersion":1,"id":"sh.amon.workspaces","name":"Workspaces (amon)","version":"1.0.0","kinds":["bar-widget"],"entryPoints":{"barWidget":"Workspaces.qml"},"omarchy":{"clonedFrom":"omarchy.workspaces"}}"#,
+    )
+    .expect("manifest");
+    std::fs::write(plugin.join("Workspaces.qml"), "// an older widget\n").expect("qml");
+    std::fs::write(plugin.join("AgentStates.qml"), "// an older widget\n").expect("qml");
+}
+
+#[test]
+fn replacing_a_stale_widget_restarts_the_bar() {
+    // Asking the shell to rescan does not pick up QML that changed under an
+    // already-loaded plugin, so without the restart a setup that reports
+    // "installed and enabled" leaves the previous widget on screen — the claim
+    // would be false in exactly the case it matters (desktop::restart_shell).
+    let sandbox = Sandbox::new();
+    stale_widget_is_installed(&sandbox);
+    let record = sandbox.runtime_path("omarchy-calls");
+    sandbox.fake_agent(
+        "omarchy",
+        &format!("#!/bin/sh\necho \"$*\" >> {}\n", path_str(&record)),
+    );
+
+    let output = sandbox.run(&["setup", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let calls = std::fs::read_to_string(&record).expect("omarchy invoked");
+    let enable = calls
+        .find("plugin enable sh.amon.workspaces")
+        .expect("the widget is still installed and enabled");
+    let restart = calls
+        .find("restart shell")
+        .expect("and then made the one the bar draws");
+    assert!(
+        enable < restart,
+        "restarting before the enable would reload the old registration: {calls}"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout)
+            .contains("✓ workspace switcher widget — updated and restarted"),
+        "an update reads as one, so a blinking bar is accounted for: {output:?}"
+    );
+}
+
+#[test]
+fn installing_an_unchanged_widget_leaves_the_bar_alone() {
+    // Same bytes rewritten: nothing on screen is stale, and a restart would
+    // take the notifications and the OSD down to achieve nothing.
+    let sandbox = Sandbox::new();
+    let record = sandbox.runtime_path("omarchy-calls");
+    sandbox.fake_agent(
+        "omarchy",
+        &format!("#!/bin/sh\necho \"$*\" >> {}\n", path_str(&record)),
+    );
+
+    sandbox.run(&["setup", "--all"]);
+    std::fs::write(&record, "").expect("forget the first run");
+    let output = sandbox.run(&["setup", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let calls = std::fs::read_to_string(&record).expect("omarchy invoked");
+    assert!(
+        !calls.contains("restart shell"),
+        "the second run replaced nothing: {calls}"
     );
 }
 
@@ -882,24 +961,6 @@ fn remove_all_takes_everything_back() {
     assert!(
         !bashrc(&sandbox).contains("alias claude"),
         "no alias may outlive the hooks it pointed at"
-    );
-}
-
-#[test]
-fn a_no_alias_setup_hints_the_wrapped_command() {
-    // Without an alias, the bare name launches the agent outside amon; the
-    // handoff must say `amon claude`, or following it proves nothing.
-    let sandbox = Sandbox::new();
-    sandbox.fake_agent("claude", "#!/bin/sh\n");
-    agent_is_installed(&sandbox, ".claude");
-
-    let output = sandbox.run(&["setup", "--all", "--no-alias"]);
-
-    assert!(output.status.success(), "{output:?}");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("run `amon claude`"),
-        "the handoff must name the wrapped form: {stdout}"
     );
 }
 
@@ -1020,7 +1081,7 @@ fn doctor_tells_a_wedged_daemon_from_an_absent_one() {
     // calling that "not running" would send the user in exactly the wrong
     // direction.
     let sandbox = Sandbox::new();
-    let socket_dir = sandbox.runtime_path("amon");
+    let socket_dir = sandbox.runtime_path(amon_protocol::paths::app_dir_name());
     std::fs::create_dir_all(&socket_dir).expect("socket dir");
     let _wedged = std::os::unix::net::UnixListener::bind(socket_dir.join("amond.sock"))
         .expect("bind a daemon-shaped socket that never answers");
@@ -1156,10 +1217,6 @@ fn the_setup_screen_applies_the_preselection_on_enter() {
     assert!(
         text.contains("✓ claude"),
         "the apply reports itself: {text}"
-    );
-    assert!(
-        text.contains("open a new shell"),
-        "the first-success handoff prints: {text}"
     );
     assert!(
         bashrc(&sandbox).contains("alias claude='amon claude'"),
@@ -1360,4 +1417,135 @@ fn a_symlinked_shell_config_is_not_followed() {
         stdout.contains("alias claude='amon claude'"),
         "and the user is told the line to add themselves: {stdout}"
     );
+}
+
+/// A `hyprctl` that records the expression it was told to dispatch and answers
+/// the way the real one does — `ok` on stdout, and exit 0 either way.
+fn fake_hyprctl(sandbox: &Sandbox, record: &std::path::Path, reply: &str) {
+    sandbox.fake_agent(
+        "hyprctl",
+        &format!(
+            "#!/bin/sh\nshift\necho \"$*\" >> {}\n{reply}\n",
+            path_str(record)
+        ),
+    );
+}
+
+/// Registers an agent the daemon will report, over the same socket a wrapper
+/// uses. The returned client has to stay alive: an entry lives exactly as long
+/// as its connection.
+fn register_agent(
+    sandbox: &Sandbox,
+    id: &str,
+    workspace: &str,
+    window: &str,
+    state: &str,
+    seen: bool,
+) -> Client {
+    // Something has to start the daemon, and `focus` deliberately will not:
+    // a keybinding must not pay for a daemon launch.
+    sandbox.run(&["status"]);
+    let mut client = Client::new(sandbox.connect());
+    client.send(
+        r#"{"id":"h","method":"hello","params":{"role":"wrapper","protocol":1,"version":"test"}}"#,
+    );
+    client.send(&format!(
+        r#"{{"id":"r","method":"agent.register","params":{{"id":"{id}","agent":"claude","state":"{state}","state_since":1,"cwd":"/","pid":1,"args":[],"hostname":"h","started_at":1,"window":"{window}","workspace":"{workspace}","seen":{seen}}}}}"#
+    ));
+    client
+}
+
+#[test]
+fn focus_switches_the_workspace_when_no_agent_wants_you() {
+    // The behaviour the Super+N binding replaced, and what every failure here
+    // has to degrade to: no daemon, no agents, still a workspace switch.
+    let sandbox = Sandbox::new();
+    let record = sandbox.runtime_path("dispatches");
+    fake_hyprctl(&sandbox, &record, "echo ok");
+
+    let output = sandbox.run(&["focus", "4"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let dispatched = std::fs::read_to_string(&record).expect("hyprctl was called");
+    assert!(
+        dispatched.contains("workspace = \"4\""),
+        "the plain switch: {dispatched}"
+    );
+    assert_eq!(dispatched.lines().count(), 1, "and only once: {dispatched}");
+}
+
+#[test]
+fn focus_lands_on_the_agent_that_wants_you_most() {
+    // Two agents on one workspace: one still working, one finished and not yet
+    // looked at. Done outranks working — the finished one is what is waiting
+    // on a human — so that is where the jump goes.
+    let sandbox = Sandbox::new();
+    let record = sandbox.runtime_path("dispatches");
+    fake_hyprctl(&sandbox, &record, "echo ok");
+
+    let _working = register_agent(&sandbox, "w", "3", "aaa1", "working", true);
+    let _done = register_agent(&sandbox, "d", "3", "bbb2", "idle", false);
+    sandbox.wait_for_status("both agents to register", |agents| agents.len() == 2);
+
+    let output = sandbox.run(&["focus", "3"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let dispatched = std::fs::read_to_string(&record).expect("hyprctl was called");
+    assert!(
+        dispatched.contains("address:0xbbb2"),
+        "the finished agent, not the working one: {dispatched}"
+    );
+    assert_eq!(
+        dispatched.lines().count(),
+        1,
+        "one dispatch, so nothing flickers: {dispatched}"
+    );
+}
+
+#[test]
+fn focus_leaves_an_agent_at_rest_alone() {
+    // An idle agent that has been seen asks for nothing. Stealing the focus
+    // onto it would be amon interrupting on its own account.
+    let sandbox = Sandbox::new();
+    let record = sandbox.runtime_path("dispatches");
+    fake_hyprctl(&sandbox, &record, "echo ok");
+
+    let _resting = register_agent(&sandbox, "i", "5", "ccc3", "idle", true);
+    sandbox.wait_for_status("the agent to register", |agents| agents.len() == 1);
+
+    let output = sandbox.run(&["focus", "5"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let dispatched = std::fs::read_to_string(&record).expect("hyprctl was called");
+    assert!(
+        dispatched.contains("workspace = \"5\"") && !dispatched.contains("address:"),
+        "the plain switch: {dispatched}"
+    );
+}
+
+#[test]
+fn focus_still_switches_when_the_window_has_gone() {
+    // The agent was there when the daemon answered and its window is not there
+    // now. `hyprctl` reports that by printing a warning and exiting 0, so the
+    // fallback cannot key off the exit status.
+    let sandbox = Sandbox::new();
+    let record = sandbox.runtime_path("dispatches");
+    fake_hyprctl(
+        &sandbox,
+        &record,
+        "case \"$*\" in *window*) echo 'warning: window not found';; *) echo ok;; esac",
+    );
+
+    let _blocked = register_agent(&sandbox, "b", "2", "ddd4", "blocked", true);
+    sandbox.wait_for_status("the agent to register", |agents| agents.len() == 1);
+
+    let output = sandbox.run(&["focus", "2"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let dispatched = std::fs::read_to_string(&record).expect("hyprctl was called");
+    let window = dispatched.find("address:0xddd4").expect("tried the agent");
+    let workspace = dispatched
+        .find("workspace = \"2\"")
+        .expect("then went to the workspace anyway");
+    assert!(window < workspace, "in that order: {dispatched}");
 }

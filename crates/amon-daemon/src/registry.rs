@@ -77,9 +77,8 @@ impl Registry {
     pub fn agents(&self) -> Vec<AgentEntry> {
         let mut agents: Vec<AgentEntry> = self.lock().agents.values().cloned().collect();
         agents.sort_by(|left, right| {
-            left.state
-                .urgency()
-                .cmp(&right.state.urgency())
+            left.attention()
+                .cmp(&right.attention())
                 .then_with(|| left.state_since.cmp(&right.state_since))
         });
         agents

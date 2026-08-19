@@ -31,7 +31,9 @@ pub mod integration;
 
 pub mod alias;
 mod api_surface;
+pub mod bindings;
 pub mod desktop;
+mod fence;
 
 pub use api::schema::IntegrationTarget;
 pub use api_surface::{

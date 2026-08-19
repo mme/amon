@@ -6,7 +6,7 @@
 //! what the fork was derived from.
 //!
 //! Re-syncing means replacing both: the fixture with the new upstream file, and
-//! the shipped widget with upstream plus the three marked changes.
+//! the shipped widget with upstream plus the four marked changes.
 
 /// Omarchy Quattro's `shell/plugins/bar/widgets/Workspaces.qml`, taken
 /// 2026-08-02.
@@ -15,14 +15,16 @@ const UPSTREAM: &str = include_str!("fixtures/omarchy-Workspaces.qml");
 /// What amon ships: upstream, saying something else on the buttons.
 const FORK: &str = include_str!("../src/assets/omarchy/Workspaces.qml");
 
-/// The two upstream lines the fork is allowed to replace rather than keep.
+/// The three upstream lines the fork is allowed to replace rather than keep.
 ///
 /// A plugin has to name itself and two plugins cannot share an id, so
 /// `moduleName` must change. `text` is the feature: what a workspace displays
 /// is computed in that expression from an `int`, and the widget reads no
 /// settings, so there is no other seam at which a workspace could be made to
-/// show its agent state.
-const REPLACED: [&str; 2] = ["moduleName:", "text:"];
+/// show its agent state. `root.bar.run` is the other half of the same feature:
+/// a click has to land where Super+N lands, and where a workspace click goes
+/// is decided in that one call.
+const REPLACED: [&str; 3] = ["moduleName:", "text:", "root.bar.run("];
 
 #[test]
 fn the_fork_keeps_every_upstream_line_it_does_not_replace() {
