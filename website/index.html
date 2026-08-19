@@ -257,13 +257,22 @@
      box's left edge, and the slot centres the box rather than the glyph — which
      put every number 4.4px left of where the pointer aims. */
   .ws-done,.ws-blocked{width:19px; height:19px}
-  /* a braille cell is a narrow column of dots in the middle of its box, so it
-     needs the extra size to carry at the same weight as a digit */
+  /* the spinner lights two of the cell's four rows, so its ink sits in the
+     middle of a box that is mostly empty — it needs the extra size for those
+     dots to carry beside a digit */
   .ws-working{width:24px; height:24px}
   /* the focus marker fills only 54% of its viewBox, so at the glyph size the
      others use it reads as a dot — sized up until the square is square */
   .ws-focused{width:25px; height:25px}
   .ws[data-state="idle"]{color:var(--muted)}
+  /* An agent that has come to rest keeps its number and is underlined: it is
+     here and it wants nothing. The widget tried weight first and it could not
+     be seen — a lone digit has nothing beside it to be heavier than — so the
+     cue adds a mark instead of thickening one. Drawn in descender space, so
+     the digit does not move and the row keeps its rhythm. */
+  .ws[data-state="active"] .ws-idle{text-decoration:underline;
+                                    text-underline-offset:3px;
+                                    text-decoration-thickness:1.5px}
 
   /* a quarter smaller than the workspace side, on top of being dimmed: the
      clock and the tray are the bar's furniture, and the diagram is about the
@@ -332,17 +341,31 @@
 
   <!-- Bar glyphs. The real widget draws these from a Nerd Font's private use
        area (blocked U+F02D7, done U+F05E0, focus U+F14FB), which would be tofu
-       on the web — so they are redrawn here at the same weights. -->
-  <g id="gl-blocked">
-    <circle cx="12" cy="12" r="9.25" fill="none" stroke="currentColor" stroke-width="1.9"/>
-    <path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
+       on the web — so they are redrawn here.
+       Those two code points are Material's *filled* help-circle and
+       check-circle: a solid disc with the mark knocked out of it, not a ring
+       with a mark inside. Drawn through a mask so the knockout stays a stroke
+       — the alternative is hand-converting a checkmark to an outline path —
+       and so the hole is real transparency rather than the page colour painted
+       back over, which would break the moment a plate changed its ground.
+       The disc takes the radius the stroked ring's outer edge had, so the
+       silhouette is the size it always was; only the ink inside it changed. -->
+  <mask id="mk-blocked" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+    <circle cx="12" cy="12" r="10.2" fill="#fff"/>
+    <path fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round"
           d="M 9.1 9.3 A 2.95 2.95 0 1 1 12 13.1 L 12 14.4"/>
-    <circle cx="12" cy="17.2" r="1.15" fill="currentColor"/>
+    <circle cx="12" cy="17.2" r="1.3" fill="#000"/>
+  </mask>
+  <g id="gl-blocked">
+    <rect width="24" height="24" fill="currentColor" mask="url(#mk-blocked)"/>
   </g>
-  <g id="gl-done">
-    <circle cx="12" cy="12" r="9.25" fill="none" stroke="currentColor" stroke-width="1.9"/>
-    <path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
+  <mask id="mk-done" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+    <circle cx="12" cy="12" r="10.2" fill="#fff"/>
+    <path fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round"
           stroke-linejoin="round" d="M 7.6 12.3 L 10.7 15.4 L 16.4 8.9"/>
+  </mask>
+  <g id="gl-done">
+    <rect width="24" height="24" fill="currentColor" mask="url(#mk-done)"/>
   </g>
   <!-- focus marker: the filled rounded square the widget shows for "you are here" -->
   <g id="gl-focus">
@@ -602,33 +625,44 @@
 
 <script>
   // Braille spinner, drawn rather than typed: the widget shows U+2800-block
-  // characters, which a web font may not carry. Dots 1-3 are the left column
-  // top-down, 4-6 the right — decoded straight from herdr's ten frames.
+  // characters, which a web font may not carry.
+  //
+  // A cell is two columns by four rows, and the four frames light only the
+  // middle two — a two-dot bar going round: top, right, bottom, left. Which
+  // rows is the whole of it. herdr's own ten frames light dots 1-6 only, so
+  // their ink fills the top three quarters of the cell and the spinner rides
+  // visibly high against the digits beside it; the middle two rows are centred
+  // by construction and half the height.
   (function(){
-    var FRAMES = [0x280B,0x2819,0x2839,0x2838,0x283C,0x2834,0x2826,0x2827,0x2807,0x280F];
-    // A braille cell is taller than it is wide: two columns, three rows.
-    var COLS = [8.7, 15.3], ROWS = [6.9, 12, 17.1], R = 2.35;
+    var FRAMES = [0x2812, 0x2830, 0x2824, 0x2806];
+    var COLS = [8.7, 15.3], ROWS = [4.35, 9.45, 14.55, 19.65], R = 2.35;
 
-    function dotsFor(code){
-      var bits = code - 0x2800, out = [];
-      for (var i = 0; i < 6; i++) if (bits >> i & 1) out.push(i);
-      return out;                       // 0,1,2 = left column; 3,4,5 = right
+    // Where a lit dot goes. Bits 0-2 are the left column's first three rows,
+    // 3-5 the right column's, 6-7 the fourth row of each — which is exactly
+    // why a six-dot reading of the cell cannot say "the middle two rows".
+    function place(bit){
+      return bit < 6 ? [bit > 2 ? 1 : 0, bit % 3] : [bit - 6, 3];
     }
     function paint(group, code){
       group.textContent = '';
-      dotsFor(code).forEach(function(d){
+      var bits = code - 0x2800;
+      for (var bit = 0; bit < 8; bit++) {
+        if (!(bits >> bit & 1)) continue;
+        var at = place(bit);
         var c = document.createElementNS('http://www.w3.org/2000/svg','circle');
-        c.setAttribute('cx', COLS[d > 2 ? 1 : 0]);
-        c.setAttribute('cy', ROWS[d % 3]);
+        c.setAttribute('cx', COLS[at[0]]);
+        c.setAttribute('cy', ROWS[at[1]]);
         c.setAttribute('r', R);
         c.setAttribute('fill', 'currentColor');
         group.appendChild(c);
-      });
+      }
     }
 
     // One timer drives every spinner on the page, so they step together exactly
-    // as the real bar does — one tick for the whole bar, herdr's 80ms.
-    var spun = [].slice.call(document.querySelectorAll('.spinner')), frame = 2;
+    // as the real bar does. 200ms because the cadence follows the revolution,
+    // not the frame: four frames at 200ms turn once every 800ms, which is what
+    // herdr's ten at 80ms do.
+    var spun = [].slice.call(document.querySelectorAll('.spinner')), frame = 0;
     if (!spun.length) return;
     spun.forEach(function(g){ paint(g, FRAMES[frame]); });
 
@@ -636,7 +670,7 @@
       setInterval(function(){
         frame = (frame + 1) % FRAMES.length;
         spun.forEach(function(g){ paint(g, FRAMES[frame]); });
-      }, 80);
+      }, 200);
     }
   })();
 
