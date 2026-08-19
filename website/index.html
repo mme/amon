@@ -185,8 +185,18 @@
      repeating frame rather than as a break. */
   .plate + .plate > header{border-top:0; padding-top:0}
   .plate h2{margin:0; font-size:1.25rem; font-weight:700; letter-spacing:-.01em}
-  .plate header p{margin:0; color:var(--muted); font-size:13.5px; max-width:62ch}
+  /* Body copy sits either in the header or, when it reads as a note on the
+     illustration above it, directly in the plate. The direct-child selector
+     matters: a bare `.plate p` would also catch the explainer's line inside the
+     figure and put a measure back on it, which is what made it wrap. */
+  .plate header p,.plate > p{margin:0; color:var(--muted); font-size:13.5px; max-width:62ch}
   .plate header p + p{margin-top:.35rem}   /* on top of the header's own gap */
+  /* A note under an illustration is the same size and colour as the explainer's
+     own line, so it needs a clear beat or the two read as one block. One extra
+     step of the plate's own rhythm — 1.25rem on top of the 1.25rem gap, so 40px
+     — which is double the spacing inside the plate and still comfortably under
+     the 48px minimum that separates one section from the next. */
+  .plate > figure + p{margin-top:1.25rem}
 
   /* ---- the top bar, schematic -------------------------------------- */
   /* A diagram of the bar, not a picture of one. It has no ground and no edge of
@@ -212,24 +222,41 @@
   .bar-mid,.bar-right{opacity:.55}
 
   .bar .logo{width:22px; height:22px; display:block; flex:none;
-             color:var(--ink); margin-right:8px}
+             color:var(--ink); margin-right:8px;
+             transition:color 340ms ease, opacity 340ms ease}
+  /* The step about a quiet agent makes its point with brightness alone, so
+     everything that is not the lit workspace steps back — the Omarchy mark
+     included, which is otherwise the brightest thing on the bar and would be
+     competing with the very difference the step is asking you to notice. */
+  .bar.is-dim .logo{color:var(--muted); opacity:.55}
 
   /* one workspace: a fixed box with the glyph centred, so the row keeps its
      width whether the slot shows a digit or a marker */
+  /* A real button, stripped back to the glyph: hoverable, focusable and
+     clickable, so the diagram can be read by hand as well as watched. */
   .ws{display:grid; place-items:center; width:32px; height:32px; border-radius:4px;
       color:var(--ink); font-size:17px; line-height:1;
       font-variant-numeric:tabular-nums;
+      background:none; border:0; padding:0; font-family:inherit; cursor:pointer;
       transition:color 220ms ease}
+  .ws:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
   /* Every face a slot can wear is in the slot, stacked in one grid cell, and
      data-state picks which is lit. Swapping state is then a crossfade rather
      than a rebuild — and because they share the cell, nothing reflows and the
      row keeps its width whichever face is showing. */
   .ws-face{grid-area:1/1; display:block; transition:opacity 340ms ease; opacity:0}
+  /* "active" wears the same face as "idle" — an agent that is simply there
+     borrows no symbol, only the ink the dim ones do not have */
   .ws[data-state="idle"]    .ws-idle,
+  .ws[data-state="active"]  .ws-idle,
   .ws[data-state="working"] .ws-working,
   .ws[data-state="done"]    .ws-done,
+  .ws[data-state="blocked"] .ws-blocked,
   .ws[data-state="focused"] .ws-focused{opacity:1}
-  .ws-done,.ws-idle{width:19px; height:19px}
+  /* icon faces are sized; the digit is not. Given a box it would sit at that
+     box's left edge, and the slot centres the box rather than the glyph — which
+     put every number 4.4px left of where the pointer aims. */
+  .ws-done,.ws-blocked{width:19px; height:19px}
   /* a braille cell is a narrow column of dots in the middle of its box, so it
      needs the extra size to carry at the same weight as a digit */
   .ws-working{width:24px; height:24px}
@@ -238,9 +265,12 @@
   .ws-focused{width:25px; height:25px}
   .ws[data-state="idle"]{color:var(--muted)}
 
-  .bar .clock{font-size:16px; color:var(--muted);
+  /* a quarter smaller than the workspace side, on top of being dimmed: the
+     clock and the tray are the bar's furniture, and the diagram is about the
+     numbers */
+  .bar .clock{font-size:12.6px; color:var(--muted);
               font-variant-numeric:tabular-nums}
-  .bar .tray{display:block; width:20px; height:20px; color:var(--muted)}
+  .bar .tray{display:block; width:15.75px; height:15.75px; color:var(--muted)}
 
   /* The explainer, step one. It points at whichever workspace data-explains
      names; both the stem and the paragraph ride a single --point-x, which is
@@ -257,24 +287,26 @@
      one grid cell and swap by opacity, so the outgoing and incoming copy are
      alive at the same moment instead of one waiting for the other to finish.
 
-     Opacity only, and deliberately: the lines used to drift vertically as they
-     faded, which put them on a diagonal — travelling right while rising or
-     settling — and two diagonals running opposite ways read as a rotation. One
-     axis. The caption slides right and its words change; nothing turns. Being
-     monospace and left-aligned, the shared opening of each step lands on itself
-     during the overlap, so the change reads as the words that differ. */
-  .explain-copy{display:grid; margin-left:var(--point-x, 0px);
+     The wrapper carries the offset and travels; the line inside it is retyped.
+     One axis, and only ever one: the caption slides right, nothing turns. */
+  .explain-copy{position:relative; margin-left:var(--point-x, 0px);
                 transition:margin-left 520ms cubic-bezier(.4,0,.2,1)}
   /* no measure cap: a step is one short line and is meant to stay one line, so
      the copy is written to fit rather than wrapped to a column */
-  .explain-line{grid-area:1/1; margin:0; font-size:13.5px; color:var(--muted);
-                opacity:0; transition:opacity 340ms ease}
-  /* the incoming line waits for the outgoing one to be most of the way gone */
-  .explain-line.is-on{opacity:1; transition-delay:130ms}
+  .explain-line{margin:0; font-size:13.5px; color:var(--muted); min-height:1.65em;
+                transition:opacity 200ms ease}
+  .explain.is-fading .explain-line{opacity:0}
+  /* No caret. A block cursor at this size outweighed the workspace indicator
+     the line is about, and the typing already reads as typing without one. */
   /* kbd for the keys, so a screen reader and a stylesheet both know what they
      are — but drawn as plain lifted text, since a boxed key at this size would
      outweigh the indicator the line is about */
-  .explain b,.explain kbd{color:var(--ink); font:inherit}
+  /* only the state is lifted. The key rides in brackets, which set it apart
+     without a second piece of ink competing for the same glance. */
+  /* ink, not weight — b and kbd both carry a UA default the page does not want,
+     and .lift lifts a phrase by colour alone everywhere else */
+  .explain b{color:var(--ink); font-weight:inherit}
+  .explain kbd{font:inherit}
   @media (prefers-reduced-motion: reduce){
     .explain-stem,.explain-copy,.explain-line{transition:none}
   }
@@ -472,14 +504,14 @@
       <p><span class="lift">Omarchy</span> gives you the perfect container for using agents. A workspace holds everything
          your project needs: agent terminals, a browser, the logs — tiled or side-scrolling,
          set up the way you want.</p>
-      <p><span class="lift">amon</span> just adds the missing piece: it knows what your agents
+      <p><span class="lift">amon</span> adds the missing piece: it knows what your agents
          are doing, which one needs your attention — and lets you quickly jump between them.</p>
     </header>
   </section>
 
   <section class="plate">
     <header>
-      <h2>agent-aware top bar</h2>
+      <h2>your top bar becomes agent-aware</h2>
     </header>
 
     <!--
@@ -489,35 +521,47 @@
       data-state is what the indicator is showing.
     -->
     <figure class="topbar">
-      <div class="bar" role="img"
-           aria-label="The Omarchy top bar: the Omarchy menu, workspaces one to five with the first focused, the date and time, the weather, and the display indicator.">
+      <!-- Not role="img" any more: the workspaces are real buttons, so the bar
+           holds controls rather than being one picture. The figcaption below
+           carries the description, and it changes with the step. -->
+      <div class="bar">
         <div class="bar-left">
           <span class="logo mark-omarchy" aria-hidden="true"></span>
-          <span class="ws" data-ws="1" data-state="working">
+          <button class="ws" type="button" data-ws="1" data-state="working"
+                  aria-label="Workspace 1">
             <span class="ws-face ws-idle">1</span>
             <svg class="ws-face ws-working" viewBox="0 0 24 24" aria-hidden="true"><g class="spinner"></g></svg>
             <svg class="ws-face ws-done" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg>
-          </span>
-          <span class="ws" data-ws="2" data-state="idle">
+            <svg class="ws-face ws-blocked" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg>
+          </button>
+          <button class="ws" type="button" data-ws="2" data-state="idle"
+                  aria-label="Workspace 2">
             <span class="ws-face ws-idle">2</span>
             <svg class="ws-face ws-working" viewBox="0 0 24 24" aria-hidden="true"><g class="spinner"></g></svg>
             <svg class="ws-face ws-done" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg>
-          </span>
-          <span class="ws" data-ws="3" data-state="idle">
+            <svg class="ws-face ws-blocked" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg>
+          </button>
+          <button class="ws" type="button" data-ws="3" data-state="idle"
+                  aria-label="Workspace 3">
             <span class="ws-face ws-idle">3</span>
             <svg class="ws-face ws-working" viewBox="0 0 24 24" aria-hidden="true"><g class="spinner"></g></svg>
             <svg class="ws-face ws-done" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg>
-          </span>
-          <span class="ws" data-ws="4" data-state="idle">
+            <svg class="ws-face ws-blocked" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg>
+          </button>
+          <button class="ws" type="button" data-ws="4" data-state="idle"
+                  aria-label="Workspace 4">
             <span class="ws-face ws-idle">4</span>
             <svg class="ws-face ws-working" viewBox="0 0 24 24" aria-hidden="true"><g class="spinner"></g></svg>
             <svg class="ws-face ws-done" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg>
-          </span>
-          <span class="ws" data-ws="5" data-state="idle">
+            <svg class="ws-face ws-blocked" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg>
+          </button>
+          <button class="ws" type="button" data-ws="5" data-state="idle"
+                  aria-label="Workspace 5">
             <span class="ws-face ws-idle">5</span>
             <svg class="ws-face ws-working" viewBox="0 0 24 24" aria-hidden="true"><g class="spinner"></g></svg>
             <svg class="ws-face ws-done" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg>
-          </span>
+            <svg class="ws-face ws-blocked" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg>
+          </button>
         </div>
 
         <div class="bar-mid">
@@ -534,12 +578,25 @@
            workspace number and the stem and the copy walk over to it. -->
       <figcaption class="explain" data-explains="1">
         <span class="explain-stem" aria-hidden="true"></span>
+        <!-- The visible line is retyped a character at a time, so it is hidden
+             from assistive tech and the settled sentence is carried alongside
+             it instead — nobody should have to listen to a typewriter. -->
         <div class="explain-copy">
-          <p class="explain-line is-on">The agent is <b>working</b>. Watch with <kbd>Super</kbd>+<kbd>1</kbd>.</p>
           <p class="explain-line" aria-hidden="true"></p>
+          <span class="sr explain-said"></span>
         </div>
       </figcaption>
     </figure>
+
+    <p>Start your agents in the terminal as usual. <span class="lift">amon</span> shows their
+       live state in the top bar. <span class="lift">Super+number</span> now lands you on the
+       right agent when switching workspaces.</p>
+  </section>
+
+  <section class="plate">
+    <header>
+      <h2>Super+Alt+A rounds up every agent</h2>
+    </header>
   </section>
 </main>
 
@@ -583,6 +640,24 @@
     }
   })();
 
+  // The bar's clock is the real one, in the visitor's own locale — a schematic
+  // can simplify, but a wrong time is the one detail anybody can catch. h23
+  // rather than hour12:false, which yields "24:00" at midnight in some locales.
+  (function(){
+    var clock = document.querySelector('.topbar .clock');
+    if (!clock) return;
+    function tick(){
+      var now = new Date();
+      clock.textContent =
+        now.toLocaleDateString(undefined, { weekday: 'long' }) + ' ' +
+        now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit',
+                                            hourCycle: 'h23' });
+      // wake on the minute itself rather than drifting a little later each time
+      setTimeout(tick, 60000 - (now.getSeconds() * 1000 + now.getMilliseconds()) + 40);
+    }
+    tick();
+  })();
+
   // The explainer aims itself. It reads which workspace it is about off
   // data-explains, measures that slot, and hands the offset to the CSS as
   // --point-x — so the stem and the copy line up with the indicator whatever
@@ -621,42 +696,138 @@
   (function(){
     var bar = document.querySelector('.topbar .bar'),
         explain = document.querySelector('.topbar .explain'),
-        lines = explain && [].slice.call(explain.querySelectorAll('.explain-line'));
-    if (!bar || !explain || !lines || lines.length < 2) return;
+        line = explain && explain.querySelector('.explain-line'),
+        said = explain && explain.querySelector('.explain-said');
+    if (!bar || !explain || !line || !said) return;
 
+    // A step's copy is a list of runs, not a string of HTML, because the line
+    // is built one character at a time and the emphasis has to survive being
+    // half-typed. Each run is [text] or [text, tag].
     var STEPS = [
-      { ws: 1, states: { 1: 'working' },
-        html: 'The agent is <b>working</b>. Watch with <kbd>Super</kbd>+<kbd>1</kbd>.' },
-      { ws: 2, states: { 2: 'done' },
-        html: 'The agent is <b>done</b>. Review with <kbd>Super</kbd>+<kbd>2</kbd>.' }
+      // Workspace 4 holds a quiet agent throughout. It is the one slot that
+      // never changes, which is what lets the last step teach by subtraction:
+      // nothing is added there, everything else simply steps back.
+      // The state is what gets lifted; the errand rides in brackets after it,
+      // set off by the brackets rather than by ink so the emphasis in each line
+      // lands in one place only.
+      { ws: 1, states: { 1: 'working', 4: 'active' },
+        parts: [['Your agent is '], ['working', 'b'], ['. [Watch with '],
+                ['Super+1', 'kbd'], [']']] },
+      { ws: 2, states: { 2: 'done', 4: 'active' },
+        parts: [['Your agent is '], ['done', 'b'], ['. [Review with '],
+                ['Super+2', 'kbd'], [']']] },
+      { ws: 3, states: { 3: 'blocked', 4: 'active' },
+        parts: [['Your agent is '], ['waiting for response', 'b'], ['. [Answer with '],
+                ['Super+3', 'kbd'], [']']] },
+      // The last two have no glyph to point at, so everything else dims and the
+      // pair is left to make the point between them: four is lit because an
+      // agent lives there, five is not because none does. Adjacent on purpose.
+      { ws: 4, states: { 4: 'active' }, dim: true,
+        parts: [['Your agent is '], ['idle', 'b'], ['. [Check in with '],
+                ['Super+4', 'kbd'], [']']] },
+      // The bracket is the same slot throughout — what to know about this state.
+      // For the first four that is the key; here there is nothing to press, so
+      // it names the appearance instead, which is the only cue this state has.
+      { ws: 5, states: { 4: 'active' }, dim: true,
+        parts: [['There is '], ['no agent', 'b'],
+                [' on this workspace. [Not highlighted]']] }
     ];
     // Long enough to read the line twice and still look at the bar.
-    var DWELL = 7000, at = 0, live = 0;
+    var DWELL = 7000, FADE = 200, TYPE = 22, at = 0, run = 0;
 
-    function show(step){
+    function plain(parts){
+      return parts.map(function(p){ return p[0]; }).join('');
+    }
+    // draw the first n characters, keeping every run's tag
+    function draw(parts, n){
+      line.textContent = '';
+      for (var i = 0, left = n; i < parts.length && left > 0; i++) {
+        var seg = parts[i][0], tag = parts[i][1], take = Math.min(left, seg.length);
+        var node = tag ? document.createElement(tag) : document.createTextNode('');
+        if (tag) node.textContent = seg.slice(0, take); else node.data = seg.slice(0, take);
+        line.appendChild(node);
+        left -= take;
+      }
+    }
+    function settle(step){
       [].forEach.call(bar.querySelectorAll('.ws'), function(w){
         w.dataset.state = step.states[w.dataset.ws] || 'idle';
       });
-      // the copy alternates between the two lines rather than being rewritten,
-      // so the one going out is still on screen while the one coming in arrives
-      var next = lines[1 - live];
-      next.innerHTML = step.html;
-      next.removeAttribute('aria-hidden');
-      lines[live].setAttribute('aria-hidden', 'true');
-      lines[live].classList.remove('is-on');
-      next.classList.add('is-on');
-      live = 1 - live;
+      bar.classList.toggle('is-dim', !!step.dim);
       explain.dataset.explains = step.ws;   // the aim observer follows this
+      said.textContent = plain(step.parts);
     }
 
-    // A carousel that advances itself is the thing the preference is asking us
-    // not to do, so under reduce it holds on the first step instead.
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    // The old line leaves by fading, not by being unpicked a character at a
+    // time — backspacing made the reader watch the same sentence twice. Only
+    // the arriving line is typed, and the caption travels while it is empty, so
+    // the caret shows up at the new workspace and writes from there.
+    function show(step, typed){
+      var to = plain(step.parts).length, mine = ++run;
 
-    setInterval(function(){
-      at = (at + 1) % STEPS.length;
-      show(STEPS[at]);
-    }, DWELL);
+      if (!typed) { settle(step); draw(step.parts, to); return; }
+
+      explain.classList.add('is-fading');
+      setTimeout(function(){
+        if (mine !== run) return;
+        settle(step);
+        draw(step.parts, 0);
+        explain.classList.remove('is-fading');
+        explain.classList.add('is-typing');
+        (function type(m){
+          if (mine !== run) return;
+          if (m > to) { explain.classList.remove('is-typing'); return; }
+          draw(step.parts, m);
+          setTimeout(function(){ type(m + 1); }, TYPE);
+        })(1);
+      }, FADE);
+    }
+
+    at = 0;
+    show(STEPS[0], false);
+
+    // A carousel that advances itself is the thing the preference is asking us
+    // not to do, so under reduce the cycle never starts — but the bar is still
+    // fully explorable by hand, which is the better half of the deal.
+    var motionOK = !matchMedia('(prefers-reduced-motion: reduce)').matches,
+        timer = null;
+
+    function stop(){ if (timer) { clearInterval(timer); timer = null; } }
+    function start(){
+      stop();
+      if (motionOK) timer = setInterval(function(){
+        at = (at + 1) % STEPS.length;
+        show(STEPS[at], true);
+      }, DWELL);
+    }
+
+    // Hand control over to the pointer. Hovering or focusing a workspace parks
+    // the cycle and jumps the explainer to that one; leaving the bar hands it
+    // back. Instant rather than typed, because someone reading by hand is
+    // asking a question and should not have to wait for an answer to be typed
+    // out — the stem and the copy still glide, since that is CSS on --point-x.
+    function grab(ws){
+      var i = -1;
+      for (var j = 0; j < STEPS.length; j++) if (String(STEPS[j].ws) === String(ws)) i = j;
+      stop();
+      if (i < 0 || i === at) return;
+      at = i;
+      show(STEPS[at], false);
+    }
+
+    [].forEach.call(bar.querySelectorAll('.ws'), function(w){
+      w.addEventListener('pointerenter', function(){ grab(w.dataset.ws); });
+      w.addEventListener('focus', function(){ grab(w.dataset.ws); });
+      w.addEventListener('click', function(){ grab(w.dataset.ws); });
+    });
+    // on the bar, not on each slot: sliding from one number to the next would
+    // otherwise release and re-grab, restarting the timer mid-gesture
+    bar.addEventListener('pointerleave', start);
+    bar.addEventListener('focusout', function(e){
+      if (!bar.contains(e.relatedTarget)) start();
+    });
+
+    start();
   })();
 
   // Theme toggle. The page follows the OS until you say otherwise.
