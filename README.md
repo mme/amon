@@ -64,6 +64,26 @@ just build
 just test        # cargo-nextest; the vendored tests need a process per test
 ```
 
+## Installing
+
+One file is the whole install — the daemon and the wrapper are subcommands of
+the same binary, so there is no service to enable and nothing else to place:
+
+```sh
+just install     # release build into ~/.local/bin (override with AMON_PREFIX)
+amon setup       # agent hooks, aliases, and the Omarchy bar widget
+amon doctor      # what is wired up and what is not
+```
+
+`~/.local/bin` because Omarchy already has it on `PATH` — its own agent
+launchers live there. `amon setup` with no argument opens a screen; `amon setup
+--all` takes every agent it detects plus the bar widget, and a named target is
+always an agent (`amon setup claude`). Open a new shell afterwards for the
+aliases.
+
+`just uninstall` reverses it, integrations first so nothing is left pointing at
+a binary that is gone.
+
 ## Credit
 
 Agent state detection (and its manifests), the terminal state machine, and the
