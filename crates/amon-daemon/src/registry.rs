@@ -21,6 +21,7 @@ struct Inner {
     /// Kept here so a transition can decide whether to make a noise without
     /// reaching back out to whatever read the file.
     sound: SoundConfig,
+    sounds: crate::sound::Notifier,
 }
 
 #[derive(Clone, Default)]
@@ -61,15 +62,17 @@ impl Registry {
             return true;
         }
         let crossing = crate::sound::crossing(was, (entry.state, entry.seen));
+        let agent = entry.id.clone();
         let event = Event::AgentUpdated(entry.clone());
         Self::broadcast(&mut inner, event);
         let sound_config = inner.sound.clone();
-        // Released before playing: spawning a player is somebody else's
-        // latency, and it must not be the registry's lock.
+        let sounds = inner.sounds.clone();
+        // Released first: what follows waits a second before it makes any
+        // noise, and it must not do that holding the registry's lock.
         drop(inner);
-        if let Some(sound) = crossing {
-            crate::sound::play(sound, &sound_config);
-        }
+        // Recorded even when it is worth no sound, because that still cancels
+        // whatever the agent had pending.
+        sounds.record(&agent, crossing, &sound_config);
         true
     }
 
@@ -90,6 +93,7 @@ impl Registry {
         let mut inner = self.lock();
         inner.subscribers.remove(&connection);
         if let Some(entry) = inner.agents.remove(&connection) {
+            inner.sounds.forget(&entry.id);
             Self::broadcast(&mut inner, Event::AgentDisconnected { id: entry.id });
         }
     }

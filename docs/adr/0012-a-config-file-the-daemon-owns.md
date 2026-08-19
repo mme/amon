@@ -71,6 +71,17 @@ fact that separates "it finished" from "it finished and you watched it happen"
 noise. It is the same reasoning that puts Done above Working in
 `AgentEntry::attention` (ADR-0011).
 
+**A crossing has to settle before it is worth a noise.** Detection passes
+through intermediate states on its way to a settled one: a new prompt reads as
+idle for a moment before the rule that recognises it as a question matches.
+Playing immediately therefore turned one event into two — a finish, then a
+request. So a crossing is recorded rather than played, and plays a second later
+only if the agent has not moved on; anything that happens in between cancels it,
+including a change worth no sound at all, because that is still evidence the
+earlier one had not settled. herdr does the same thing with the same default
+second, which is why its immediate path is the one behind a config flag rather
+than the normal one.
+
 Playback follows herdr's approach — spawn the first available of `paplay`,
 `pw-play`, `ffplay`, `mpg123`, `mpv` and give up silently when none exists. A
 missing audio player is not an error to report; it is a machine that does not
