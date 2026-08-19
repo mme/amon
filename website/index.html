@@ -245,10 +245,15 @@
      than a rebuild — and because they share the cell, nothing reflows and the
      row keeps its width whichever face is showing. */
   .ws-face{grid-area:1/1; display:block; transition:opacity 340ms ease; opacity:0}
-  /* "active" wears the same face as "idle" — an agent that is simply there
-     borrows no symbol, only the ink the dim ones do not have */
+  /* Three states wear the digit and differ only in what is done to it.
+     "idle" is a slot the step is not talking about: muted, out of the way.
+     "active" is an agent at rest: full ink, underlined. "bare" is the slot
+     the step *is* talking about when there is no agent on it — full ink,
+     because the aimed slot holds ink in every other step too, and nothing
+     else, because nothing else is the state. */
   .ws[data-state="idle"]    .ws-idle,
   .ws[data-state="active"]  .ws-idle,
+  .ws[data-state="bare"]    .ws-idle,
   .ws[data-state="working"] .ws-working,
   .ws[data-state="done"]    .ws-done,
   .ws[data-state="blocked"] .ws-blocked,
@@ -769,7 +774,7 @@
       // whole difference between "an agent is here, wanting nothing" and
       // "nothing is here". The contrast used to be spatial — four sat lit in
       // every step — which made one slot behave unlike the other four.
-      { ws: 5, states: {}, dim: true,
+      { ws: 5, states: { 5: 'bare' }, dim: true,
         parts: [['There is '], ['no agent', 'b'],
                 [' on this workspace. [No underline]']] }
     ];
