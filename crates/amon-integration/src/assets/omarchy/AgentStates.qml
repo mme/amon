@@ -63,17 +63,49 @@ Item {
   // the only ones on the suits' grid are hearts inside a circle or a card.
   // Braille has no such problem: one cell, one advance width, dots switching on
   // and off inside it.
-  readonly property var spinnerFrames: [
+  readonly property var defaultFrames: [
     "⠒", "⠰", "⠤", "⠆"
   ]
+
+  // The user's configuration, as the daemon last read it (ADR-0012). Pushed
+  // over this same socket, so the bar never learns where the file lives and
+  // cannot disagree with the daemon about what it says.
+  //
+  // Defaults are *here* and not in the daemon: what the bar looks like is the
+  // bar's business, and a daemon shipping its own copy of these glyphs would be
+  // a second opinion about it. Configuration only ever overrides, which is also
+  // why a bar with no daemon looks like a bar with no configuration.
+  property var config: ({})
+
+  // Absent means "unset", so every unset field falls through to the default
+  // beside it. The daemon omits what the file does not say rather than sending
+  // zeros, which is what makes a half-filled config file legible.
+  function tuned(name, fallback) {
+    const bar = root.config.bar
+    const value = bar && bar[name]
+    return (value === undefined || value === null) ? fallback : value
+  }
+  function glyph(name, fallback) {
+    const glyphs = root.config.bar && root.config.bar.glyphs
+    const value = glyphs && glyphs[name]
+    return (value === undefined || value === null || value === "") ? fallback : value
+  }
+
+  readonly property var spinnerFrames: {
+    const frames = root.glyph("working", null)
+    return (frames && frames.length > 0) ? frames : root.defaultFrames
+  }
+  readonly property string blockedGlyph: root.glyph("blocked", String.fromCodePoint(0xF02D7))
+  readonly property string doneGlyph: root.glyph("done", String.fromCodePoint(0xF05E0))
+  readonly property string focusedGlyph: root.glyph("focused", String.fromCodePoint(0xF14FB))
 
   // One tick for the whole bar, so two working workspaces spin in step instead
   // of drifting out of phase with each other.
   property int spinnerFrame: 0
   readonly property string spinner: root.spinnerFrames[root.spinnerFrame]
 
-  /// How long one turn of the spinner takes.
-  readonly property int spinnerInterval: 200
+  /// How long one frame is shown, and how long a whole turn therefore takes.
+  readonly property int spinnerInterval: root.tuned("frame_ms", 200)
   readonly property int cycle: root.spinnerFrames.length * root.spinnerInterval
 
   /// The unit the focused workspace's turn-taking is counted in: half a turn.
@@ -94,8 +126,8 @@ Item {
   /// workspace you are on — the desktop is full of evidence for it — so the
   /// marker only has to confirm, while the state is the thing you cannot get
   /// any other way without leaving what you are doing.
-  readonly property int stateBeats: 5
-  readonly property int markerBeats: 3
+  readonly property int stateBeats: root.tuned("state_beats", 5)
+  readonly property int markerBeats: root.tuned("marker_beats", 3)
   readonly property bool anyWorking: {
     for (const workspace in root.stateByWorkspace)
       if (root.stateByWorkspace[workspace] === "working") return true
@@ -221,6 +253,10 @@ Item {
 
     if (frame.id === "amon-status" && frame.result && frame.result.agents)
       root.seed(frame.result.agents)
+    // A daemon too old to know the method answers with an error and no result,
+    // which lands here as "no configuration" — defaults, not a broken bar.
+    if (frame.id === "amon-config" && frame.result && frame.result.config)
+      root.config = frame.result.config
   }
 
   // Recreated rather than reopened. Quickshell keeps its internal socket after
@@ -247,6 +283,7 @@ Item {
           // drop an agent that registers in between.
           write('{"id":"amon-subscribe","method":"subscribe"}\n')
           write('{"id":"amon-status","method":"status"}\n')
+          write('{"id":"amon-config","method":"config"}\n')
           flush()
         } else {
           // Never show a stale state: what amon can no longer see, the bar

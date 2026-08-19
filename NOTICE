@@ -12,6 +12,11 @@ Portions of the following crates are derived from herdr at commit
   - crates/amon-term         (from herdr src/terminal/, src/agent_resume.rs,
                               src/metadata_tokens.rs)
   - crates/amon-integration  (from herdr src/integration/, incl. hook assets)
+  - crates/amon-daemon/assets/sounds/  (from herdr assets/sounds/)
+
+The two sound files are copied byte-for-byte rather than by the vendoring
+script, which would corrupt them, so they carry no origin header of their own —
+this notice and the README beside them stand in its place.
 
 Terminal emulation is not herdr's: amon links libghostty-vt, the Ghostty
 terminal emulation library, Copyright (c) 2024 Mitchell Hashimoto and Ghostty

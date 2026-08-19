@@ -2,6 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::agent::{AgentEntry, AgentPatch, AgentState};
+use crate::config::Config;
 
 /// What a peer is, declared in its [`Hello`].
 ///
@@ -40,6 +41,11 @@ pub struct HelloResult {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct StatusResult {
     pub agents: Vec<AgentEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ConfigResult {
+    pub config: Config,
 }
 
 /// A hook reporting agent state. Field names mirror herdr's `pane.report_agent`
@@ -90,6 +96,9 @@ pub enum Method {
     /// Lists connected agents.
     #[serde(rename = "status")]
     Status,
+    /// The user's configuration, as the daemon last read it (ADR-0012).
+    #[serde(rename = "config")]
+    Config,
     /// Turns this connection into an event stream.
     #[serde(rename = "subscribe")]
     Subscribe,
@@ -111,6 +120,7 @@ impl Method {
             Self::AgentRegister(_) => "agent.register",
             Self::AgentUpdate(_) => "agent.update",
             Self::Status => "status",
+            Self::Config => "config",
             Self::Subscribe => "subscribe",
             Self::DaemonShutdown => "daemon.shutdown",
             Self::AgentReportState(_) => "agent.report_state",
@@ -140,6 +150,7 @@ const KNOWN_METHODS: &[&str] = &[
     "agent.register",
     "agent.update",
     "status",
+    "config",
     "subscribe",
     "daemon.shutdown",
     "agent.report_state",

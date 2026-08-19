@@ -14,12 +14,14 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use amon_protocol::{
-    paths, Error, ErrorCode, Event, Hello, HelloResult, Method, ParseError, Request, Response,
-    Role, StatusResult, PROTOCOL_VERSION,
+    paths, ConfigResult, Error, ErrorCode, Event, Hello, HelloResult, Method, ParseError, Request,
+    Response, Role, StatusResult, PROTOCOL_VERSION,
 };
 
+mod config;
 mod manifests;
 mod registry;
+mod sound;
 
 pub use registry::Registry;
 
@@ -45,6 +47,12 @@ pub fn run(version: String) -> std::io::Result<()> {
     manifests::refresh_periodically();
 
     let registry = Registry::new();
+    // Read once here and polled from then on. Every change is pushed to
+    // subscribers, which is what lets the bar reconfigure without a restart.
+    let config = config::Watcher::start({
+        let registry = registry.clone();
+        move |config| registry.broadcast_config(config.clone())
+    });
     let shutdown = Arc::new(AtomicBool::new(false));
     let next_connection = AtomicU64::new(0);
 
@@ -55,11 +63,12 @@ pub fn run(version: String) -> std::io::Result<()> {
         let Ok(stream) = stream else { continue };
 
         let registry = registry.clone();
+        let config = config.clone();
         let version = version.clone();
         let shutdown = shutdown.clone();
         let connection = next_connection.fetch_add(1, Ordering::Relaxed);
         std::thread::spawn(move || {
-            serve(connection, stream, &registry, &version, &shutdown);
+            serve(connection, stream, &registry, &config, &version, &shutdown);
             // However the connection ended, everything it owned goes with it.
             registry.disconnect(connection);
         });
@@ -204,6 +213,7 @@ fn serve(
     connection: registry::ConnectionId,
     stream: UnixStream,
     registry: &Registry,
+    config: &config::Watcher,
     version: &str,
     shutdown: &AtomicBool,
 ) {
@@ -221,7 +231,7 @@ fn serve(
         let response = match Request::parse(&line) {
             Ok(request) => {
                 let id = request.id.clone();
-                match handle(connection, request, registry, version, &writer) {
+                match handle(connection, request, registry, config, version, &writer) {
                     Outcome::Reply(reply) => reply(id),
                     Outcome::Shutdown => {
                         shutdown.store(true, Ordering::Relaxed);
@@ -259,6 +269,7 @@ fn handle(
     connection: registry::ConnectionId,
     request: Request,
     registry: &Registry,
+    config: &config::Watcher,
     version: &str,
     writer: &SharedWriter,
 ) -> Outcome {
@@ -292,6 +303,12 @@ fn handle(
         Method::Status => {
             let result = StatusResult {
                 agents: registry.agents(),
+            };
+            Outcome::Reply(Box::new(move |id| Response::ok(id, &result)))
+        }
+        Method::Config => {
+            let result = ConfigResult {
+                config: config.current(),
             };
             Outcome::Reply(Box::new(move |id| Response::ok(id, &result)))
         }

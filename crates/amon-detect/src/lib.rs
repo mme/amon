@@ -40,6 +40,17 @@ pub use detect::{
     AgentDetection, AgentState,
 };
 
+/// Where amon keeps the user's own configuration.
+///
+/// The shim owns this because the vendored engine reads it, and the split it
+/// makes — `amon` in a release build, `amon-dev` in a debug one — has to be the
+/// same one everywhere. Re-exported rather than recomputed for the same reason
+/// the state and runtime directories share their naming: two definitions of
+/// "where amon's files live" is one too many.
+pub fn config_dir() -> std::path::PathBuf {
+    config::config_dir()
+}
+
 /// Refreshing the bundled manifests from the catalog.
 ///
 /// The vendored updater is crate-private, and re-exporting it would mean

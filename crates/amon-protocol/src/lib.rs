@@ -15,6 +15,7 @@
 //! skips what it does not recognize.
 
 mod agent;
+mod config;
 mod connect;
 mod event;
 mod frame;
@@ -23,11 +24,13 @@ pub mod paths;
 mod schema;
 
 pub use agent::{AgentEntry, AgentPatch, AgentState};
+pub use config::{BarConfig, Config, GlyphConfig, SoundConfig};
 pub use connect::connect_or_spawn_daemon;
 pub use event::Event;
 pub use frame::{Error, ErrorCode, ParseError, Request, Response, ServerFrame};
 pub use method::{
-    Hello, HelloResult, Method, MethodError, ReportSession, ReportState, Role, StatusResult,
+    ConfigResult, Hello, HelloResult, Method, MethodError, ReportSession, ReportState, Role,
+    StatusResult,
 };
 pub use schema::protocol_schema;
 

@@ -1549,3 +1549,121 @@ fn focus_still_switches_when_the_window_has_gone() {
         .expect("then went to the workspace anyway");
     assert!(window < workspace, "in that order: {dispatched}");
 }
+
+/// The config file, in this sandbox. `amon-dev` because tests are a debug
+/// build, which is the same split the state and runtime directories make.
+fn write_config(sandbox: &Sandbox, contents: &str) -> std::path::PathBuf {
+    let path = sandbox.config_path(&format!(
+        "{}/config.toml",
+        amon_protocol::paths::app_dir_name()
+    ));
+    std::fs::create_dir_all(path.parent().expect("config dir")).expect("config dir");
+    std::fs::write(&path, contents).expect("write config");
+    path
+}
+
+/// Asks the daemon for the configuration over the socket a subscriber uses.
+fn ask_for_config(sandbox: &Sandbox) -> serde_json::Value {
+    let mut client = Client::new(sandbox.connect());
+    client.send(
+        r#"{"id":"h","method":"hello","params":{"role":"subscriber","protocol":1,"version":"test"}}"#,
+    );
+    client.send(r#"{"id":"c","method":"config"}"#);
+    for _ in 0..8 {
+        let frame = client.read_frame();
+        if frame.get("id").and_then(|id| id.as_str()) == Some("c") {
+            return frame;
+        }
+    }
+    panic!("no answer to the config request");
+}
+
+#[test]
+fn the_daemon_serves_the_config_file() {
+    // The widget cannot parse TOML and never learns where the file is: it asks
+    // the daemon, which is the only reader (ADR-0012).
+    let sandbox = Sandbox::new();
+    write_config(
+        &sandbox,
+        "[bar]\nframe_ms = 120\nstate_beats = 2\n\n[bar.glyphs]\nblocked = \"!\"\nworking = [\"a\", \"b\"]\n\n[sound]\nenabled = true\n",
+    );
+    sandbox.run(&["status"]);
+
+    let frame = ask_for_config(&sandbox);
+
+    let config = &frame["result"]["config"];
+    assert_eq!(config["bar"]["frame_ms"], 120, "{frame}");
+    assert_eq!(config["bar"]["state_beats"], 2, "{frame}");
+    assert_eq!(config["bar"]["glyphs"]["blocked"], "!", "{frame}");
+    assert_eq!(
+        config["bar"]["glyphs"]["working"],
+        serde_json::json!(["a", "b"]),
+        "{frame}"
+    );
+    assert_eq!(config["sound"]["enabled"], true, "{frame}");
+    // What the file does not say is absent rather than zero, which is what
+    // lets the bar fall through to its own defaults per field.
+    assert!(config["bar"]["marker_beats"].is_null(), "{frame}");
+}
+
+#[test]
+fn no_config_file_is_not_an_error() {
+    // The normal case on most machines: the daemon answers with an empty
+    // configuration and the bar uses its own defaults throughout.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["status"]);
+
+    let frame = ask_for_config(&sandbox);
+
+    assert!(frame["error"].is_null(), "{frame}");
+    assert!(
+        frame["result"]["config"]["bar"]["frame_ms"].is_null(),
+        "{frame}"
+    );
+}
+
+#[test]
+fn editing_the_config_reaches_a_subscriber_without_a_restart() {
+    // The whole point of the daemon owning the file: the bar reconfigures
+    // under a running shell. Polled, so this takes a moment rather than being
+    // instant (ADR-0012).
+    let sandbox = Sandbox::new();
+    write_config(&sandbox, "[bar]\nframe_ms = 100\n");
+    sandbox.run(&["status"]);
+
+    let mut client = Client::new(sandbox.connect());
+    client.send(
+        r#"{"id":"h","method":"hello","params":{"role":"subscriber","protocol":1,"version":"test"}}"#,
+    );
+    client.send(r#"{"id":"s","method":"subscribe"}"#);
+    // Written after subscribing, so the event cannot be the one the daemon
+    // sent on startup.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    write_config(&sandbox, "[bar]\nframe_ms = 250\n");
+
+    let event = client.wait_for_event("config_changed");
+
+    assert_eq!(event["params"]["bar"]["frame_ms"], 250, "{event}");
+}
+
+#[test]
+fn a_broken_config_keeps_the_last_good_one() {
+    // Saving a file mid-edit must not blank the bar. The daemon keeps what it
+    // had rather than reverting to defaults.
+    let sandbox = Sandbox::new();
+    write_config(&sandbox, "[bar]\nframe_ms = 140\n");
+    sandbox.run(&["status"]);
+    assert_eq!(
+        ask_for_config(&sandbox)["result"]["config"]["bar"]["frame_ms"],
+        140
+    );
+
+    write_config(&sandbox, "[bar]\nframe_ms = \"not a number\n");
+    std::thread::sleep(std::time::Duration::from_millis(1400));
+
+    let frame = ask_for_config(&sandbox);
+    assert_eq!(
+        frame["result"]["config"]["bar"]["frame_ms"], 140,
+        "unparseable TOML must not revert the bar: {frame}"
+    );
+}

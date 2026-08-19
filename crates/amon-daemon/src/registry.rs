@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use amon_protocol::{AgentEntry, AgentPatch, Event};
+use amon_protocol::{AgentEntry, AgentPatch, Event, SoundConfig};
 
 /// Identifies one connection. Registry entries and subscriptions are keyed by
 /// this so that dropping a connection cleans up everything it owned.
@@ -18,6 +18,9 @@ pub type ConnectionId = u64;
 struct Inner {
     agents: HashMap<ConnectionId, AgentEntry>,
     subscribers: HashMap<ConnectionId, std::sync::mpsc::Sender<Event>>,
+    /// Kept here so a transition can decide whether to make a noise without
+    /// reaching back out to whatever read the file.
+    sound: SoundConfig,
 }
 
 #[derive(Clone, Default)]
@@ -50,12 +53,35 @@ impl Registry {
         let Some(entry) = inner.agents.get_mut(&connection) else {
             return false;
         };
+        // Kept before the patch lands, because what is worth a noise is the
+        // *crossing* — an agent already blocked that reports blocked again has
+        // not started needing anyone.
+        let was = (entry.state, entry.seen);
         if !patch.apply(entry) {
             return true;
         }
+        let crossing = crate::sound::crossing(was, (entry.state, entry.seen));
         let event = Event::AgentUpdated(entry.clone());
         Self::broadcast(&mut inner, event);
+        let sound_config = inner.sound.clone();
+        // Released before playing: spawning a player is somebody else's
+        // latency, and it must not be the registry's lock.
+        drop(inner);
+        if let Some(sound) = crossing {
+            crate::sound::play(sound, &sound_config);
+        }
         true
+    }
+
+    /// Hands every subscriber the configuration the daemon has just read.
+    ///
+    /// On the registry because the subscriber list is, and because a config
+    /// change and an agent change are the same kind of thing to a bar: a push
+    /// it did not ask for, applied on arrival.
+    pub fn broadcast_config(&self, config: amon_protocol::Config) {
+        let mut inner = self.lock();
+        inner.sound = config.sound.clone();
+        Self::broadcast(&mut inner, Event::ConfigChanged(config));
     }
 
     /// Forgets everything a connection owned. Called for every disconnect,

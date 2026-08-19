@@ -118,10 +118,10 @@ BarWidget {
         // thing you cannot see without leaving what you are doing. An agent at
         // rest borrows nothing — `agents.showingState` only goes true while the
         // focused workspace holds a state worth the interruption.
-        text: focused && !agents.showingState ? "󱓻"
+        text: focused && !agents.showingState ? agents.focusedGlyph
             : agentState === "working" ? agents.spinner                  // braille spinner
-            : agentState === "blocked" ? String.fromCodePoint(0xF02D7)   // help circle
-            : agentState === "done" ? String.fromCodePoint(0xF05E0)      // check circle
+            : agentState === "blocked" ? agents.blockedGlyph            // help circle
+            : agentState === "done" ? agents.doneGlyph                   // check circle
             // An agent that has come to rest asks for nothing, so the workspace
             // keeps its number and is underlined: an agent is here and wants
             // nothing.

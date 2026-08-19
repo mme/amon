@@ -2,6 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::agent::AgentEntry;
+use crate::config::Config;
 
 /// Pushed by the daemon to every subscriber, unsolicited.
 ///
@@ -20,6 +21,12 @@ pub enum Event {
     /// An agent's wrapper disconnected; its entry is gone.
     #[serde(rename = "agent_disconnected")]
     AgentDisconnected { id: String },
+    /// The config file changed and has been re-read (ADR-0012). Carries the
+    /// whole configuration rather than a diff: it is small, it is read rarely,
+    /// and a subscriber that applies a whole answer cannot drift from one that
+    /// missed an earlier event.
+    #[serde(rename = "config_changed")]
+    ConfigChanged(Config),
     /// An event this build does not know. Never sent, only received.
     #[serde(skip)]
     #[schemars(skip)]

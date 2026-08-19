@@ -212,6 +212,61 @@
         }
       ]
     },
+    "BarConfig": {
+      "description": "What the workspace indicators draw, and how fast.",
+      "properties": {
+        "frame_ms": {
+          "description": "How long one spinner frame is shown, in milliseconds.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "glyphs": {
+          "$ref": "#/$defs/GlyphConfig",
+          "default": {}
+        },
+        "marker_beats": {
+          "description": "Beats spent showing the focus marker.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "state_beats": {
+          "description": "Beats of the focused workspace's turn-taking spent showing the agent's\nstate. A beat is half a turn of the spinner (ADR-0008).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Config": {
+      "description": "The whole of the user's configuration.",
+      "properties": {
+        "bar": {
+          "$ref": "#/$defs/BarConfig",
+          "default": {
+            "glyphs": {}
+          }
+        },
+        "sound": {
+          "$ref": "#/$defs/SoundConfig",
+          "default": {
+            "enabled": false
+          }
+        }
+      },
+      "type": "object"
+    },
     "Error": {
       "properties": {
         "code": {
@@ -314,8 +369,60 @@
             "params"
           ],
           "type": "object"
+        },
+        {
+          "description": "The config file changed and has been re-read (ADR-0012). Carries the\nwhole configuration rather than a diff: it is small, it is read rarely,\nand a subscriber that applies a whole answer cannot drift from one that\nmissed an earlier event.",
+          "properties": {
+            "event": {
+              "const": "config_changed",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/Config"
+            }
+          },
+          "required": [
+            "event",
+            "params"
+          ],
+          "type": "object"
         }
       ]
+    },
+    "GlyphConfig": {
+      "description": "Which character stands for each condition.\n\nPlain characters, never markup: this chooses *which* glyph, never how it is\ndrawn. A workspace at rest keeps the underline the widget computes for\nitself, and nothing here can reach it.",
+      "properties": {
+        "blocked": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "done": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "focused": {
+          "description": "The marker for the workspace you are on.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "working": {
+          "description": "The animation frames for a working agent, in order. Any length; one\nframe is a static glyph that happens to be redrawn.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
     },
     "Hello": {
       "properties": {
@@ -488,6 +595,19 @@
           "type": "object"
         },
         {
+          "description": "The user's configuration, as the daemon last read it (ADR-0012).",
+          "properties": {
+            "method": {
+              "const": "config",
+              "type": "string"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Turns this connection into an event stream.",
           "properties": {
             "method": {
@@ -597,6 +717,31 @@
           "type": "string"
         }
       ]
+    },
+    "SoundConfig": {
+      "description": "When to make a noise, and which one.",
+      "properties": {
+        "blocked": {
+          "description": "Played when an agent starts waiting for a human.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "done": {
+          "description": "Played when an agent finishes without being watched. Absent means the\nbundled sound; a relative path resolves from the config file's own\ndirectory, the way herdr's does.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "enabled": {
+          "default": false,
+          "description": "Off unless asked for. A tool that starts making noise on upgrade is a\ntool people turn off entirely.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
