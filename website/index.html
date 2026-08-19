@@ -738,33 +738,40 @@
     // is built one character at a time and the emphasis has to survive being
     // half-typed. Each run is [text] or [text, tag].
     var STEPS = [
-      // Workspace 4 holds a quiet agent throughout. It is the one slot that
-      // never changes, which is what lets the last step teach by subtraction:
-      // nothing is added there, everything else simply steps back.
+      // One state on screen at a time: the step's own workspace wears its
+      // state, every other slot is just its number. The reader is asked to
+      // look at one thing, and no step leans on remembering another — which
+      // is why four no longer holds a standing agent. Being lit in every step
+      // made it the exception that taught the rule.
       // The state is what gets lifted; the errand rides in brackets after it,
       // set off by the brackets rather than by ink so the emphasis in each line
       // lands in one place only.
-      { ws: 1, states: { 1: 'working', 4: 'active' },
+      { ws: 1, states: { 1: 'working' },
         parts: [['Your agent is '], ['working', 'b'], ['. [Watch with '],
                 ['Super+1', 'kbd'], [']']] },
-      { ws: 2, states: { 2: 'done', 4: 'active' },
+      { ws: 2, states: { 2: 'done' },
         parts: [['Your agent is '], ['done', 'b'], ['. [Review with '],
                 ['Super+2', 'kbd'], [']']] },
-      { ws: 3, states: { 3: 'blocked', 4: 'active' },
+      { ws: 3, states: { 3: 'blocked' },
         parts: [['Your agent is '], ['waiting for response', 'b'], ['. [Answer with '],
                 ['Super+3', 'kbd'], [']']] },
-      // The last two have no glyph to point at, so everything else dims and the
-      // pair is left to make the point between them: four is lit because an
-      // agent lives there, five is not because none does. Adjacent on purpose.
+      // The last two have no glyph to point at, so the bar dims and the aimed
+      // slot is the only thing left holding ink. Four wears the underline an
+      // agent at rest gets; five wears nothing, which is the whole of it.
       { ws: 4, states: { 4: 'active' }, dim: true,
         parts: [['Your agent is '], ['idle', 'b'], ['. [Check in with '],
                 ['Super+4', 'kbd'], [']']] },
       // The bracket is the same slot throughout — what to know about this state.
       // For the first four that is the key; here there is nothing to press, so
       // it names the appearance instead, which is the only cue this state has.
-      { ws: 5, states: { 4: 'active' }, dim: true,
+      // It answers the step before it rather than the slot beside it: four wore
+      // the underline an agent at rest gets, five does not, and that is the
+      // whole difference between "an agent is here, wanting nothing" and
+      // "nothing is here". The contrast used to be spatial — four sat lit in
+      // every step — which made one slot behave unlike the other four.
+      { ws: 5, states: {}, dim: true,
         parts: [['There is '], ['no agent', 'b'],
-                [' on this workspace. [Not highlighted]']] }
+                [' on this workspace. [No underline]']] }
     ];
     // Long enough to read the line twice and still look at the bar.
     var DWELL = 7000, FADE = 200, TYPE = 22, at = 0, run = 0;
