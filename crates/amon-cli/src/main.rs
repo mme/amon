@@ -54,8 +54,7 @@ enum Command {
     },
     /// Set up integrations — interactively, all detected, or one target
     Setup {
-        /// One target, e.g. `claude` or `omarchy`; omit for the interactive
-        /// screen
+        /// One agent, e.g. `claude`; omit for the interactive screen
         target: Option<String>,
         /// Every detected agent plus the bar widget, without a screen
         #[arg(long, conflicts_with = "target")]
@@ -67,7 +66,7 @@ enum Command {
     },
     /// Remove integrations — everything after one confirmation, or one target
     Remove {
-        /// One target, e.g. `claude` or `omarchy`; omit to remove everything
+        /// One agent, e.g. `claude`; omit to remove everything
         target: Option<String>,
         /// Skip the confirmation (for scripts)
         #[arg(long, conflicts_with = "target")]
@@ -305,22 +304,19 @@ fn run_setup(
 
 /// `amon setup <target>` — today's per-target form, and the escape hatch for
 /// agents not detected on this machine.
+///
+/// A target is always an agent. The bar widget used to be nameable here too,
+/// which put a desktop and an agent in the same slot for two operations that
+/// are not alike: one installs a hook into a tool you run, the other installs
+/// a subscriber into your desktop, and only one of them wants an alias. The
+/// widget now comes from the screen or `--all`.
 fn setup_one(target: &str, no_alias: bool) -> Result<(), Box<dyn std::error::Error>> {
-    // A desktop target installs a subscriber rather than an agent hook; same
-    // verb, different direction. It gets no alias: nothing is typed to start a
-    // bar widget.
-    let messages = match amon_integration::desktop::parse_target(target) {
-        Some(desktop) => amon_integration::desktop::install(desktop)?,
-        None => {
-            let agent = require_target(target)?;
-            let mut messages = amon_integration::install(agent)?;
-            if !no_alias {
-                messages.push(String::new());
-                messages.extend(amon_integration::alias::install(agent)?);
-            }
-            messages
-        }
-    };
+    let agent = require_target(target)?;
+    let mut messages = amon_integration::install(agent)?;
+    if !no_alias {
+        messages.push(String::new());
+        messages.extend(amon_integration::alias::install(agent)?);
+    }
     for message in messages {
         println!("{message}");
     }
@@ -338,20 +334,17 @@ fn run_remove(target: Option<&str>, all: bool) -> Result<(), Box<dyn std::error:
     };
     // No flag on the way out: an alias left behind for an agent amon no longer
     // hooks would keep taking over its name for nothing.
-    let messages = match amon_integration::desktop::parse_target(target) {
-        Some(desktop) => amon_integration::desktop::uninstall(desktop)?,
-        None => {
-            let agent = require_target(target)?;
-            let mut messages = amon_integration::uninstall(agent)?;
-            messages.extend(amon_integration::alias::uninstall(agent)?);
-            // Aliases stranded in a symlinked bashrc survive the uninstall,
-            // which refuses to write through links — name this agent's lines
-            // rather than leaving them silently active (and only its lines:
-            // other agents' aliases are still wanted).
-            messages.extend(amon_integration::alias::stranded_for(agent));
-            messages
-        }
-    };
+    //
+    // Agents only, matching setup. The widget comes out with the screen or
+    // `amon remove --all`.
+    let agent = require_target(target)?;
+    let mut messages = amon_integration::uninstall(agent)?;
+    messages.extend(amon_integration::alias::uninstall(agent)?);
+    // Aliases stranded in a symlinked bashrc survive the uninstall, which
+    // refuses to write through links — name this agent's lines rather than
+    // leaving them silently active (and only its lines: other agents' aliases
+    // are still wanted).
+    messages.extend(amon_integration::alias::stranded_for(agent));
     for message in messages {
         println!("{message}");
     }
@@ -366,15 +359,10 @@ fn require_target(
 }
 
 fn known_targets() -> String {
-    let mut names: Vec<&str> = amon_integration::all_targets()
+    let names: Vec<&str> = amon_integration::all_targets()
         .into_iter()
         .map(amon_integration::target_label)
         .collect();
-    names.extend(
-        amon_integration::DesktopTarget::ALL
-            .into_iter()
-            .map(amon_integration::DesktopTarget::label),
-    );
     format!("known targets: {}", names.join(", "))
 }
 

@@ -769,207 +769,6 @@ fn status_says_so_when_nothing_is_running() {
 const PLUGIN_DIR: &str = "omarchy/plugins/sh.amon.workspaces";
 
 #[test]
-fn installing_the_omarchy_widget_puts_it_where_the_shell_looks() {
-    let sandbox = Sandbox::new();
-
-    let output = sandbox.run(&["setup", "omarchy"]);
-    assert!(output.status.success(), "{output:?}");
-
-    let plugin = sandbox.config_path(PLUGIN_DIR);
-    let manifest = std::fs::read_to_string(plugin.join("manifest.json")).expect("a manifest");
-    let manifest: serde_json::Value = serde_json::from_str(&manifest).expect("valid json");
-
-    // The contract Omarchy loads a plugin by. A manifest it cannot read is the
-    // one failure with no symptom: the widget just never appears.
-    assert_eq!(manifest["id"], "sh.amon.workspaces");
-    assert_eq!(manifest["schemaVersion"], 1);
-    assert_eq!(manifest["kinds"], serde_json::json!(["bar-widget"]));
-    let entry = manifest["entryPoints"]["barWidget"]
-        .as_str()
-        .expect("entry");
-    assert!(
-        plugin.join(entry).exists(),
-        "the manifest's entry point must be installed: {entry}"
-    );
-
-    // The clonedFrom declaration is what lets one enable command take the
-    // built-in widget's own slot; without it the widget lands in some section
-    // and the built-in stays.
-    assert_eq!(manifest["omarchy"]["clonedFrom"], "omarchy.workspaces");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("omarchy plugin enable sh.amon.workspaces"),
-        "the user is told how to enable it: {stdout}"
-    );
-    assert!(
-        !stdout.contains("omarchy bar plugin"),
-        "the pre-Quattro bar plugin commands no longer exist: {stdout}"
-    );
-}
-
-#[test]
-fn installing_the_omarchy_widget_leaves_the_bar_config_alone() {
-    // shell.json becomes the user's canonical file once they touch it, and
-    // Omarchy does not deep-merge — so amon writing into it could silently
-    // discard a layout they chose.
-    let sandbox = Sandbox::new();
-    let shell_json = sandbox.config_path("omarchy/shell.json");
-    std::fs::create_dir_all(shell_json.parent().unwrap()).expect("config dir");
-    std::fs::write(&shell_json, "{\"mine\":true}").expect("write shell.json");
-
-    sandbox.run(&["setup", "omarchy"]);
-
-    assert_eq!(
-        std::fs::read_to_string(&shell_json).expect("still there"),
-        "{\"mine\":true}",
-        "the user's bar config must be untouched"
-    );
-}
-
-#[test]
-fn reinstalling_restores_a_widget_someone_broke() {
-    let sandbox = Sandbox::new();
-    let plugin = sandbox.config_path(PLUGIN_DIR);
-
-    sandbox.run(&["setup", "omarchy"]);
-    let widget = plugin.join("AgentStates.qml");
-    let original = std::fs::read_to_string(&widget).expect("installed");
-    std::fs::write(&widget, "corrupted").expect("corrupt it");
-
-    sandbox.run(&["setup", "omarchy"]);
-
-    assert_eq!(
-        std::fs::read_to_string(&widget).expect("still there"),
-        original,
-        "reinstalling rewrites every file, not just the missing ones"
-    );
-}
-
-#[test]
-fn a_widget_someone_broke_is_not_reported_current() {
-    // The point of reporting currency is catching a widget that no longer
-    // matches the daemon it parses; a version string alone cannot do that.
-    let sandbox = Sandbox::new();
-    sandbox.run(&["setup", "omarchy"]);
-    let widget = sandbox.config_path(PLUGIN_DIR).join("Workspaces.qml");
-    std::fs::write(&widget, "not the widget we shipped").expect("corrupt it");
-
-    let listed = read_to_string(&sandbox.run(&["doctor"]).stdout[..]);
-    let line = listed
-        .lines()
-        .find(|line| line.trim_start().starts_with("omarchy "))
-        .unwrap_or_default();
-
-    assert!(
-        !line.contains("current"),
-        "a broken install must not claim to be current: {line}"
-    );
-}
-
-#[test]
-fn uninstalling_removes_amons_files_and_nothing_else() {
-    let sandbox = Sandbox::new();
-    let plugin = sandbox.config_path(PLUGIN_DIR);
-    sandbox.run(&["setup", "omarchy"]);
-
-    // Something the user put there. Whatever it is, it is not amon's to delete.
-    let theirs = plugin.join("notes.md");
-    std::fs::write(&theirs, "mine").expect("write");
-
-    let output = sandbox.run(&["remove", "omarchy"]);
-
-    assert!(output.status.success(), "{output:?}");
-    for ours in ["manifest.json", "AgentStates.qml", "Workspaces.qml"] {
-        assert!(!plugin.join(ours).exists(), "{ours} goes");
-    }
-    assert_eq!(
-        std::fs::read_to_string(&theirs).expect("theirs survives"),
-        "mine",
-        "a file amon did not write survives, and keeps the directory alive"
-    );
-}
-
-#[test]
-fn uninstalling_asks_omarchy_to_restore_the_built_in_first() {
-    // The shell's clonedFrom swap-back reads the manifest at disable time, so
-    // the disable has to land while the file is still on disk — afterwards the
-    // bar entry would be dropped without the built-in coming back. (Omarchy's
-    // own `plugin remove` sequences itself the same way.)
-    let sandbox = Sandbox::new();
-    sandbox.run(&["setup", "omarchy"]);
-
-    let record = sandbox.runtime_path("omarchy-was-called");
-    let manifest = sandbox.config_path(PLUGIN_DIR).join("manifest.json");
-    sandbox.fake_agent(
-        "omarchy",
-        &format!(
-            "#!/bin/sh\nprintf '%s' \"$*\" > {record}\n\
-             [ -f {manifest} ] && printf ' manifest-still-there' >> {record}\n",
-            record = path_str(&record),
-            manifest = path_str(&manifest),
-        ),
-    );
-
-    let output = sandbox.run(&["remove", "omarchy"]);
-
-    assert!(output.status.success(), "{output:?}");
-    assert_eq!(
-        std::fs::read_to_string(&record).expect("the omarchy CLI was invoked"),
-        "plugin disable sh.amon.workspaces manifest-still-there"
-    );
-    assert!(!manifest.exists(), "the files still go afterwards");
-    assert!(
-        String::from_utf8_lossy(&output.stdout).contains("restored the built-in"),
-        "the user hears the bar was fixed up: {output:?}"
-    );
-}
-
-#[test]
-fn a_failing_omarchy_cli_does_not_block_removal() {
-    let sandbox = Sandbox::new();
-    sandbox.run(&["setup", "omarchy"]);
-    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 1\n");
-
-    let output = sandbox.run(&["remove", "omarchy"]);
-
-    assert!(output.status.success(), "{output:?}");
-    assert!(
-        !sandbox
-            .config_path(PLUGIN_DIR)
-            .join("manifest.json")
-            .exists(),
-        "removal proceeds without the bar"
-    );
-    assert!(
-        String::from_utf8_lossy(&output.stdout).contains("omarchy plugin disable"),
-        "the manual fix-up is printed instead: {output:?}"
-    );
-}
-
-#[test]
-fn a_machine_without_the_omarchy_cli_uninstalls_quietly() {
-    // No CLI means no bar to fix up — that is the ordinary case off Omarchy,
-    // not something to warn about.
-    let sandbox = Sandbox::new();
-    sandbox.run(&["setup", "omarchy"]);
-
-    let mut command = sandbox.command(&["remove", "omarchy"]);
-    command.env("PATH", path_str(&sandbox.runtime_path("no-such-bin")));
-    let output = command.output().expect("amon runs");
-
-    assert!(output.status.success(), "{output:?}");
-    assert!(!sandbox
-        .config_path(PLUGIN_DIR)
-        .join("manifest.json")
-        .exists());
-    assert!(
-        !String::from_utf8_lossy(&output.stdout).contains("could not"),
-        "no warning where there is nothing to warn about: {output:?}"
-    );
-}
-
-#[test]
 fn a_truncated_amon_block_is_never_rewritten() {
     // A fence missing its closing marker makes everything after it look like
     // amon's to rewrite; editing would erase the user's own lines. Setup must
@@ -990,39 +789,6 @@ fn a_truncated_amon_block_is_never_rewritten() {
     assert!(
         String::from_utf8_lossy(&output.stdout).contains("missing its closing"),
         "and the user is told what to repair: {output:?}"
-    );
-}
-
-#[test]
-fn removing_a_pre_swap_widget_does_not_claim_restoration() {
-    // A widget installed before the manifest declared clonedFrom disables
-    // without swapping the built-in back; saying "restored" would hide a bar
-    // that just lost its workspace indicators.
-    let sandbox = Sandbox::new();
-    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
-    assert!(sandbox.run(&["setup", "omarchy"]).status.success());
-    let manifest_path = sandbox.config_path(PLUGIN_DIR).join("manifest.json");
-    let mut manifest: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&manifest_path).expect("manifest"))
-            .expect("valid json");
-    manifest
-        .as_object_mut()
-        .expect("object")
-        .remove("omarchy")
-        .expect("the field to regress");
-    std::fs::write(&manifest_path, manifest.to_string()).expect("regress the manifest");
-
-    let output = sandbox.run(&["remove", "omarchy"]);
-
-    assert!(output.status.success(), "{output:?}");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        !stdout.contains("(restored the built-in"),
-        "no restore claim for a pre-swap copy: {stdout}"
-    );
-    assert!(
-        stdout.contains("omarchy plugin enable omarchy.workspaces"),
-        "the fix-up is named instead: {stdout}"
     );
 }
 
@@ -1331,7 +1097,7 @@ fn a_failed_widget_disable_is_not_reported_as_restored() {
     // must carry the manual fix-up instead of claiming the built-in came back.
     let sandbox = Sandbox::new();
     sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
-    assert!(sandbox.run(&["setup", "omarchy"]).status.success());
+    assert!(sandbox.run(&["setup", "--all"]).status.success());
     sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 1\n");
 
     let output = sandbox.run(&["remove", "--all"]);
@@ -1428,85 +1194,6 @@ fn the_setup_screen_removes_what_gets_unchecked() {
 }
 
 #[test]
-fn someone_elses_plugin_under_the_same_id_is_left_alone() {
-    let sandbox = Sandbox::new();
-    let plugin = sandbox.config_path(PLUGIN_DIR);
-    std::fs::create_dir_all(&plugin).expect("their dir");
-    let theirs = r#"{"id":"someone.else"}"#;
-    std::fs::write(plugin.join("manifest.json"), theirs).expect("their file");
-
-    let install = sandbox.run(&["setup", "omarchy"]);
-    assert!(!install.status.success(), "install refuses");
-    let uninstall = sandbox.run(&["remove", "omarchy"]);
-    assert!(!uninstall.status.success(), "uninstall refuses");
-
-    assert_eq!(
-        std::fs::read_to_string(plugin.join("manifest.json")).expect("untouched"),
-        theirs
-    );
-}
-
-#[test]
-fn a_symlinked_plugin_directory_is_left_alone() {
-    // Dotfiles kept in a repository and linked into place. Writing through the
-    // link would edit files in that repository; removing them would delete
-    // them from it.
-    let sandbox = Sandbox::new();
-    let plugin = sandbox.config_path(PLUGIN_DIR);
-    let elsewhere = sandbox.runtime_path("dotfiles-widget");
-    std::fs::create_dir_all(&elsewhere).expect("their repo");
-    std::fs::write(elsewhere.join("manifest.json"), "theirs").expect("their file");
-    std::fs::create_dir_all(plugin.parent().unwrap()).expect("plugins dir");
-    std::os::unix::fs::symlink(&elsewhere, &plugin).expect("link it into place");
-
-    assert!(!sandbox.run(&["setup", "omarchy"]).status.success());
-    assert!(!sandbox.run(&["remove", "omarchy"]).status.success());
-
-    assert_eq!(
-        std::fs::read_to_string(elsewhere.join("manifest.json")).expect("untouched"),
-        "theirs"
-    );
-    assert!(elsewhere.exists(), "their directory survives");
-}
-
-#[test]
-fn a_symlinked_widget_file_is_never_written_through() {
-    // The same hazard one level down: the directory is amon's, but a file in
-    // it points into someone's repository.
-    let sandbox = Sandbox::new();
-    sandbox.run(&["setup", "omarchy"]);
-    let plugin = sandbox.config_path(PLUGIN_DIR);
-    let theirs = sandbox.runtime_path("their-widget.qml");
-    std::fs::write(&theirs, "their widget").expect("their file");
-    std::fs::remove_file(plugin.join("Workspaces.qml")).expect("make room");
-    std::os::unix::fs::symlink(&theirs, plugin.join("Workspaces.qml")).expect("link");
-
-    assert!(!sandbox.run(&["setup", "omarchy"]).status.success());
-
-    assert_eq!(
-        std::fs::read_to_string(&theirs).expect("untouched"),
-        "their widget",
-        "install must not follow a symlink and truncate what it points at"
-    );
-}
-
-#[test]
-fn an_install_that_died_half_way_can_be_finished() {
-    // Assets are written before the manifest, so an interrupted install leaves
-    // files with nothing identifying them. Refusing that directory would lock
-    // amon out of its own half-finished work.
-    let sandbox = Sandbox::new();
-    let plugin = sandbox.config_path(PLUGIN_DIR);
-    sandbox.run(&["setup", "omarchy"]);
-    std::fs::remove_file(plugin.join("manifest.json")).expect("kill it half way");
-
-    let output = sandbox.run(&["setup", "omarchy"]);
-
-    assert!(output.status.success(), "{output:?}");
-    assert!(plugin.join("manifest.json").exists(), "install completes");
-}
-
-#[test]
 fn doctor_reports_the_desktop_widget_alongside_the_agents() {
     let sandbox = Sandbox::new();
 
@@ -1516,7 +1203,9 @@ fn doctor_reports_the_desktop_widget_alongside_the_agents() {
         "an uninstalled widget is listed as such: {before}"
     );
 
-    sandbox.run(&["setup", "omarchy"]);
+    // The widget comes from `--all` now; there is no per-target form for it.
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
+    sandbox.run(&["setup", "--all"]);
     let after = read_to_string(&sandbox.run(&["doctor"]).stdout[..]);
     let line = after
         .lines()
@@ -1538,8 +1227,8 @@ fn unknown_install_targets_are_rejected_with_the_list() {
     assert!(stderr.contains("unknown target: notanagent"), "{stderr}");
     assert!(stderr.contains("claude"), "the list is offered: {stderr}");
     assert!(
-        stderr.contains("omarchy"),
-        "desktops are installable too, so they are listed: {stderr}"
+        !stderr.contains("omarchy"),
+        "a target is always an agent; the desktop is not one of them: {stderr}"
     );
 }
 

@@ -42,12 +42,6 @@ impl DesktopTarget {
     }
 }
 
-pub fn parse_target(name: &str) -> Option<DesktopTarget> {
-    DesktopTarget::ALL
-        .into_iter()
-        .find(|target| target.label().eq_ignore_ascii_case(name))
-}
-
 const MANIFEST: &str = include_str!("assets/omarchy/manifest.json");
 const WORKSPACES_QML: &str = include_str!("assets/omarchy/Workspaces.qml");
 const AGENT_STATES_QML: &str = include_str!("assets/omarchy/AgentStates.qml");

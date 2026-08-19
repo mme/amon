@@ -147,3 +147,27 @@ One caution for re-syncs: `clonedFrom` is honored generically in
 documents it only in the clone-script section — semi-documented, so a future
 Omarchy could narrow it; the enable/disable path is worth re-checking when
 Omarchy majors.
+
+## Postscript: the widget is no longer a `setup` target
+
+The body above says the widget "installs with `amon setup omarchy`". That form
+is gone. `amon setup <target>` names an agent and nothing else — putting a
+desktop in the same slot meant one word covered two unlike operations: an agent
+target installs a hook into a tool you run and aliases its name, a desktop
+target installed a subscriber into your compositor and deliberately did not.
+The two also differed in a way nobody could see from the command line, since
+the target form installed the plugin without enabling it while the screen did
+both.
+
+Nothing else in this ADR changes: the widget still ships inside amon, still
+installs into the plugin directory without editing `shell.json`, and is still
+reported by `amon doctor` on the same machinery as the agent hooks. It now
+arrives from the interactive screen or `amon setup --all`, both of which enable
+it as well — so there is no longer a way to install it and leave the bar alone,
+which is the one capability this removal costs.
+
+The tests that covered install and removal moved with it, from the CLI's
+end-to-end suite down to `crates/amon-integration/tests/desktop.rs`, where they
+drive `desktop::install` and `desktop::uninstall` directly. They keep their own
+`HOME` *and* their own `PATH`: uninstall shells out to `omarchy`, and a
+developer's machine may ship a real one.
