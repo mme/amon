@@ -72,19 +72,30 @@ Item {
   property int spinnerFrame: 0
   readonly property string spinner: root.spinnerFrames[root.spinnerFrame]
 
-  /// How long one turn of the spinner takes. The unit the focused workspace
-  /// splits its time in, so the state it lends its marker to is shown for
-  /// exactly one revolution rather than for a duration that happens to be
-  /// close to one.
+  /// How long one turn of the spinner takes.
   readonly property int spinnerInterval: 200
   readonly property int cycle: root.spinnerFrames.length * root.spinnerInterval
 
-  // The split itself, in cycles. Named rather than written into the timer,
-  // because these two numbers are the whole design: the marker is what the
-  // widget alone can tell you, so it keeps most of the time, and the state
-  // borrows enough to be noticed.
-  readonly property int stateCycles: 1
-  readonly property int markerCycles: 4
+  /// The unit the focused workspace's turn-taking is counted in: half a turn.
+  ///
+  /// A whole turn was tried first and is the tidier idea — a state phase would
+  /// be a whole number of revolutions — but every split it can express was
+  /// either too brief to read or long enough to feel stuck, and the one that
+  /// looked right on a real bar falls on a half. Derived from the cycle rather
+  /// than written as 400 so the two rhythms stay related: change the spinner's
+  /// speed and this follows it.
+  readonly property int beat: root.cycle / 2
+
+  /// The split, in beats — 2000ms showing the agent's state, 1200ms showing the
+  /// marker. Named rather than written into the timer because these two numbers
+  /// are the whole design, and they were settled by watching a bar rather than
+  /// by argument: every ratio from 1:4 to 4:1 was tried, and the ones that read
+  /// well all gave the state the longer half. You are already looking at the
+  /// workspace you are on — the desktop is full of evidence for it — so the
+  /// marker only has to confirm, while the state is the thing you cannot get
+  /// any other way without leaving what you are doing.
+  readonly property int stateBeats: 5
+  readonly property int markerBeats: 3
   readonly property bool anyWorking: {
     for (const workspace in root.stateByWorkspace)
       if (root.stateByWorkspace[workspace] === "working") return true
@@ -109,8 +120,8 @@ Item {
   /// is ever focused, so one phase is the whole truth.
   property bool showingState: false
 
-  /// Cycles elapsed in the current phase, counted rather than timed.
-  property int phaseCycles: 0
+  /// Beats elapsed in the current phase, counted rather than timed.
+  property int phaseBeats: 0
 
   // Events that arrived before the seed. Applying them first and the seed
   // afterwards would let the snapshot resurrect an agent that has already gone,
@@ -292,25 +303,24 @@ Item {
   // also destroys the binding on `running`, so it would have gone on ticking
   // after the workspace stopped wanting anything.
   //
-  // A fixed interval needs neither. It also puts every phase boundary on a
-  // cycle boundary, which is what makes "one cycle of the state" exactly one
-  // revolution of the spinner rather than 800ms that happen to look like one.
+  // A fixed interval needs neither, and counting beats is also what lets the
+  // split fall on a half turn without the timer having to know that.
   Timer {
-    interval: root.cycle
+    interval: root.beat
     repeat: true
     running: root.focusedWants
-    // Starting with the state: arriving on a workspace and waiting four cycles
-    // to find out what is happening there would be the wrong way round.
+    // Starting with the state: arriving on a workspace and waiting out the
+    // marker to find what is happening there would be the wrong way round.
     onRunningChanged: {
       root.showingState = running
-      root.phaseCycles = 0
+      root.phaseBeats = 0
     }
     onTriggered: {
-      root.phaseCycles += 1
-      if (root.phaseCycles < (root.showingState ? root.stateCycles : root.markerCycles))
+      root.phaseBeats += 1
+      if (root.phaseBeats < (root.showingState ? root.stateBeats : root.markerBeats))
         return
       root.showingState = !root.showingState
-      root.phaseCycles = 0
+      root.phaseBeats = 0
     }
   }
 

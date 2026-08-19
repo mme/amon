@@ -109,14 +109,15 @@ BarWidget {
         // U+FFFF, so "\uF051F" would silently parse as U+F051 followed by "F".
         readonly property string agentState: agents.stateByWorkspace[String(modelData)] || ""
         readonly property string label: modelData === 10 ? "0" : String(modelData)
-        // Focus mostly wins: which workspace you are on is something only this
-        // widget says, while an agent's state is also one `amon status` away.
-        // So the marker keeps four cycles in five, and lends the fifth to an
-        // agent there that wants something — otherwise the workspace you are
-        // sitting on is the one workspace whose agent the bar will not show
-        // you, which is the wrong one to hide. An agent at rest borrows
-        // nothing: `agents.showingState` only goes true while the focused
-        // workspace holds a state worth the interruption.
+        // Focus stops winning outright: the workspace you are sitting on was
+        // the one workspace whose agent the bar would not show you, which is
+        // the wrong one to hide — its terminal may well be behind a full-screen
+        // window. So a focused workspace holding an agent that wants something
+        // takes turns, and the state gets the longer share of them: you already
+        // know where you are, the whole desktop says so, while the state is the
+        // thing you cannot see without leaving what you are doing. An agent at
+        // rest borrows nothing — `agents.showingState` only goes true while the
+        // focused workspace holds a state worth the interruption.
         text: focused && !agents.showingState ? "󱓻"
             : agentState === "working" ? agents.spinner                  // braille spinner
             : agentState === "blocked" ? String.fromCodePoint(0xF02D7)   // help circle

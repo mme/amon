@@ -274,27 +274,40 @@ the other end of a tiled row you are not looking at. In exactly that case the
 bar is the only thing that could tell you, and it was the one place that
 stayed silent.
 
-So the focused workspace time-shares. When it holds an agent in any state
-other than idle, it shows that state for one cycle and its marker for four,
-and repeats. A cycle is one turn of the spinner — 800ms — so a working agent
-gets exactly one revolution rather than a duration that happens to look like
-one. The split is two named properties rather than numbers in a timer, because
-those two numbers *are* the decision: the marker is what the widget alone can
-say, so it keeps the large majority, and the state borrows enough to be
-noticed.
+So the focused workspace time-shares. When it holds an agent in any state other
+than idle, it shows that state for 2000ms and its marker for 1200ms, and
+repeats. The split is two named properties rather than numbers in a timer,
+because those two numbers *are* the decision.
+
+**The state gets the longer share, and that was decided by looking.** The first
+version reasoned it the other way — the marker is what the widget alone can say,
+so let it keep the large majority and let the state borrow just enough to be
+noticed — and shipped 1:4. On a real bar it was wrong. Every ratio from 1:4 to
+4:1 was tried, and the ones that read well all gave the state the longer half.
+The argument that survives is the opposite of the one we started with: you
+already know which workspace you are on, because the whole desktop is evidence
+for it, so the marker only has to *confirm*. The agent's state is the thing you
+cannot get any other way without leaving what you are doing.
+
+The unit is half a turn of the spinner, not a whole one. A whole turn is the
+tidier idea and was tried first — a state phase would be a whole number of
+revolutions — but every split it can express was either too brief to read or
+long enough to feel stuck, and the ratio that looked right falls on a half. It
+is still derived from the cycle rather than written as a bare 400ms, so
+changing the spinner's speed carries the blink with it.
 
 An agent at rest borrows nothing. It asks for nothing, and against that the
 marker is the more useful thing to be showing — the same reasoning that gives
 a resting agent an underline rather than a glyph.
 
 Two details worth keeping if this is ever re-derived. The state phase leads:
-arriving on a workspace and waiting four cycles to learn what is happening
+arriving on a workspace and waiting out the marker to learn what is happening
 there would be the wrong way round. And the spinner is *not* paused while the
 marker shows — it is one tick for the whole bar, and stopping it would drift
-this workspace out of step with every other working one, so a state phase
-begins at whatever frame the bar has reached and still runs one full
-revolution.
+this workspace out of step with every other working one.
 
-The cost is that the marker is no longer constant. On a workspace with a busy
-agent, "where am I" is answered four fifths of the time instead of all of it.
-That is the trade, and it is the reason the split is lopsided rather than even.
+The cost is that the marker is no longer constant, and it is now the smaller
+share: on a workspace with a busy agent, "where am I" is answered for 1200ms
+in every 3200. Fading between the two was tried and abandoned — the label is a
+single `Text`, so the glyphs cannot cross-fade, and dipping the slot's opacity
+to swap underneath left too little steady state at any rhythm worth having.
