@@ -4,9 +4,7 @@
 # Modified only by the mechanical token map in scripts/revendor.sh.
 
 id = "claude"
-# amon vendor/patches/0003 bumps the patch version so the added rule outranks
-# an already-cached remote manifest of the unpatched version.
-version = "2026.07.13.2"
+version = "2026.07.13.1"
 min_engine_version = 2
 updated_at = "2026-07-13T00:00:00Z"
 aliases = ["claude-code"]
@@ -67,17 +65,6 @@ priority = 980
 region = "whole_recent"
 visible_blocker = true
 contains = ["run a dynamic workflow?", "esc to cancel"]
-
-# amon vendor/patches/0003: upstream misses the first-run folder-trust
-# dialog, which needs a human. A newer remote manifest from herdr.dev
-# overrides this rule until the fix lands upstream (ADR-0003).
-[[rules]]
-id = "trust_dialog_blocked"
-state = "blocked"
-priority = 950
-region = "whole_recent"
-visible_blocker = true
-contains = ["do you trust"]
 
 [[rules]]
 id = "live_prompt_box"

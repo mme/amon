@@ -51,7 +51,7 @@
           "type": "integer"
         },
         "seen": {
-          "description": "Whether the terminal view has had focus since the current\n[`AgentEntry::state`] began. `Idle` and not seen is \"finished but\nunnoticed\"; consumers combine the two themselves, because this is an\nannotation on the state rather than a state of its own.",
+          "description": "Whether the terminal view has had focus since the current\n[`AgentEntry::state`] began. `Idle` and not seen is \"finished but\nunnoticed\" — an annotation on the state rather than a state of its own,\nwhich is why [`AgentEntry::attention`] exists: to combine the two in one\nplace instead of leaving every consumer to invent the same rule.",
           "type": [
             "boolean",
             "null"

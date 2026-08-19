@@ -254,20 +254,51 @@ fn an_older_wrapper_that_knows_no_window_leaves_it_alone() {
 
 #[test]
 fn status_sorts_the_agents_that_need_a_human_first() {
-    let mut states = [
-        AgentState::Idle,
-        AgentState::Unknown,
-        AgentState::Blocked,
-        AgentState::Working,
+    // Ranked over entries, not states, because second place is not a state:
+    // done is idle-and-unseen, and it outranks an agent still working.
+    let at = |state, seen| AgentEntry {
+        state,
+        seen,
+        ..entry()
+    };
+    let mut agents = [
+        at(AgentState::Idle, Some(true)),
+        at(AgentState::Unknown, None),
+        at(AgentState::Blocked, None),
+        at(AgentState::Working, None),
+        at(AgentState::Idle, Some(false)),
     ];
-    states.sort_by_key(|state| state.urgency());
+    agents.sort_by_key(|agent| agent.attention());
+
+    let ranked: Vec<_> = agents
+        .iter()
+        .map(|agent| (agent.state, agent.seen))
+        .collect();
     assert_eq!(
-        states,
+        ranked,
         [
-            AgentState::Blocked,
-            AgentState::Working,
-            AgentState::Idle,
-            AgentState::Unknown
+            (AgentState::Blocked, None),
+            (AgentState::Idle, Some(false)),
+            (AgentState::Working, None),
+            (AgentState::Idle, Some(true)),
+            (AgentState::Unknown, None),
         ]
     );
+}
+
+#[test]
+fn only_an_agent_at_rest_is_not_worth_a_jump() {
+    // What `amon focus` refuses to move the focus for. An idle agent that has
+    // been seen asks for nothing; the same agent unseen is "done" and does.
+    let at = |state, seen| AgentEntry {
+        state,
+        seen,
+        ..entry()
+    };
+    assert!(at(AgentState::Blocked, None).wants_attention());
+    assert!(at(AgentState::Working, None).wants_attention());
+    assert!(at(AgentState::Idle, Some(false)).wants_attention());
+    assert!(!at(AgentState::Idle, Some(true)).wants_attention());
+    assert!(!at(AgentState::Idle, None).wants_attention());
+    assert!(!at(AgentState::Unknown, None).wants_attention());
 }

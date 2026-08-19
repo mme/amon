@@ -10,7 +10,7 @@
 
 use std::io::{self, Read, Write};
 
-use amon_integration::{alias, desktop, Candidate, DesktopTarget, InstallState};
+use amon_integration::{alias, bindings, desktop, Candidate, DesktopTarget, InstallState};
 
 /// Omarchy's own default-agent menu order (`omarchy-default-agent`'s supported
 /// list), recorded as data rather than parsed out of their script at runtime.
@@ -31,63 +31,44 @@ fn default_agent() -> Option<String> {
     (!agent.is_empty()).then(|| agent.to_string())
 }
 
-/// One row of the checklist.
+/// One row of the checklist, and every row is an agent. The bar widget has no
+/// row of its own: on a machine with the Omarchy CLI it is not a choice, it is
+/// part of what setting amon up means, the way the daemon is.
 struct Row {
-    item: Item,
+    agent: Candidate,
     checked: bool,
-}
-
-enum Item {
-    Agent(Candidate),
-    Widget { state: InstallState },
 }
 
 impl Row {
     fn label(&self) -> &str {
-        match &self.item {
-            Item::Agent(candidate) => candidate.label,
-            Item::Widget { .. } => "Omarchy bar widget",
-        }
+        self.agent.label
     }
 
     fn state_text(&self, default: Option<&str>) -> String {
         let mut parts = Vec::new();
-        match &self.item {
-            Item::Agent(candidate) => {
-                if default == Some(candidate.label) {
-                    parts.push("default agent");
-                }
-                match candidate.state {
-                    InstallState::NotInstalled => parts.push("detected"),
-                    InstallState::Current => parts.push("installed"),
-                    InstallState::Outdated => parts.push("outdated"),
-                }
-                if !candidate.detected {
-                    parts.push("agent not found");
-                }
-            }
-            Item::Widget { state } => match state {
-                InstallState::NotInstalled => {}
-                InstallState::Current => parts.push("installed"),
-                InstallState::Outdated => parts.push("outdated"),
-            },
+        if default == Some(self.agent.label) {
+            parts.push("default agent");
+        }
+        match self.agent.state {
+            InstallState::NotInstalled => parts.push("detected"),
+            InstallState::Current => parts.push("installed"),
+            InstallState::Outdated => parts.push("outdated"),
+        }
+        if !self.agent.detected {
+            parts.push("agent not found");
         }
         parts.join(" · ")
     }
 
     fn installed(&self) -> bool {
-        let state = match &self.item {
-            Item::Agent(candidate) => candidate.state,
-            Item::Widget { state } => *state,
-        };
-        state != InstallState::NotInstalled
+        self.agent.state != InstallState::NotInstalled
     }
 }
 
 /// The rows, ordered: the system default agent first, then Omarchy's menu
-/// order, then the rest alphabetically, the widget always last. Everything is
-/// preselected — installed rows so re-confirming refreshes them, detected
-/// rows because setting them up is what the screen is for.
+/// order, then the rest alphabetically. Everything is preselected — installed
+/// rows so re-confirming refreshes them, detected rows because setting them up
+/// is what the screen is for.
 fn rows() -> Vec<Row> {
     let default = default_agent();
     let mut agents = amon_integration::candidates();
@@ -103,24 +84,13 @@ fn rows() -> Vec<Row> {
         )
     });
 
-    let mut rows: Vec<Row> = agents
+    agents
         .into_iter()
-        .map(|candidate| Row {
+        .map(|agent| Row {
             checked: true,
-            item: Item::Agent(candidate),
+            agent,
         })
-        .collect();
-
-    let widget = desktop::status(DesktopTarget::Omarchy);
-    if desktop::cli_present() || widget.state != amon_integration::InstallState::NotInstalled {
-        rows.push(Row {
-            checked: true,
-            item: Item::Widget {
-                state: widget.state,
-            },
-        });
-    }
-    rows
+        .collect()
 }
 
 pub fn is_tty() -> bool {
@@ -142,22 +112,28 @@ pub fn interactive() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut actions = Vec::new();
     for row in &rows {
-        match (&row.item, row.checked, row.installed()) {
-            (Item::Agent(candidate), true, _) => actions.push(Action::SetupAgent {
-                target: candidate.target,
-                label: candidate.label,
+        match (row.checked, row.installed()) {
+            (true, _) => actions.push(Action::SetupAgent {
+                target: row.agent.target,
+                label: row.agent.label,
                 // Interactive setup always aliases: selecting an agent means
                 // wrapping it (ADR-0009, as amended). The screen disclosed it.
                 alias: true,
             }),
-            (Item::Agent(candidate), false, true) => actions.push(Action::RemoveAgent {
-                target: candidate.target,
-                label: candidate.label,
+            (false, true) => actions.push(Action::RemoveAgent {
+                target: row.agent.target,
+                label: row.agent.label,
             }),
-            (Item::Widget { .. }, true, _) => actions.push(Action::SetupWidget),
-            (Item::Widget { .. }, false, true) => actions.push(Action::RemoveWidget),
-            (_, false, false) => {}
+            (false, false) => {}
         }
+    }
+    // Not a row, so not a question: where the Omarchy CLI is present, applying
+    // the screen sets the bar up too. Install is idempotent, so a second run
+    // refreshes it rather than complaining. Taking it back off is
+    // `amon remove`'s job — the screen has no box left to untick.
+    if desktop::cli_present() {
+        actions.push(Action::SetupWidget);
+        actions.push(Action::SetupBindings);
     }
     apply(&actions)
 }
@@ -176,6 +152,7 @@ pub fn all(no_alias: bool) -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     if desktop::cli_present() {
         actions.push(Action::SetupWidget);
+        actions.push(Action::SetupBindings);
     }
     if actions.is_empty() {
         print_empty_state();
@@ -201,6 +178,9 @@ pub fn remove_everything(assume_yes: bool) -> Result<(), Box<dyn std::error::Err
     if widget_installed {
         actions.push(Action::RemoveWidget);
     }
+    if bindings::installed() {
+        actions.push(Action::RemoveBindings);
+    }
     // Last, so it sweeps up orphaned lines — aliases whose integration is
     // already gone would otherwise survive "remove everything" and keep
     // taking over their agent's name. A block stranded in a symlinked bashrc
@@ -220,7 +200,8 @@ pub fn remove_everything(assume_yes: bool) -> Result<(), Box<dyn std::error::Err
         for action in &actions {
             match action {
                 Action::RemoveAgent { label, .. } => println!("  {label} — hooks and alias"),
-                Action::RemoveWidget => println!("  Omarchy bar widget"),
+                Action::RemoveWidget => println!("  workspace switcher widget"),
+                Action::RemoveBindings => println!("  Super+N agent bindings"),
                 _ => {}
             }
         }
@@ -255,18 +236,41 @@ enum Action {
     },
     SetupWidget,
     RemoveWidget,
+    SetupBindings,
+    RemoveBindings,
     /// Drops the whole bashrc block. Only `amon remove` with no target queues
     /// this, after every per-agent removal: it is what takes orphaned aliases
     /// — lines whose integration is already gone — with it.
     ClearAliases,
 }
 
-/// Runs every action independently, `✓`/`✗` per row, and ends on the first
-/// success handoff. Failures make the exit non-zero but stop nothing — one
-/// wedged integration must not hold the others hostage.
+/// The file the aliases were written to, with `$HOME` shortened back to `~`
+/// so the line reads the way a person would type it.
+fn shell_rc() -> String {
+    let Some(path) = alias::shell_config() else {
+        return "~/.bashrc".to_string();
+    };
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    match home.and_then(|home| {
+        path.strip_prefix(home)
+            .ok()
+            .map(std::path::Path::to_path_buf)
+    }) {
+        Some(rest) => format!("~/{}", rest.display()),
+        None => path.display().to_string(),
+    }
+}
+
+/// Runs every action independently, `✓`/`✗` per row. Failures make the exit
+/// non-zero but stop nothing — one wedged integration must not hold the others
+/// hostage.
 fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
     let mut failed = false;
-    let mut first_command: Option<String> = None;
+    // An alias only exists in shells started after it was written, so a run
+    // that wrote one is not finished until the user knows that. Once, at the
+    // end: `alias::install` says the same thing per agent, which would be four
+    // identical lines in a four-agent run.
+    let mut aliased_any = false;
 
     for action in actions {
         match action {
@@ -289,6 +293,7 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                         // those instructions on rather than claiming success.
                         let aliased = *with_alias && alias::is_installed(*target);
                         if aliased {
+                            aliased_any = true;
                             println!("✓ {label} — hooks installed, aliased");
                         } else if *with_alias {
                             println!("✓ {label} — hooks installed; the alias needs a manual step:");
@@ -298,19 +303,6 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             println!("✓ {label} — hooks installed");
                         }
-                        // The handoff must name what the user actually types:
-                        // not always the label (cursor runs as cursor-agent),
-                        // and without a live alias the bare name would launch
-                        // the agent outside amon — the prefix is the truth.
-                        let command = amon_integration::command_names(*target)
-                            .first()
-                            .copied()
-                            .unwrap_or(label);
-                        first_command.get_or_insert(if aliased {
-                            command.to_string()
-                        } else {
-                            format!("amon {command}")
-                        });
                     }
                     (Err(error), _) | (_, Err(error)) => {
                         failed = true;
@@ -350,30 +342,69 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             Action::SetupWidget => {
+                // Asked before installing, because afterwards every answer is
+                // "current". `Outdated` is the one state where the running
+                // shell has this widget's QML compiled *and* what is about to
+                // replace it differs — a first install has nothing cached, and
+                // an unchanged one rewrites the same bytes. Only then is a
+                // restart the difference between an installed widget and a
+                // drawn one (see `desktop::restart_shell`).
+                let replacing_live_files =
+                    desktop::status(DesktopTarget::Omarchy).state == InstallState::Outdated;
                 let result = desktop::install(DesktopTarget::Omarchy)
                     .and_then(|_| desktop::enable(DesktopTarget::Omarchy));
                 match result {
-                    Ok(_) => println!("✓ bar widget — enabled on your bar"),
+                    Ok(_) => report_widget(replacing_live_files),
                     Err(error) => {
                         failed = true;
-                        println!("✗ bar widget — {error}");
+                        println!("✗ workspace switcher widget — {error}");
                     }
                 }
             }
             Action::RemoveWidget => match desktop::uninstall(DesktopTarget::Omarchy) {
                 Ok(notes) => {
-                    // The notes say whether the built-in actually came back —
-                    // a wedged `omarchy plugin disable` still lets removal
-                    // proceed, with manual fix-up commands instead of a
-                    // restore. Claiming "restored" here would bury them.
-                    println!("✓ bar widget — removed");
-                    for note in notes.iter().skip(1) {
-                        println!("    {}", note.trim_start());
+                    println!("✓ workspace switcher widget — removed");
+                    // What follows is either one line saying the built-in came
+                    // back, or several explaining that it did not and naming
+                    // the commands that fix it. Only the first is a success, so
+                    // only the first gets a tick; the rest stay an indented
+                    // block, because a ✓ on "could not restore" would bury the
+                    // very thing it is warning about.
+                    let tail = &notes[1.min(notes.len())..];
+                    match tail {
+                        [restored] => println!("✓ {restored}"),
+                        _ => {
+                            for note in tail {
+                                println!("    {}", note.trim_start());
+                            }
+                        }
                     }
                 }
                 Err(error) => {
                     failed = true;
-                    println!("✗ bar widget — {error}");
+                    println!("✗ workspace switcher widget — {error}");
+                }
+            },
+            Action::SetupBindings => match bindings::install() {
+                Ok(notes) => {
+                    for note in notes {
+                        println!("✓ {note}");
+                    }
+                }
+                Err(error) => {
+                    failed = true;
+                    println!("✗ Super+N agent bindings — {error}");
+                }
+            },
+            Action::RemoveBindings => match bindings::uninstall() {
+                Ok(notes) => {
+                    for note in notes {
+                        println!("✓ {note}");
+                    }
+                }
+                Err(error) => {
+                    failed = true;
+                    println!("✗ Super+N agent bindings — {error}");
                 }
             },
             Action::ClearAliases => match alias::remove_all() {
@@ -390,10 +421,12 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if let Some(command) = first_command {
+    if aliased_any {
         println!();
-        println!("open a new shell and run `{command}` —");
-        println!("then `amon status` shows every agent.");
+        println!(
+            "open a new shell, or `source {}`, for the aliases to take effect",
+            shell_rc()
+        );
     }
     if failed {
         return Err("not everything succeeded (see above)".into());
@@ -403,6 +436,28 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
 
 /// The worst first experience — nothing detected — turned into orientation
 /// instead of an empty checklist.
+/// Says what setting the widget up actually did.
+///
+/// An update reads differently from a first install because it is also the case
+/// that restarts the shell, and a bar blinking mid-setup wants accounting for —
+/// "installed and enabled" would leave it unexplained. A restart that fails
+/// leaves the widget installed and enabled regardless; only the copy in memory
+/// is old, so it stays a tick and names the one command that finishes the job.
+fn report_widget(replaced_live_files: bool) {
+    if !replaced_live_files {
+        println!("✓ workspace switcher widget — installed and enabled");
+        return;
+    }
+    match desktop::restart_shell() {
+        Ok(()) => println!("✓ workspace switcher widget — updated and restarted"),
+        Err(_) => {
+            println!("✓ workspace switcher widget — updated");
+            println!("  the bar is still drawing the previous one; to swap it:");
+            println!("    omarchy restart shell");
+        }
+    }
+}
+
 fn print_empty_state() {
     let supported: Vec<&str> = amon_integration::all_targets()
         .into_iter()
@@ -496,11 +551,10 @@ fn render(
         out,
         "{DIM}agents get session hooks and their name aliased\r"
     )?;
-    writeln!(out, "to run under amon; the widget shows agent state\r")?;
-    writeln!(out, "on your workspaces{RESET}\r")?;
+    writeln!(out, "to run under amon.{RESET}\r")?;
     writeln!(out, "\r")?;
     writeln!(out, "{DIM}space toggle · enter apply · q quit{RESET}\r")?;
-    lines += 6;
+    lines += 5;
     out.flush()?;
     Ok(lines)
 }

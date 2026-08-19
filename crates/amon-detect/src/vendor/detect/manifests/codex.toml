@@ -4,9 +4,7 @@
 # Modified only by the mechanical token map in scripts/revendor.sh.
 
 id = "codex"
-# amon vendor/patches/0003 bumps the patch version so the added rule outranks
-# an already-cached remote manifest of the unpatched version.
-version = "2026.07.18.2"
+version = "2026.07.18.1"
 min_engine_version = 2
 updated_at = "2026-07-18T00:00:00Z"
 
@@ -62,17 +60,6 @@ any = [
   { contains = ["do you want to"], any = [{ contains = ["yes"] }, { contains = ["❯"] }] },
   { contains = ["would you like to"], any = [{ contains = ["yes"] }, { contains = ["❯"] }] },
 ]
-
-# amon vendor/patches/0003: upstream misses the first-run directory-trust
-# dialog, which needs a human. A newer remote manifest from herdr.dev
-# overrides this rule until the fix lands upstream (ADR-0003).
-[[rules]]
-id = "trust_dialog_blocked"
-state = "blocked"
-priority = 950
-region = "whole_recent"
-visible_blocker = true
-contains = ["do you trust"]
 
 [[rules]]
 id = "screen_working_fallback"

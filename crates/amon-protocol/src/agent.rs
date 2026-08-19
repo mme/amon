@@ -18,16 +18,6 @@ pub enum AgentState {
 }
 
 impl AgentState {
-    /// Ordering for `amon status`: the agents that need a human come first.
-    pub fn urgency(self) -> u8 {
-        match self {
-            Self::Blocked => 0,
-            Self::Working => 1,
-            Self::Idle => 2,
-            Self::Unknown => 3,
-        }
-    }
-
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Idle => "idle",
@@ -83,10 +73,49 @@ pub struct AgentEntry {
     pub focused: Option<bool>,
     /// Whether the terminal view has had focus since the current
     /// [`AgentEntry::state`] began. `Idle` and not seen is "finished but
-    /// unnoticed"; consumers combine the two themselves, because this is an
-    /// annotation on the state rather than a state of its own.
+    /// unnoticed" — an annotation on the state rather than a state of its own,
+    /// which is why [`AgentEntry::attention`] exists: to combine the two in one
+    /// place instead of leaving every consumer to invent the same rule.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seen: Option<bool>,
+}
+
+impl AgentEntry {
+    /// Ordering by what wants a human, most first — the one ranking amon
+    /// sorts, draws and jumps by.
+    ///
+    /// Over the entry rather than the state, because the rank's second place is
+    /// not a state at all: "done" is [`AgentState::Idle`] carrying
+    /// [`AgentEntry::seen`] false, finished and unnoticed. That it outranks a
+    /// working agent is the point. Work in progress asks nothing of anyone;
+    /// work that has finished and not been looked at is the likeliest thing in
+    /// the list to be waiting on you.
+    ///
+    /// [`AgentState::Unknown`] sorts last: an unrecognised process is usually
+    /// not an agent, and ranking it above anything would cry wolf.
+    pub fn attention(&self) -> u8 {
+        match self.state {
+            AgentState::Blocked => 0,
+            AgentState::Idle if self.seen == Some(false) => 1,
+            AgentState::Working => 2,
+            AgentState::Idle => 3,
+            AgentState::Unknown => 4,
+        }
+    }
+
+    /// Whether this agent is worth taking someone to.
+    ///
+    /// An agent at rest is not. It asks for nothing, so moving the focus onto
+    /// it would be amon interrupting on its own account — which is why
+    /// `amon focus` leaves a workspace of idle agents exactly as the
+    /// compositor left it.
+    pub fn wants_attention(&self) -> bool {
+        match self.state {
+            AgentState::Blocked | AgentState::Working => true,
+            AgentState::Idle => self.seen == Some(false),
+            AgentState::Unknown => false,
+        }
+    }
 }
 
 /// A partial update to an entry. Absent fields are left alone, which is what

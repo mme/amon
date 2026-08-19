@@ -21,11 +21,12 @@ use std::path::{Path, PathBuf};
 
 use crate::api::schema::IntegrationTarget;
 
-/// Fences for the block in the user's shell config. The shape is conda's,
-/// deliberately: people already read `>>> name >>>` as a machine-managed region
-/// whose insides are not theirs to edit.
-const BEGIN: &str = "# >>> amon >>>";
-const END: &str = "# <<< amon <<<";
+/// Fences for the block in the user's shell config. The markers and the
+/// splicing live in [`crate::fence`], shared with the Hyprland bindings, whose
+/// only difference is how Lua spells a comment.
+const FENCE: crate::fence::Fence = crate::fence::HASH;
+const BEGIN: &str = FENCE.begin;
+const END: &str = FENCE.end;
 
 const PREFACE: &str = "\
 # Added by amon so that running an agent by its own name runs it under amon.
@@ -57,9 +58,7 @@ fn alias_line(command: &str) -> String {
 
 /// Whether a path is a symlink, which amon will not write through.
 fn is_symlink(path: &Path) -> bool {
-    std::fs::symlink_metadata(path)
-        .map(|metadata| metadata.file_type().is_symlink())
-        .unwrap_or(false)
+    crate::fence::is_symlink(path)
 }
 
 /// The alias lines inside every fenced block, in the order they appear. Every
@@ -100,47 +99,12 @@ fn block(aliases: &[String]) -> String {
 /// truncated fence would swallow the rest of the user's file — every writer
 /// checks this first and refuses to edit rather than destroy.
 fn fence_unterminated(existing: &str) -> bool {
-    let mut in_block = false;
-    for line in existing.lines() {
-        let trimmed = line.trim();
-        if !in_block && trimmed == BEGIN {
-            in_block = true;
-        } else if in_block && trimmed == END {
-            in_block = false;
-        }
-    }
-    in_block
+    FENCE.unterminated(existing)
 }
 
 /// The note printed instead of editing a file with a truncated fence.
 fn truncated_note(rc: &Path) -> String {
-    format!(
-        "the amon block in {} is missing its closing `{END}` — repair it by hand before amon edits this file",
-        rc.display()
-    )
-}
-
-/// The lines outside every fenced block, and where the first block began —
-/// the shared walk under [`with_block`] and [`without_block`]. Callers have
-/// already refused files where [`fence_unterminated`] holds.
-fn split_blocks(existing: &str) -> (Vec<&str>, Option<usize>) {
-    let mut kept = Vec::new();
-    let mut in_block = false;
-    let mut first_block = None;
-    for line in existing.lines() {
-        let trimmed = line.trim();
-        if !in_block && trimmed == BEGIN {
-            in_block = true;
-            first_block.get_or_insert(kept.len());
-        } else if in_block {
-            if trimmed == END {
-                in_block = false;
-            }
-        } else {
-            kept.push(line);
-        }
-    }
-    (kept, first_block)
+    FENCE.truncated_note(rc)
 }
 
 /// Replaces the fenced block — every fenced block, merged into one at the
@@ -148,42 +112,12 @@ fn split_blocks(existing: &str) -> (Vec<&str>, Option<usize>) {
 /// duplicates matters because [`aliases_in`] feeds this the union of all
 /// blocks' lines; leaving a second block behind would double them.
 fn with_block(existing: &str, block: &str) -> String {
-    let (kept, first_block) = split_blocks(existing);
-
-    let mut out = String::new();
-    let index = first_block.unwrap_or(kept.len());
-    for line in &kept[..index] {
-        out.push_str(line);
-        out.push('\n');
-    }
-    if first_block.is_none() && !out.is_empty() {
-        out.push('\n');
-    }
-    out.push_str(block);
-    out.push('\n');
-    for line in &kept[index..] {
-        out.push_str(line);
-        out.push('\n');
-    }
-    out
+    FENCE.with_block(existing, block)
 }
 
 /// Removes every fenced block, leaving the rest of the file as it was.
 fn without_block(existing: &str) -> Option<String> {
-    let (kept, first_block) = split_blocks(existing);
-    first_block?;
-
-    let mut out = String::new();
-    for line in kept {
-        out.push_str(line);
-        out.push('\n');
-    }
-    // The block is written with a blank line before it; take that back too, so
-    // installing and uninstalling repeatedly does not grow the file.
-    while out.ends_with("\n\n") {
-        out.pop();
-    }
-    Some(out)
+    FENCE.without_block(existing)
 }
 
 /// The instructions for a symlinked rc. The full fenced block, not bare alias

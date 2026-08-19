@@ -139,7 +139,9 @@ impl Sandbox {
     }
 
     pub fn daemon_socket(&self) -> PathBuf {
-        self.runtime.join("amon/amond.sock")
+        self.runtime
+            .join(amon_protocol::paths::app_dir_name())
+            .join("amond.sock")
     }
 
     /// A path inside this sandbox's runtime directory — short enough for a

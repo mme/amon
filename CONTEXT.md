@@ -111,3 +111,17 @@ current Agent State began. Reset at every state change (immediately true if
 focused at that instant). Computed by the Wrapper. `Idle` and not Seen is
 the "finished but unnoticed" condition.
 _Avoid_: unread, acknowledged, notified
+
+**Done**:
+An Agent that has finished and not been looked at: `Idle` and not Seen. Not an
+Agent State — the states stay herdr's — but the condition amon exists to
+surface, so it is named rather than spelled out at every use.
+_Avoid_: finished, complete, unread
+
+**Attention**:
+The one ranking of what wants a human, most first: Blocked, Done, Working,
+Idle, with `Unknown` last. Computed over an Agent Entry rather than an Agent
+State, because Done is not a state. It sorts `amon status`, decides which state
+a workspace indicator draws, and decides where `amon focus` lands — one
+function, so the bar and the keystroke cannot disagree (ADR-0011).
+_Avoid_: urgency, priority, severity

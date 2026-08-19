@@ -23,6 +23,10 @@ Item {
   // Resolved the way the daemon resolves it: an explicit socket wins, then the
   // runtime directory. Without either there is nothing to connect to — the
   // daemon's last-resort path is per-uid and not derivable from QML.
+  //
+  // `amon` and not `amon-dev`, deliberately: an installed widget belongs to an
+  // installed release daemon. A debug build keeps its own runtime directory, so
+  // pointing a bar at one means setting AMON_DAEMON_SOCKET.
   readonly property string socketPath: {
     const explicit = Quickshell.env("AMON_DAEMON_SOCKET")
     if (explicit && explicit.length > 0) return explicit
@@ -30,15 +34,27 @@ Item {
     return runtime && runtime.length > 0 ? runtime + "/amon/amond.sock" : ""
   }
 
-  // Most urgent first, matching the order the registry itself sorts by.
-  readonly property var order: ["blocked", "working", "done", "idle"]
+  // Most urgent first — the same order `AgentEntry::attention` gives the
+  // registry, `amon status` and `amon focus`, so what the bar draws for a
+  // workspace and what Super+N lands you on there are never two answers.
+  // `done` above `working` is the point of it: work in progress asks nothing
+  // of anyone, work finished and unseen is what is waiting on you. A test
+  // pins this array to the Rust ranking, because nothing else can.
+  readonly property var order: ["blocked", "done", "working", "idle"]
 
-  // A working agent shows the braille spinner, the same ten frames herdr runs
-  // in its own UI and at the same 80ms. It is also what amon's detection keys
-  // off: codex's manifest matches exactly these characters, and nine more
-  // manifests — claude, amp, cursor, droid and the rest — accept any character
-  // in the braille block as the sign of a working agent. So the bar shows back
-  // the very thing it read.
+  // A working agent shows a braille spinner: a two-dot bar rotating inside the
+  // cell's two middle rows. Braille because it is what amon's detection reads —
+  // nine manifests, claude and amp and cursor and droid among them, take any
+  // character in the block as the sign of a working agent — so the bar answers
+  // in the alphabet it listens to.
+  //
+  // Which rows is the whole of it. A cell is four rows tall, and herdr's own
+  // ten frames (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏, also the exact set codex's manifest matches) light
+  // only dots 1-6: their ink fills the top three quarters, so the spinner rides
+  // high above the digits beside it. Lighting all four rows centres it, but at
+  // bar size draws a block heavy enough to read as a blob. Rows two and three
+  // are centred by construction and half the height, and two dots of the four
+  // are enough to read as a moving shape rather than a speck.
   //
   // Icon glyphs were tried first and abandoned. A set only animates without
   // twitching if every frame has the same ink box, and the card suits do not:
@@ -48,19 +64,64 @@ Item {
   // Braille has no such problem: one cell, one advance width, dots switching on
   // and off inside it.
   readonly property var spinnerFrames: [
-    "⠋", "⠙", "⠹", "⠸", "⠼",
-    "⠴", "⠦", "⠧", "⠇", "⠏"
+    "⠒", "⠰", "⠤", "⠆"
   ]
 
   // One tick for the whole bar, so two working workspaces spin in step instead
   // of drifting out of phase with each other.
   property int spinnerFrame: 0
   readonly property string spinner: root.spinnerFrames[root.spinnerFrame]
+
+  /// How long one turn of the spinner takes.
+  readonly property int spinnerInterval: 200
+  readonly property int cycle: root.spinnerFrames.length * root.spinnerInterval
+
+  /// The unit the focused workspace's turn-taking is counted in: half a turn.
+  ///
+  /// A whole turn was tried first and is the tidier idea — a state phase would
+  /// be a whole number of revolutions — but every split it can express was
+  /// either too brief to read or long enough to feel stuck, and the one that
+  /// looked right on a real bar falls on a half. Derived from the cycle rather
+  /// than written as 400 so the two rhythms stay related: change the spinner's
+  /// speed and this follows it.
+  readonly property int beat: root.cycle / 2
+
+  /// The split, in beats — 2000ms showing the agent's state, 1200ms showing the
+  /// marker. Named rather than written into the timer because these two numbers
+  /// are the whole design, and they were settled by watching a bar rather than
+  /// by argument: every ratio from 1:4 to 4:1 was tried, and the ones that read
+  /// well all gave the state the longer half. You are already looking at the
+  /// workspace you are on — the desktop is full of evidence for it — so the
+  /// marker only has to confirm, while the state is the thing you cannot get
+  /// any other way without leaving what you are doing.
+  readonly property int stateBeats: 5
+  readonly property int markerBeats: 3
   readonly property bool anyWorking: {
     for (const workspace in root.stateByWorkspace)
       if (root.stateByWorkspace[workspace] === "working") return true
     return false
   }
+
+  // Which workspace the compositor says you are on. Set by the widget, which
+  // is the only party that knows — this object talks to the daemon, and the
+  // daemon has no opinion about where you are looking.
+  property string focusedWorkspace: ""
+
+  /// Whether the focused workspace is holding something worth interrupting its
+  /// marker for. An agent at rest is not: it asks for nothing, and the marker
+  /// is the more useful thing to be showing.
+  readonly property bool focusedWants: {
+    const state = root.stateByWorkspace[root.focusedWorkspace] || ""
+    return state !== "" && state !== "idle"
+  }
+
+  /// True while the focused workspace shows its agent's state rather than the
+  /// focus marker. Global rather than per-workspace because only one workspace
+  /// is ever focused, so one phase is the whole truth.
+  property bool showingState: false
+
+  /// Beats elapsed in the current phase, counted rather than timed.
+  property int phaseBeats: 0
 
   // Events that arrived before the seed. Applying them first and the seed
   // afterwards would let the snapshot resurrect an agent that has already gone,
@@ -213,11 +274,54 @@ Item {
 
   // Only while something is actually working: an idle bar animates nothing.
   Timer {
-    interval: 80 // herdr's own cadence
+    // Paced by the revolution, not by the frame: four frames at 200ms turn once
+    // every 800ms, which is what herdr's ten at 80ms do. Keeping herdr's
+    // interval instead would spin a quarter as many frames four times as fast.
+    interval: 200
     repeat: true
     running: root.anyWorking
     onTriggered: root.spinnerFrame = (root.spinnerFrame + 1) % root.spinnerFrames.length
     onRunningChanged: if (!running) root.spinnerFrame = 0
+  }
+
+  // The focused workspace's turn-taking: one cycle of the agent's state, then
+  // four of the marker, for as long as that agent wants something.
+  //
+  // The spinner above is deliberately not stopped while the marker is showing.
+  // It is one tick for the whole bar, and pausing it would drift this
+  // workspace out of step with every other working one — so a state phase
+  // begins at whatever frame the bar is on and still runs exactly one
+  // revolution, which is what the cycle is for.
+  // Ticking once per cycle and counting, rather than setting the interval to
+  // the length of each phase. Two reasons, both learned the hard way:
+  //
+  // `restart()` is `stop()` then `start()`, and both emit `runningChanged` —
+  // so a handler that derives anything from `running` runs again mid-flip. The
+  // first version toggled the phase and called `restart()`, and the `start()`
+  // put the phase straight back, which made the marker phase last zero
+  // milliseconds and the state show permanently. Imperatively starting a Timer
+  // also destroys the binding on `running`, so it would have gone on ticking
+  // after the workspace stopped wanting anything.
+  //
+  // A fixed interval needs neither, and counting beats is also what lets the
+  // split fall on a half turn without the timer having to know that.
+  Timer {
+    interval: root.beat
+    repeat: true
+    running: root.focusedWants
+    // Starting with the state: arriving on a workspace and waiting out the
+    // marker to find what is happening there would be the wrong way round.
+    onRunningChanged: {
+      root.showingState = running
+      root.phaseBeats = 0
+    }
+    onTriggered: {
+      root.phaseBeats += 1
+      if (root.phaseBeats < (root.showingState ? root.stateBeats : root.markerBeats))
+        return
+      root.showingState = !root.showingState
+      root.phaseBeats = 0
+    }
   }
 
   // Keeps trying for as long as there is no daemon, and never starts one.

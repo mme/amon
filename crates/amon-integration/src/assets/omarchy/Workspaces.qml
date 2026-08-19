@@ -12,11 +12,12 @@
 // than a merge.
 //
 // To re-derive: copy the upstream file over this one, then re-apply exactly
-// the three changes, each marked `amon:` below —
+// the four changes, each marked `amon:` below —
 //
 //   1. `moduleName` names this plugin rather than Omarchy's
 //   2. the `AgentStates` object
 //   3. the `agentState` property and the `text` expression that reads it
+//   4. `focusWorkspace` goes through `amon focus`
 //
 // Anything else differing from upstream is drift, and the tests in fork.rs and
 // desktop.rs exist to notice it.
@@ -32,7 +33,14 @@ BarWidget {
   moduleName: "sh.amon.workspaces"   // amon: upstream says omarchy.workspaces
 
   // amon: the one piece of state upstream does not have.
-  AgentStates { id: agents }
+  //
+  // Which workspace is focused is fed in rather than looked up: this object
+  // holds the link to the daemon, and the daemon has no opinion about where
+  // you are looking. Only the widget can say that.
+  AgentStates {
+    id: agents
+    focusedWorkspace: Hyprland.focusedWorkspace ? String(Hyprland.focusedWorkspace.id) : ""
+  }
 
   function workspaceById(id) {
     var values = Hyprland.workspaces.values
@@ -56,9 +64,18 @@ BarWidget {
     return ids
   }
 
+  // amon: clicking a workspace lands where Super+N lands — on the agent that
+  // wants a human, not on whatever was focused there last. One command decides
+  // that for both, so the two cannot drift apart.
+  //
+  // The `||` is the whole safety net: `bar.run` is `bash -lc`, so if amon is
+  // not installed or not on the login shell's PATH, the click still switches
+  // workspace exactly as upstream does. `id` is the model's int, so there is
+  // nothing to quote in it.
   function focusWorkspace(id) {
     if (!root.bar) return
-    root.bar.run("hyprctl dispatch " + Util.shellQuote("hl.dsp.focus({ workspace = \"" + id + "\" })"))
+    root.bar.run("amon focus " + id + " || hyprctl dispatch "
+                 + Util.shellQuote("hl.dsp.focus({ workspace = \"" + id + "\" })"))
   }
 
   readonly property real trailingGap: root.vertical ? 0 : Style.spaceReal(1.5)
@@ -92,19 +109,38 @@ BarWidget {
         // U+FFFF, so "\uF051F" would silently parse as U+F051 followed by "F".
         readonly property string agentState: agents.stateByWorkspace[String(modelData)] || ""
         readonly property string label: modelData === 10 ? "0" : String(modelData)
-        // Focus wins: which workspace you are on is something only this widget
-        // says, while an agent's state is also one `amon status` away.
-        text: focused ? "󱓻"
+        // Focus stops winning outright: the workspace you are sitting on was
+        // the one workspace whose agent the bar would not show you, which is
+        // the wrong one to hide — its terminal may well be behind a full-screen
+        // window. So a focused workspace holding an agent that wants something
+        // takes turns, and the state gets the longer share of them: you already
+        // know where you are, the whole desktop says so, while the state is the
+        // thing you cannot see without leaving what you are doing. An agent at
+        // rest borrows nothing — `agents.showingState` only goes true while the
+        // focused workspace holds a state worth the interruption.
+        text: focused && !agents.showingState ? "󱓻"
             : agentState === "working" ? agents.spinner                  // braille spinner
             : agentState === "blocked" ? String.fromCodePoint(0xF02D7)   // help circle
             : agentState === "done" ? String.fromCodePoint(0xF05E0)      // check circle
             // An agent that has come to rest asks for nothing, so the workspace
-            // goes back to its number — in bold, which says an agent is here
-            // and wants nothing. Weight is free to mean that: upstream says
-            // occupancy with opacity, dimming a workspace that holds no
-            // windows, and never varies weight itself. Markup rather than a
-            // font property because the label exposes only family and size.
-            : agentState === "idle" ? "<b>" + label + "</b>"
+            // keeps its number and is underlined: an agent is here and wants
+            // nothing.
+            //
+            // Bold was tried first and could not be seen. A real bold face is
+            // there — the family resolves through fontconfig to one that has
+            // one, so nothing was being synthesized — but weight is a property
+            // of a glyph you already know the shape of, and a lone digit on a
+            // bar has nothing beside it to be heavier *than*. An underline adds
+            // a mark instead of thickening one, which reads with no comparison
+            // available, and it is drawn in descender space so the digit does
+            // not move.
+            //
+            // Not opacity, which upstream already owns: it dims a workspace
+            // holding no windows, so a fainter number would place an idle agent
+            // between empty and occupied — quieter exactly where more presence
+            // is wanted. Markup rather than a font property because the label
+            // exposes only family and size.
+            : agentState === "idle" ? "<u>" + label + "</u>"
             : label
         opacity: occupied || focused ? 1 : 0.5
         horizontalMargin: 6

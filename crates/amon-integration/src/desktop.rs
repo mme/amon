@@ -42,12 +42,6 @@ impl DesktopTarget {
     }
 }
 
-pub fn parse_target(name: &str) -> Option<DesktopTarget> {
-    DesktopTarget::ALL
-        .into_iter()
-        .find(|target| target.label().eq_ignore_ascii_case(name))
-}
-
 const MANIFEST: &str = include_str!("assets/omarchy/manifest.json");
 const WORKSPACES_QML: &str = include_str!("assets/omarchy/Workspaces.qml");
 const AGENT_STATES_QML: &str = include_str!("assets/omarchy/AgentStates.qml");
@@ -264,8 +258,11 @@ fn disable_widget(id: &str, swaps_back: bool) -> Vec<String> {
         .args(["plugin", "disable", id])
         .output()
     {
+        // The one outcome here that is a success rather than an explanation,
+        // and the only one that is a single line — which is how the caller
+        // tells them apart and gives this one a tick of its own.
         Ok(output) if output.status.success() && swaps_back => {
-            vec!["  (restored the built-in workspaces widget)".to_string()]
+            vec!["restored the built-in workspaces widget".to_string()]
         }
         // Disabled, but nothing swapped back: the installed copy predates the
         // clonedFrom manifest, so the shell only dropped the bar entry.
@@ -288,6 +285,34 @@ fn disable_widget(id: &str, swaps_back: bool) -> Vec<String> {
 /// widget at all, and for anything below that shells out to it.
 pub fn cli_present() -> bool {
     crate::api_surface::on_path("omarchy")
+}
+
+/// Restarts the Omarchy shell, so widget files replaced under a running one
+/// become the files it is actually drawing.
+///
+/// [`enable`] already asks the shell to rescan, and a rescan looks like it
+/// should be enough: it unregisters every plugin widget, calls
+/// `Qt.clearComponentCache()`, and scans again. It is not. Measured on a shell
+/// answering IPC normally: rewriting both the entry component and the nested
+/// import it pulls in, then rescanning, left the bar drawing the previous copy
+/// of each. Only a restart picked them up.
+///
+/// A heavy instrument for one widget — it takes the notifications and the OSD
+/// with it — so this is for callers that have actually replaced files under a
+/// running shell, never for a first install, which has nothing cached to be
+/// stale. Worth raising upstream: a plugin author would reasonably expect the
+/// rescan to be the whole story, and if it becomes so, this goes away.
+pub fn restart_shell() -> io::Result<()> {
+    let output = std::process::Command::new("omarchy")
+        .args(["restart", "shell"])
+        .output()?;
+    if !output.status.success() {
+        return Err(io::Error::other(format!(
+            "omarchy restart shell failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(())
 }
 
 /// Runs `omarchy plugin enable` for the installed widget. The manifest's
@@ -548,8 +573,8 @@ mod tests {
                 .lines()
                 .filter(|line| line.contains("// amon:"))
                 .count(),
-            3,
-            "exactly the three changes ADR-0008 allows, each marked"
+            4,
+            "exactly the four changes ADR-0008 allows, each marked"
         );
     }
 }

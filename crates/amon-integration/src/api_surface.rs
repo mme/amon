@@ -85,31 +85,61 @@ pub struct Candidate {
     pub state: InstallState,
 }
 
+/// Whether the agent whose hook belongs at `hook` is actually on this machine.
+///
+/// Not a PATH scan, which is what upstream's `available` does and what amon
+/// used to pass through. On Omarchy that answer is always yes: every major
+/// agent CLI is pre-wired as a lazy mise stub in `~/.local/bin`, downloading
+/// nothing until its first run. So `grok`, `copilot` and `omp` are on PATH from
+/// a fresh install, the screen offered to hook all three, and each one failed
+/// with "config directory not found. install it first" — offering work that
+/// cannot succeed on the one platform amon is built for.
+///
+/// The honest signal is the directory the installer itself insists on. Rather
+/// than restate each target's rule — they live in vendored installers this
+/// crate must not reach into (ADR-0005) — take the agent's own root: the
+/// ancestor of the hook path sitting directly under `$HOME` or the config dir.
+/// `~/.claude/hooks/…` gives `~/.claude`, `~/.config/opencode/plugins/…` gives
+/// `~/.config/opencode`, and both are exactly what those installers check.
+///
+/// Two known imprecisions, both quieter than the bug they replace. An agent
+/// whose root exists but whose deeper directory does not (pi wants
+/// `~/.pi/agent`) still reads as present and still fails at install. And
+/// mastracode, whose installer has no precondition at all, reads as absent
+/// until it has a directory — `amon setup mastracode` remains the way in.
+fn agent_root_exists(hook: &std::path::Path) -> bool {
+    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+        return false;
+    };
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".config"));
+
+    let mut root = hook;
+    while let Some(parent) = root.parent() {
+        if parent == home || parent == config {
+            return root.is_dir();
+        }
+        root = parent;
+    }
+    false
+}
+
 /// Every agent worth offering: the union of Detected Agents and installed
 /// Integrations. Agents that are neither do not appear — `amon setup <name>`
 /// remains the escape hatch for pre-installing one.
 pub fn candidates() -> Vec<Candidate> {
     integration::integration_recommendations()
         .into_iter()
-        .filter(|recommendation| recommendation.available)
+        .filter(|recommendation| {
+            recommendation.state != integration::IntegrationStatusKind::NotInstalled
+                || agent_root_exists(&recommendation.path)
+        })
         .map(|recommendation| Candidate {
             target: recommendation.target,
             label: recommendation.label,
-            // A candidate that is not installed is only here because the
-            // registry detected it, so it is a Detected Agent by definition —
-            // layout special cases (a standalone codex, hermes) included. For
-            // installed rows `available` is always true and can no longer
-            // tell, so a PATH scan over the agent's command names refines the
-            // orphan flag. Accepted imprecision: an *installed* agent living
-            // only in a special layout reads "agent not found", and the
-            // detected-filter in `setup --all` then skips refreshing it — the
-            // wrapper's outdated notice names the per-target fix. Doing
-            // better needs the vendored `integration_target_available`, which
-            // upstream does not re-export (ADR-0005 forbids reaching in).
-            detected: recommendation.state == integration::IntegrationStatusKind::NotInstalled
-                || command_names(recommendation.target)
-                    .iter()
-                    .any(|command| on_path(command)),
+            detected: agent_root_exists(&recommendation.path),
             state: match recommendation.state {
                 integration::IntegrationStatusKind::NotInstalled => InstallState::NotInstalled,
                 integration::IntegrationStatusKind::Current => InstallState::Current,

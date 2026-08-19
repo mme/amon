@@ -11,13 +11,31 @@ use std::path::{Path, PathBuf};
 /// that, so amon checks rather than discovers it at runtime.
 const MAX_SOCKET_PATH: usize = 100;
 
+/// `amon` in a release build, `amon-dev` in a debug one — the same split
+/// `shim::config::app_dir_name` makes for the state and config directories,
+/// spelled out again here because this crate depends on no other amon crate
+/// and `debug_assertions` is a compiler flag rather than something to import.
+///
+/// The two have to agree. The state directory was already per-build while the
+/// socket was not, and a daemon only yields to a *strictly* newer version, so a
+/// debug daemon would hold the one socket and a release client — equal version,
+/// therefore no takeover — would go on reading its own empty state directory
+/// and silently fall back to the bundled manifests.
+pub fn app_dir_name() -> &'static str {
+    if cfg!(debug_assertions) {
+        "amon-dev"
+    } else {
+        "amon"
+    }
+}
+
 /// Runtime directory for amon's sockets. `XDG_RUNTIME_DIR` when set — it is
 /// per-user, on tmpfs, and cleaned up at logout — otherwise a per-uid
 /// directory under the temp dir, which we create with 0700 so another user
 /// cannot plant a socket there.
 pub fn runtime_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR").filter(|dir| !dir.is_empty()) {
-        return PathBuf::from(dir).join("amon");
+        return PathBuf::from(dir).join(app_dir_name());
     }
     short_runtime_dir()
 }
@@ -25,7 +43,7 @@ pub fn runtime_dir() -> PathBuf {
 /// The fallback: as short as a per-user directory can reasonably be.
 fn short_runtime_dir() -> PathBuf {
     let uid = unsafe { libc::getuid() };
-    std::env::temp_dir().join(format!("amon-{uid}"))
+    std::env::temp_dir().join(format!("{}-{uid}", app_dir_name()))
 }
 
 /// Falls back to the short directory when a socket under `runtime_dir` would
