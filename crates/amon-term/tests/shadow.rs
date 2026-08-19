@@ -59,10 +59,15 @@ fn a_selection_form_reads_as_blocked() {
 }
 
 #[test]
-fn a_codex_trust_dialog_reads_as_blocked() {
-    // The first thing codex shows in a new directory. It needs a human, so
-    // reporting it as idle hides exactly the situation `blocked` exists for
-    // (vendor/patches/0003).
+fn a_codex_trust_dialog_still_reads_as_idle() {
+    // The first thing codex shows in a new directory. It needs a human, and no
+    // upstream rule covers it, so it reads as idle — hiding exactly the
+    // situation `blocked` exists for. amon carried a patch for this and dropped
+    // it: patched builtins are the bottom tier, so every herdr release outlived
+    // the fix (ADR-0003).
+    //
+    // A tripwire, not an endorsement. The day herdr adds the rule this fails,
+    // and the fix is to delete it.
     let shadow = shadow_of(&[
         "You are running Codex in /tmp/scratch\r\n",
         "\r\n",
@@ -77,11 +82,12 @@ fn a_codex_trust_dialog_reads_as_blocked() {
         shadow.title().as_deref().unwrap_or_default(),
         "",
     );
-    assert_eq!(detection.state, AgentState::Blocked);
+    assert_eq!(detection.state, AgentState::Idle);
 }
 
 #[test]
-fn a_claude_trust_dialog_reads_as_blocked() {
+fn a_claude_trust_dialog_still_reads_as_idle() {
+    // The same gap as the codex dialog above, and the same tripwire.
     let shadow = shadow_of(&[
         "Do you trust the files in this folder?\r\n",
         "/tmp/scratch\r\n",
@@ -89,7 +95,7 @@ fn a_claude_trust_dialog_reads_as_blocked() {
         "  2. No, exit\r\n",
     ]);
 
-    assert_eq!(state_of(&shadow), AgentState::Blocked);
+    assert_eq!(state_of(&shadow), AgentState::Idle);
 }
 
 #[test]
