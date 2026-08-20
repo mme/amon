@@ -94,7 +94,7 @@ fn shell_quoted(value: &str) -> String {
 /// compositor, whose `PATH` at session start is not the one the user's shell
 /// has, and a binding that silently resolves to nothing would take the
 /// workspace keys with it.
-fn lua(binary: &str) -> String {
+fn lua(binary: &str, shims: &str) -> String {
     format!(
         r#"-- Managed by amon. `amon setup` rewrites this file; `amon remove` deletes it.
 --
@@ -108,6 +108,24 @@ fn lua(binary: &str) -> String {
 -- these replace those bindings instead of sitting beside them.
 
 local amon = {path}
+
+-- Omarchy launches the default agent through a terminal's -e, which execs the
+-- binary directly: no shell, so no alias, so amon never sees it. This puts a
+-- directory of stand-ins for the agents you set up ahead of the real ones, so
+-- that launch runs under amon too (ADR-0013).
+--
+-- Stripped before it is prepended, and that is not tidiness. Hyprland's own
+-- environment carries what earlier `hl.env` calls set, and `os.getenv` here
+-- reads it back — so a plain prepend appends another copy on every config
+-- reload. Measured: four reloads, four copies. Omarchy's `envs.lua` strips its
+-- own bin directory for exactly this reason, which is why it appears once.
+local shims = {shim_dir}
+local kept = {{}}
+for entry in (os.getenv("PATH") or ""):gmatch("[^:]+") do
+  if entry ~= shims then table.insert(kept, entry) end
+end
+table.insert(kept, 1, shims)
+hl.env("PATH", table.concat(kept, ":"))
 
 -- Only rebind if that binary is really there. An amon deleted without
 -- `amon remove` would otherwise take those keys with it, and losing the ability
@@ -126,6 +144,7 @@ if binary then
 end
 "#,
         path = lua_string(binary),
+        shim_dir = lua_string(shims),
         command = lua_string(&shell_quoted(binary)),
     )
 }
@@ -153,7 +172,15 @@ pub fn install() -> io::Result<Vec<String>> {
     if let Some(parent) = ours.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&ours, lua(binary))?;
+    // The shim directory is named here even when it holds nothing yet: a
+    // `PATH` entry pointing at an empty or absent directory costs nothing, and
+    // it means setting up an agent later does not need the Hyprland config
+    // rewritten to take effect.
+    let shims = crate::shims::dir()
+        .ok_or_else(missing_home)?
+        .to_string_lossy()
+        .into_owned();
+    std::fs::write(&ours, lua(binary, &shims))?;
     // The require last, as with the widget's manifest: until it is there the
     // Lua file is inert, so a write that fails part way leaves nothing loaded
     // rather than a require pointing at a file that is not finished.

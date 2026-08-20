@@ -8,7 +8,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 
-use amon_integration::{alias, desktop, DesktopTarget, InstallState};
+use amon_integration::{alias, desktop, shims, DesktopTarget, InstallState};
 use amon_protocol::{Hello, HelloResult, Method, Request, Response, Role, PROTOCOL_VERSION};
 
 pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -104,6 +104,32 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Some(note) = alias::stranded() {
             print_line("bashrc", &note, "");
+        }
+    }
+
+    // Reported beside the aliases because they are the same decision for a
+    // different context: an agent aliased but not shimmed is wrapped when you
+    // type its name and bare when Omarchy launches it, which is exactly the
+    // split shims exist to close (ADR-0013). Only where Omarchy is, because
+    // only there does anything read them.
+    if desktop::cli_present() {
+        let shimmed = shims::installed();
+        if shimmed.is_empty() {
+            print_line(
+                "session",
+                "no shims (Omarchy launches agents unwrapped)",
+                "",
+            );
+        } else {
+            print_line("session", &format!("shims: {}", shimmed.join(", ")), "");
+            let stranded = shims::stranded();
+            if !stranded.is_empty() {
+                print_line(
+                    "session",
+                    &format!("stranded (integration gone): {}", stranded.join(", ")),
+                    "",
+                );
+            }
         }
     }
     Ok(())

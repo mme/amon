@@ -34,6 +34,7 @@ mod api_surface;
 pub mod bindings;
 pub mod desktop;
 mod fence;
+pub mod shims;
 
 pub use api::schema::IntegrationTarget;
 pub use api_surface::{

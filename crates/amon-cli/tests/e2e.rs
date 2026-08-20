@@ -1667,3 +1667,129 @@ fn a_broken_config_keeps_the_last_good_one() {
         "unparseable TOML must not revert the bar: {frame}"
     );
 }
+
+/// Where a shim lands inside a sandbox: `amon-dev` under a debug build, which
+/// is what a test is.
+fn shim_path(sandbox: &Sandbox, command: &str) -> std::path::PathBuf {
+    sandbox.home_path(&format!(
+        ".local/share/{}/shims/{command}",
+        amon_protocol::paths::app_dir_name()
+    ))
+}
+
+#[test]
+fn setting_an_agent_up_shims_it_for_what_omarchy_launches() {
+    // Omarchy launches agents through a terminal's -e, which execs the binary
+    // directly and never reads a shell alias — so an agent that is set up needs
+    // a stand-in on PATH as well (ADR-0013).
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+
+    let output = sandbox.run(&["setup", "claude"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let shim = shim_path(&sandbox, "claude");
+    assert!(shim.is_file(), "a shim for the agent that was set up");
+}
+
+#[test]
+fn removing_an_agent_takes_its_shim_with_it() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    sandbox.run(&["setup", "claude"]);
+    assert!(shim_path(&sandbox, "claude").is_file());
+
+    let output = sandbox.run(&["remove", "claude"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !shim_path(&sandbox, "claude").exists(),
+        "an agent amon no longer hooks must not keep taking over its name"
+    );
+}
+
+#[test]
+fn a_shim_actually_runs_the_agent_under_amon() {
+    // The end-to-end claim: executing the shim the way Omarchy would — a bare
+    // exec, no shell — gets the agent wrapped rather than run directly.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
+    sandbox.fake_agent("claude", "#!/bin/sh\necho \"agent saw: $*\"\n");
+    agent_is_installed(&sandbox, ".claude");
+    sandbox.run(&["setup", "claude"]);
+
+    let shim = shim_path(&sandbox, "claude");
+    let output = std::process::Command::new(&shim)
+        .arg("--permission-mode")
+        .arg("bypassPermissions")
+        .env("XDG_RUNTIME_DIR", sandbox.runtime_path(""))
+        .env("XDG_STATE_HOME", sandbox.runtime_path("state"))
+        .env("HOME", sandbox.home_path(""))
+        .env("XDG_CONFIG_HOME", sandbox.home_path(".config"))
+        // The shim's own directory first, exactly as the session PATH will
+        // have it — which is also what makes the recursion guard load-bearing.
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                shim.parent().expect("shim dir").display(),
+                sandbox.sandbox_path()
+            ),
+        )
+        .output()
+        .expect("the shim runs");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("agent saw: --permission-mode bypassPermissions"),
+        "the agent ran, with its arguments untouched: {stdout}"
+    );
+    assert!(
+        output.status.success(),
+        "and exited cleanly rather than recursing: {output:?}"
+    );
+}
+
+#[test]
+fn a_shim_called_from_inside_amon_does_not_wrap_twice() {
+    // `amon claude` typed in a terminal whose PATH carries the shim dir: amon
+    // spawns `claude`, the lookup finds the shim, and without the guard that
+    // would put a second amon around the same agent.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
+    sandbox.fake_agent(
+        "claude",
+        "#!/bin/sh\necho \"depth: ${AMON_AGENT_ID:-none}\"\n",
+    );
+    agent_is_installed(&sandbox, ".claude");
+    sandbox.run(&["setup", "claude"]);
+
+    let shim = shim_path(&sandbox, "claude");
+    let output = std::process::Command::new(&shim)
+        .env("XDG_RUNTIME_DIR", sandbox.runtime_path(""))
+        .env("XDG_STATE_HOME", sandbox.runtime_path("state"))
+        .env("HOME", sandbox.home_path(""))
+        .env("XDG_CONFIG_HOME", sandbox.home_path(".config"))
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                shim.parent().expect("dir").display(),
+                sandbox.sandbox_path()
+            ),
+        )
+        // Standing in for "amon is already wrapping this".
+        .env("AMON_AGENT_ID", "pretend-wrapper")
+        .output()
+        .expect("the shim runs");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("depth: pretend-wrapper"),
+        "the agent ran directly, keeping the id it was given: {stdout}"
+    );
+}

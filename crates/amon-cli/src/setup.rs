@@ -10,7 +10,7 @@
 
 use std::io::{self, Read, Write};
 
-use amon_integration::{alias, bindings, desktop, Candidate, DesktopTarget, InstallState};
+use amon_integration::{alias, bindings, desktop, shims, Candidate, DesktopTarget, InstallState};
 
 /// Omarchy's own default-agent menu order (`omarchy-default-agent`'s supported
 /// list), recorded as data rather than parsed out of their script at runtime.
@@ -292,7 +292,17 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     Ok(Vec::new())
                 };
-                match (hooks, alias_notes) {
+                // The session-side twin of the alias, and only where something
+                // will look for it: the `PATH` entry that makes shims work is
+                // written by the Hyprland config, which exists only on Omarchy
+                // (ADR-0013). Elsewhere they would be inert files pretending to
+                // be an integration.
+                let shim = if hooks.is_ok() && desktop::cli_present() {
+                    shims::install(*target)
+                } else {
+                    Ok(())
+                };
+                match (hooks.and(shim.map(|()| Vec::<String>::new())), alias_notes) {
                     (Ok(_), Ok(notes)) => {
                         // `install` returning Ok is not the same as the alias
                         // being live: a symlinked bashrc gets manual
@@ -320,7 +330,11 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
             Action::RemoveAgent { target, label } => {
                 let hooks = amon_integration::uninstall(*target);
                 let unaliased = alias::uninstall(*target);
-                match (hooks, unaliased) {
+                // Removed wherever the hooks and the alias are, so unchecking a
+                // row and `amon remove <agent>` both take it — they are the
+                // same action.
+                let unshimmed = shims::uninstall(*target);
+                match (hooks.and(unshimmed), unaliased) {
                     // "unaliased" only when it is true: `alias::uninstall`
                     // returns Ok while *refusing* to edit — a symlinked
                     // bashrc, a truncated fence — and its notes say why.
@@ -414,17 +428,34 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                     println!("✗ Super+N agent bindings — {error}");
                 }
             },
-            Action::ClearAliases => match alias::remove_all() {
-                Ok(notes) => {
-                    for note in notes {
-                        println!("✓ aliases — {note}");
+            Action::ClearAliases => {
+                match alias::remove_all() {
+                    Ok(notes) => {
+                        for note in notes {
+                            println!("✓ aliases — {note}");
+                        }
+                    }
+                    Err(error) => {
+                        failed = true;
+                        println!("✗ aliases — {error}");
                     }
                 }
-                Err(error) => {
-                    failed = true;
-                    println!("✗ aliases — {error}");
+                // Swept rather than removed target by target, for the reason
+                // the alias block is: a shim whose integration has already gone
+                // keeps taking over its agent's name, and nothing else will
+                // ever name it again.
+                match shims::remove_all() {
+                    Ok(notes) => {
+                        for note in notes {
+                            println!("✓ shims — {note}");
+                        }
+                    }
+                    Err(error) => {
+                        failed = true;
+                        println!("✗ shims — {error}");
+                    }
                 }
-            },
+            }
         }
     }
 

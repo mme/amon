@@ -325,6 +325,12 @@ fn setup_one(target: &str, no_alias: bool) -> Result<(), Box<dyn std::error::Err
         messages.push(String::new());
         messages.extend(amon_integration::alias::install(agent)?);
     }
+    // Named targets get what the screen gives: the alias for shells, and the
+    // shim for what Omarchy launches (ADR-0013). One of the two alone would
+    // wrap an agent when you type its name and leave it bare on the keybinding.
+    if amon_integration::desktop::cli_present() {
+        amon_integration::shims::install(agent)?;
+    }
     for message in messages {
         println!("{message}");
     }
@@ -348,6 +354,9 @@ fn run_remove(target: Option<&str>, all: bool) -> Result<(), Box<dyn std::error:
     let agent = require_target(target)?;
     let mut messages = amon_integration::uninstall(agent)?;
     messages.extend(amon_integration::alias::uninstall(agent)?);
+    // The third thing this integration owned. Left behind it would go on
+    // taking over the agent's name for everything Omarchy launches.
+    amon_integration::shims::uninstall(agent)?;
     // Aliases stranded in a symlinked bashrc survive the uninstall, which
     // refuses to write through links — name this agent's lines rather than
     // leaving them silently active (and only its lines: other agents' aliases
