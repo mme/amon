@@ -1132,6 +1132,7 @@
         VIEW_L = -33.25, VIEW_R = 293.5,  // the lockup's viewBox in x, runway included
         EDGE_PAD = 3,                     // clearance kept from the edge that clips
         FADE = 12,                        // and how far the fade itself runs
+        GROW_MIN = .12,                   // how small a capsule is when it appears
         STEP = 3,
         ROLL = 1500;
 
@@ -1186,14 +1187,29 @@
     // Both windows are also far clear of the head, so a capsule is never
     // part-transparent over it, where the ink and ground layers would show through
     // each other.
+    //
+    // Size follows x as well, and over a far longer run than the fade: a capsule
+    // appears at GROW_MIN and reaches full size exactly as it arrives at the
+    // ear's slot, some 64 units later, where the fade is done inside 12. So it
+    // is solid long before it is big, which is what makes it read as coming from
+    // somewhere rather than being switched on nearby. Leaving is the same in
+    // reverse, measured from the far ear.
+    //
+    // Centred because the row's rects set transform-box: fill-box — without it
+    // scaling would drag each capsule toward the viewBox origin.
     function place(it, t){
-      var cx = it.x0 + (it.x1 - it.x0) * t, op = 1, a, b;
+      var cx = it.x0 + (it.x1 - it.x0) * t, op = 1, grow = 1, a, b;
       if (it.fadeIn)  { a = VIEW_L + it.half + EDGE_PAD; b = a + FADE;
-                        op = unit((cx - a) / (b - a)); }
+                        op = unit((cx - a) / (b - a));
+                        grow = GROW_MIN + (1 - GROW_MIN) *
+                               unit((cx - a) / (SLOT[0] - a)); }
       if (it.fadeOut) { b = VIEW_R - it.half - EDGE_PAD; a = b - FADE;
-                        op = 1 - unit((cx - a) / (b - a)); }
+                        op = 1 - unit((cx - a) / (b - a));
+                        grow = GROW_MIN + (1 - GROW_MIN) *
+                               (1 - unit((cx - SLOT[3]) / (b - SLOT[3]))); }
       var tf = 'translateX(' + (cx - it.x0) + 'px) scale(' +
-               (1 + (it.sx - 1) * t) + ',' + (1 + (it.sy - 1) * t) + ')';
+               ((1 + (it.sx - 1) * t) * grow) + ',' +
+               ((1 + (it.sy - 1) * t) * grow) + ')';
       it.els[0].style.transform = it.els[1].style.transform = tf;
       it.els[0].style.opacity = it.els[1].style.opacity = op;
     }
