@@ -640,3 +640,32 @@ fn the_pane_ages_agents_the_way_the_cli_does() {
         assert!(AGENT_STATES.contains(unit), "the pane still names {unit}");
     }
 }
+
+/// The pane navigates the way the rest of the desktop does, plus Emacs.
+///
+/// Arrows and vi's j/k come from Omarchy's own PanelKeyCatcher rather than from
+/// a hand-written copy, so the pane keeps answering whatever that component
+/// answers. It has no Emacs bindings, which is the one thing added on top.
+///
+/// The FocusScope is the load-bearing part and the least obvious. PanelKeyCatcher
+/// declares `focus: true`, which does nothing inside a plain Item: the host takes
+/// active focus on the view itself and the catcher never receives a key. That
+/// exact mistake shipped in this file once — arrows and j/k were dead while
+/// Ctrl-N still worked, because the Ctrl chords are handled on the view and
+/// everything else on the child.
+#[test]
+fn the_pane_answers_arrows_vi_and_emacs() {
+    const VIEW: &str = include_str!("../src/assets/omarchy/AgentsView.qml");
+
+    assert!(
+        VIEW.contains("FocusScope {"),
+        "the view is a FocusScope, or its key catcher never gets focus"
+    );
+    assert!(
+        VIEW.contains("PanelKeyCatcher {"),
+        "arrows and j/k come from Omarchy's own dispatcher"
+    );
+    for chord in ["Qt.Key_N", "Qt.Key_P", "Qt.ControlModifier"] {
+        assert!(VIEW.contains(chord), "Emacs navigation still reads {chord}");
+    }
+}

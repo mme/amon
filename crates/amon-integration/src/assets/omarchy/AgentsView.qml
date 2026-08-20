@@ -20,7 +20,12 @@ import Quickshell
 import qs.Commons
 import qs.Ui
 
-Item {
+// A FocusScope and not an Item: PanelKeyCatcher below declares `focus: true`,
+// and inside a plain Item that does nothing — the host would take active focus
+// here and the catcher would never see a key. Measured, not guessed: with an
+// Item the arrows and j/k were dead while Ctrl-N still worked, because the
+// Ctrl chords are handled on this object and the rest are handled on the child.
+FocusScope {
   id: view
 
   // The shared AgentStates instance. Handed in rather than created here, so the
@@ -45,6 +50,9 @@ Item {
   // A row was chosen. The host decides what that means — the modal goes to the
   // agent and closes, the window has nothing to close.
   signal activated(var entry)
+
+  // Escape. Only the host knows whether there is anything to dismiss.
+  signal closeRequested()
 
   // Which row the cursor is on. There is always one while there are rows at
   // all: a list you arrow into from nowhere makes you press a key to find out
@@ -74,6 +82,25 @@ Item {
   Connections {
     target: view.agents
     function onRowsChanged() { view.clampSelection() }
+  }
+
+  // Ctrl-N and Ctrl-P, which PanelKeyCatcher does not know: Omarchy's component
+  // covers the arrows and vi's j/k, and stops there.
+  //
+  // Handled on the way past rather than inside the catcher. A Ctrl chord's
+  // `event.text` is a control character, not a letter, so the catcher's
+  // text hook cannot recognise it — but the catcher never accepts those events
+  // either, so they propagate out of the focused child and reach here.
+  focus: true
+  Keys.onPressed: function(event) {
+    if (!(event.modifiers & Qt.ControlModifier)) return
+    if (event.key === Qt.Key_N) {
+      view.moveSelection(1)
+      event.accepted = true
+    } else if (event.key === Qt.Key_P) {
+      view.moveSelection(-1)
+      event.accepted = true
+    }
   }
 
   // Paths are shown the way a person writes them.
@@ -173,6 +200,20 @@ Item {
     }
   }
 
+  // Omarchy's own key dispatcher, so this pane answers the arrows and vi's
+  // keys exactly as every other panel on the desktop does — and keeps doing so
+  // if that set ever grows. It lives in the view rather than in either host, so
+  // the modal and the popped-out window navigate identically.
+  PanelKeyCatcher {
+    anchors.fill: parent
+
+    onMoveRequested: function(dx, dy) { if (dy !== 0) view.moveSelection(dy) }
+    onActivateRequested: view.activateSelection()
+    onCloseRequested: view.closeRequested()
+    onTextKey: function(text) {
+      if ((text === "f" || text === "F") && !view.poppedOut) view.popOutRequested()
+    }
+
   Column {
     id: column
     anchors.fill: parent
@@ -271,6 +312,7 @@ Item {
         }
       }
     }
+  }
   }
 
   // One agent. The columns are fixed widths so that they line up down the list;

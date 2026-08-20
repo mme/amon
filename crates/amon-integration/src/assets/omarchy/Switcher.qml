@@ -150,7 +150,7 @@ Item {
     root.opened = true
     // Focus after the window exists, or the key catcher has nothing to take
     // focus on and Escape does nothing until something else is clicked.
-    Qt.callLater(function(){ keys.forceActiveFocus() })
+    Qt.callLater(function(){ modalView.forceActiveFocus() })
   }
 
   function close() {
@@ -261,38 +261,6 @@ Item {
         onClicked: {}
       }
 
-      Item {
-        id: keys
-        anchors.fill: parent
-        focus: true
-
-        Keys.priority: Keys.BeforeItem
-        Keys.onPressed: function(event) {
-          if (event.key === Qt.Key_Escape) {
-            root.dismiss()
-            event.accepted = true
-          } else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
-            modalView.moveSelection(1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) {
-            modalView.moveSelection(-1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-            modalView.activateSelection()
-            event.accepted = true
-          } else if (event.key === Qt.Key_F) {
-            // What the header's `[F]loat` promises. Bare, and first-letter, the
-            // way the Tailscale panel spends `t`, `c`, `n`, `d` and `s` — with
-            // the difference that this one is written on the control it fires.
-            root.popOut()
-            event.accepted = true
-          }
-        }
-      }
-
-      // Inset by the card's own insets rather than by its padding: a border has
-      // width, and `contentTopInset` is padding plus that width. Using padding
-      // directly would tuck the first row under a thick themed border.
       AgentsView {
         id: modalView
 
@@ -306,8 +274,10 @@ Item {
         foreground: root.foreground
         fontFamily: root.fontFamily
         contentSpacing: root.contentSpacing
+        focus: true
         onPopOutRequested: root.popOut()
         onActivated: function(entry) { root.goTo(entry) }
+        onCloseRequested: root.dismiss()
       }
     }
   }
@@ -352,14 +322,21 @@ Item {
       }
       popped.width = root.paneWidth
       popped.height = root.paneHeight
+      // The window's own copy of the view has to be told to take focus, or its
+      // keys go nowhere: nothing else in a bare window claims it.
+      Qt.callLater(function(){ windowView.forceActiveFocus() })
     }
 
     AgentsView {
+      id: windowView
+
       anchors.fill: parent
       anchors.margins: root.contentMargin
       agents: agents
       poppedOut: true
       floating: root.windowFloating
+      focus: true
+      onCloseRequested: {}
       onActivated: function(entry) { root.goTo(entry) }
       foreground: root.foreground
       fontFamily: root.fontFamily
