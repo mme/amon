@@ -588,3 +588,27 @@ fn the_modal_centres_where_a_window_centres() {
         "the modal is inset by the bar, like a window is"
     );
 }
+
+/// The window is re-sized every time it opens, not just the first time.
+///
+/// It outlives being closed — that is what `keepLoaded` buys, and what lets the
+/// modal shut without taking the window down with it. So it carries whatever
+/// geometry it last had: tile it with Super+T, or drag an edge, and
+/// `implicitWidth` stops applying, because implicit size is an initial value
+/// rather than a standing instruction. Without an assignment on the way in,
+/// reopening hands back the tile's dimensions and popping out resizes the pane
+/// in front of the user — the same symptom as the drift above, from a cause no
+/// amount of sharing figures can fix.
+#[test]
+fn the_window_takes_the_pane_size_every_time_it_opens() {
+    const SWITCHER: &str = include_str!("../src/assets/omarchy/Switcher.qml");
+    for expected in [
+        "popped.width = root.paneWidth",
+        "popped.height = root.paneHeight",
+    ] {
+        assert!(
+            SWITCHER.contains(expected),
+            "the window is re-sized on show: `{expected}`"
+        );
+    }
+}

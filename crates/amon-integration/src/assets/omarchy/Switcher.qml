@@ -308,7 +308,23 @@ Item {
     // A window closed by its titlebar, by Super+W, or by anything else the
     // desktop offers has to leave `windowOpen` false, or the pane believes it
     // is still out there and the icon never comes back.
-    onVisibleChanged: if (!visible) root.windowOpen = false
+    //
+    // And on the way in, the size is set rather than left to `implicitWidth`.
+    // This window outlives being closed — that is what `keepLoaded` buys, and
+    // what lets the modal shut without taking it down — so it carries whatever
+    // geometry it last had. Tile it with Super+T, or drag its edge, and the
+    // implicit size stops applying; reopening would then hand back the tile's
+    // dimensions rather than the pane's, and popping out would resize the pane
+    // again. Assigned, not bound: a bound width would undo the compositor
+    // every time it placed the window, which is a fight rather than a default.
+    onVisibleChanged: {
+      if (!visible) {
+        root.windowOpen = false
+        return
+      }
+      popped.width = root.paneWidth
+      popped.height = root.paneHeight
+    }
 
     AgentsView {
       anchors.fill: parent
