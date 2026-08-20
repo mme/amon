@@ -1793,3 +1793,34 @@ fn a_shim_called_from_inside_amon_does_not_wrap_twice() {
         "the agent ran directly, keeping the id it was given: {stdout}"
     );
 }
+
+#[test]
+fn doctor_names_a_path_only_where_something_is() {
+    // A not-installed row used to print where the hook *would* go, which reads
+    // as a list of files — every one of them absent. There is no "where" for a
+    // thing that does not exist.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    sandbox.run(&["setup", "claude"]);
+
+    let stdout = read_to_string(&sandbox.run(&["doctor"]).stdout[..]);
+
+    let installed = stdout
+        .lines()
+        .find(|line| line.trim_start().starts_with("claude "))
+        .expect("the agent that is set up");
+    assert!(
+        installed.contains(".claude/hooks/amon-agent-state.sh"),
+        "an installed hook says where it is: {installed}"
+    );
+
+    let absent = stdout
+        .lines()
+        .find(|line| line.contains("not installed"))
+        .expect("an agent that is not set up");
+    assert!(
+        !absent.contains('/'),
+        "but a missing one names no file: {absent}"
+    );
+}

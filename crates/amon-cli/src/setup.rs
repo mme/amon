@@ -201,16 +201,48 @@ pub fn remove_everything(assume_yes: bool) -> Result<(), Box<dyn std::error::Err
 
     if !assume_yes {
         println!("this removes every amon integration:");
+        // What the agent lines below already account for. Without this the
+        // aliases were named twice — once inside "claude — hooks and alias",
+        // then again on a line of their own — which reads as more being removed
+        // than there is.
+        let spoken_for: Vec<&str> = actions
+            .iter()
+            .filter_map(|action| match action {
+                Action::RemoveAgent { target, .. } => {
+                    Some(amon_integration::command_names(*target))
+                }
+                _ => None,
+            })
+            .flatten()
+            .copied()
+            .collect();
+
         for action in &actions {
             match action {
-                Action::RemoveAgent { label, .. } => println!("  {label} — hooks and alias"),
+                Action::RemoveAgent { target, label } => {
+                    println!("  {label} — {}", owned_by(*target))
+                }
                 Action::RemoveWidget => println!("  workspace switcher widget"),
                 Action::RemoveBindings => println!("  Super+0-9 agent bindings"),
                 _ => {}
             }
         }
+        // Only what no agent line covers: lines left behind by an integration
+        // that is already gone, which is the reason this sweep exists at all.
         for alias_line in alias::installed() {
-            println!("  {alias_line}");
+            if spoken_for
+                .iter()
+                .any(|command| alias_line.starts_with(&format!("alias {command}=")))
+            {
+                continue;
+            }
+            println!("  {alias_line}  (no integration left)");
+        }
+        for shim in shims::installed() {
+            if spoken_for.contains(&shim.as_str()) {
+                continue;
+            }
+            println!("  {shim} shim  (no integration left)");
         }
         if let Some(note) = alias::stranded() {
             println!("  {note}");
@@ -249,6 +281,24 @@ enum Action {
     /// this, after every per-agent removal: it is what takes orphaned aliases
     /// — lines whose integration is already gone — with it.
     ClearAliases,
+}
+
+/// What removing this agent actually takes, so the confirmation does not
+/// promise an alias to an agent set up with `--no-alias`, or stay silent about
+/// a shim it is about to delete.
+fn owned_by(target: amon_integration::IntegrationTarget) -> String {
+    let mut parts = vec!["hooks"];
+    if alias::any_installed(target) {
+        parts.push("alias");
+    }
+    if shims::is_installed(target) {
+        parts.push("shim");
+    }
+    match parts.split_last() {
+        Some((last, [])) => (*last).to_string(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+        None => String::new(),
+    }
 }
 
 /// The file the aliases were written to, with `$HOME` shortened back to `~`

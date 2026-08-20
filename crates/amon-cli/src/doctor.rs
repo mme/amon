@@ -25,7 +25,7 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
                 &installed,
                 &status.expected_version.to_string(),
             ),
-            &status.path.display().to_string(),
+            &where_it_is(status.state, &status.path),
         );
     }
     for status in desktop::statuses() {
@@ -33,7 +33,7 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
         print_line(
             status.label,
             &describe_state(status.state, &installed, &status.expected_version),
-            &status.path.display().to_string(),
+            &where_it_is(status.state, &status.path),
         );
     }
 
@@ -172,6 +172,18 @@ fn probe_daemon(version: &str) -> DaemonProbe {
     match handshake() {
         Some(running) => DaemonProbe::Running(running),
         None => DaemonProbe::Unresponsive,
+    }
+}
+
+/// The path column, which is only ever a fact about something that is there.
+///
+/// A not-installed row used to print where the hook *would* go, which reads as
+/// a list of files — every one of them absent. There is no "where" for a thing
+/// that does not exist, so the column is left empty and the state says the rest.
+fn where_it_is(state: InstallState, path: &std::path::Path) -> String {
+    match state {
+        InstallState::NotInstalled => String::new(),
+        _ => path.display().to_string(),
     }
 }
 
