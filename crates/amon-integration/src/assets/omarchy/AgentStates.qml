@@ -20,6 +20,20 @@ Item {
   // entry disappears when its wrapper disconnects (ADR-0002).
   property var agents: ({})
 
+  // How many agents are in each state, across every workspace. The switcher's
+  // header reads this; the bar does not.
+  //
+  // Assigned rather than bound, because `agents` is mutated in place — a
+  // `delete agents[id]` notifies nothing, so a binding over it would go stale
+  // the first time an agent disconnected. Every path that touches `agents`
+  // ends in `recompute`, which is what makes an assigned property honest here
+  // where a derived one would not be.
+  property var counts: root.emptyCounts()
+
+  function emptyCounts() {
+    return ({ blocked: 0, done: 0, working: 0, idle: 0 })
+  }
+
   // Resolved the way the daemon resolves it: an explicit socket wins, then the
   // runtime directory. Without either there is nothing to connect to — the
   // daemon's last-resort path is per-uid and not derivable from QML.
@@ -182,14 +196,21 @@ Item {
 
   function recompute() {
     const next = ({})
+    const tally = root.emptyCounts()
     for (const id in root.agents) {
       const agent = root.agents[id]
       if (!agent.workspace) continue          // ssh, tmux, unmapped: not ours to place
+      // Counted after that test, so the header counts exactly the agents the
+      // desktop can show you. One over ssh or in a bare tmux session has no
+      // workspace to switch to, and a figure you cannot act on is a figure
+      // that only raises questions.
+      tally[agent.state] += 1
       const previous = next[agent.workspace]
       if (previous === undefined || root.rank(agent.state) < root.rank(previous))
         next[agent.workspace] = agent.state
     }
     root.stateByWorkspace = next
+    root.counts = tally
   }
 
   // `unknown` is deliberately absent: an unrecognised process is usually not an
@@ -215,6 +236,7 @@ Item {
   function reset() {
     root.agents = ({})
     root.stateByWorkspace = ({})
+    root.counts = root.emptyCounts()
     root.seeded = false
     root.pending = []
   }

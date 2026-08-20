@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "sh.amon.switcher",
+  "name": "Agents (amon)",
+  "version": "0.2.0",
+  "author": "amon",
+  "description": "A centred pane listing every agent amon can see, on Super+A",
+  "kinds": [
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "Switcher.qml"
+  }
+}

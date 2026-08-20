@@ -22,14 +22,17 @@ use crate::api_surface::InstallState;
 pub enum DesktopTarget {
     /// The Omarchy shell's bar (Quickshell), Quattro and later.
     Omarchy,
+    /// The pane Super+A opens, listing every agent amon can see.
+    Switcher,
 }
 
 impl DesktopTarget {
-    pub const ALL: [Self; 1] = [Self::Omarchy];
+    pub const ALL: [Self; 2] = [Self::Omarchy, Self::Switcher];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Omarchy => "omarchy",
+            Self::Switcher => "switcher",
         }
     }
 
@@ -38,13 +41,44 @@ impl DesktopTarget {
     fn plugin_id(self) -> &'static str {
         match self {
             Self::Omarchy => "sh.amon.workspaces",
+            Self::Switcher => "sh.amon.switcher",
         }
+    }
+
+    fn manifest(self) -> &'static str {
+        match self {
+            Self::Omarchy => WORKSPACES_MANIFEST,
+            Self::Switcher => SWITCHER_MANIFEST,
+        }
+    }
+
+    /// Everything but the manifest, which is written last and removed first.
+    fn assets(self) -> &'static [(&'static str, &'static str)] {
+        match self {
+            Self::Omarchy => &WORKSPACES_ASSETS,
+            Self::Switcher => &SWITCHER_ASSETS,
+        }
+    }
+
+    /// Whether enabling this takes a built-in widget's place.
+    ///
+    /// Only the workspaces widget does: its manifest declares `clonedFrom`, so
+    /// enabling swaps it into the built-in's bar slot and disabling swaps the
+    /// built-in back (ADR-0008). The switcher is an overlay that stands beside
+    /// everything else and displaces nothing, so there is no built-in to
+    /// restore and nothing to warn about when it goes.
+    fn clones_builtin(self) -> bool {
+        matches!(self, Self::Omarchy)
     }
 }
 
-const MANIFEST: &str = include_str!("assets/omarchy/manifest.json");
+const WORKSPACES_MANIFEST: &str = include_str!("assets/omarchy/manifest.json");
 const WORKSPACES_QML: &str = include_str!("assets/omarchy/Workspaces.qml");
 const AGENT_STATES_QML: &str = include_str!("assets/omarchy/AgentStates.qml");
+const SWITCHER_MANIFEST: &str = include_str!("assets/omarchy/switcher-manifest.json");
+const SWITCHER_QML: &str = include_str!("assets/omarchy/Switcher.qml");
+const AMON_MARK_QML: &str = include_str!("assets/omarchy/AmonMark.qml");
+const AGENTS_VIEW_QML: &str = include_str!("assets/omarchy/AgentsView.qml");
 
 const MANIFEST_NAME: &str = "manifest.json";
 
@@ -52,15 +86,24 @@ const MANIFEST_NAME: &str = "manifest.json";
 /// because the manifest is what everything else keys off: it is what Omarchy
 /// loads the plugin by and what [`status`] reads a version out of, so a
 /// half-written plugin must never be one that carries a current manifest.
-const ASSETS: [(&str, &str); 2] = [
+const WORKSPACES_ASSETS: [(&str, &str); 2] = [
     ("Workspaces.qml", WORKSPACES_QML),
+    ("AgentStates.qml", AGENT_STATES_QML),
+];
+
+const SWITCHER_ASSETS: [(&str, &str); 4] = [
+    ("Switcher.qml", SWITCHER_QML),
+    ("AgentsView.qml", AGENTS_VIEW_QML),
+    ("AmonMark.qml", AMON_MARK_QML),
+    // The bar widget's model, shared verbatim. Two copies of the socket
+    // protocol is how the header and the bar would come to disagree.
     ("AgentStates.qml", AGENT_STATES_QML),
 ];
 
 /// What the widget on disk is compared against. The shipped manifest is the
 /// single source of truth for it — there is no second place to forget to bump.
-pub fn expected_version() -> String {
-    manifest_version(MANIFEST).unwrap_or_default()
+pub fn expected_version(target: DesktopTarget) -> String {
+    manifest_version(target.manifest()).unwrap_or_default()
 }
 
 fn manifest_version(manifest: &str) -> Option<String> {
@@ -102,7 +145,7 @@ fn missing_home() -> io::Error {
 /// something else, or reached through a symlink (a dotfiles checkout linked
 /// into place), is left alone: overwriting or deleting it would destroy
 /// someone's files under a plugin id that merely happens to match.
-fn ours(directory: &Path) -> io::Result<bool> {
+fn ours(directory: &Path, target: DesktopTarget) -> io::Result<bool> {
     let metadata = match std::fs::symlink_metadata(directory) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(true),
@@ -115,7 +158,7 @@ fn ours(directory: &Path) -> io::Result<bool> {
     // No file amon writes may be a symlink: writing one follows it and
     // truncates whatever it points at, which for a dotfiles checkout is
     // someone else's file in someone else's repository.
-    for name in file_names() {
+    for name in file_names(target) {
         if let Ok(metadata) = std::fs::symlink_metadata(directory.join(name)) {
             if metadata.file_type().is_symlink() {
                 return Ok(false);
@@ -124,7 +167,9 @@ fn ours(directory: &Path) -> io::Result<bool> {
     }
 
     match std::fs::read_to_string(directory.join(MANIFEST_NAME)) {
-        Ok(installed) => Ok(manifest_id(&installed).as_deref() == manifest_id(MANIFEST).as_deref()),
+        Ok(installed) => {
+            Ok(manifest_id(&installed).as_deref() == manifest_id(target.manifest()).as_deref())
+        }
         // Nothing to identify it by, so go on what is there: a directory
         // holding only files amon writes is amon's, however it came to be that
         // way. That covers one someone precreated, and an install or uninstall
@@ -133,7 +178,7 @@ fn ours(directory: &Path) -> io::Result<bool> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             for entry in std::fs::read_dir(directory)? {
                 let found = entry?.file_name();
-                if !file_names().any(|ours| ours == found) {
+                if !file_names(target).any(|ours| ours == found) {
                     return Ok(false);
                 }
             }
@@ -144,8 +189,8 @@ fn ours(directory: &Path) -> io::Result<bool> {
 }
 
 /// Every file amon writes into the plugin directory.
-fn file_names() -> impl Iterator<Item = &'static str> {
-    std::iter::once(MANIFEST_NAME).chain(ASSETS.iter().map(|(name, _)| *name))
+fn file_names(target: DesktopTarget) -> impl Iterator<Item = &'static str> {
+    std::iter::once(MANIFEST_NAME).chain(target.assets().iter().map(|(name, _)| *name))
 }
 
 fn manifest_id(manifest: &str) -> Option<String> {
@@ -177,19 +222,27 @@ fn not_ours(directory: &Path) -> io::Error {
 /// amon writing into it could silently discard bar layout the user chose.
 pub fn install(target: DesktopTarget) -> io::Result<Vec<String>> {
     let directory = plugin_dir(target).ok_or_else(missing_home)?;
-    if !ours(&directory)? {
+    if !ours(&directory, target)? {
         return Err(not_ours(&directory));
     }
     std::fs::create_dir_all(&directory)?;
     // Manifest last: until it is there the plugin is not loadable and not
     // reported current, so a write that fails part way leaves an installation
     // that admits to being incomplete.
-    for (name, contents) in ASSETS {
+    for (name, contents) in target.assets() {
         std::fs::write(directory.join(name), contents)?;
     }
-    std::fs::write(directory.join(MANIFEST_NAME), MANIFEST)?;
+    std::fs::write(directory.join(MANIFEST_NAME), target.manifest())?;
 
     let id = target.plugin_id();
+    if !target.clones_builtin() {
+        return Ok(vec![
+            format!("installed {} to {}", id, directory.display()),
+            String::new(),
+            "Enable it:".to_string(),
+            format!("  omarchy plugin enable {id}"),
+        ]);
+    }
     Ok(vec![
         format!("installed {} to {}", id, directory.display()),
         String::new(),
@@ -210,7 +263,7 @@ pub fn uninstall(target: DesktopTarget) -> io::Result<Vec<String>> {
     if std::fs::symlink_metadata(&directory).is_err() {
         return Ok(vec![format!("{} is not installed", target.plugin_id())]);
     }
-    if !ours(&directory)? {
+    if !ours(&directory, target)? {
         return Err(not_ours(&directory));
     }
 
@@ -226,11 +279,11 @@ pub fn uninstall(target: DesktopTarget) -> io::Result<Vec<String>> {
         .ok()
         .and_then(|manifest| serde_json::from_str::<serde_json::Value>(&manifest).ok())
         .is_some_and(|manifest| manifest["omarchy"]["clonedFrom"].is_string());
-    let restore_note = disable_widget(id, swaps_back);
+    let restore_note = disable_plugin(target, id, swaps_back);
 
     // Manifest first, so an interrupted removal leaves something the shell no
     // longer loads rather than a plugin missing its widget.
-    for name in file_names() {
+    for name in file_names(target) {
         match std::fs::remove_file(directory.join(name)) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -253,7 +306,24 @@ pub fn uninstall(target: DesktopTarget) -> io::Result<Vec<String>> {
 /// that fails (shell not running, stale id) gets the manual commands — which
 /// name the *built-in*, because by the time anyone runs them this plugin's
 /// manifest is gone and only re-enabling `omarchy.workspaces` still works.
-fn disable_widget(id: &str, swaps_back: bool) -> Vec<String> {
+fn disable_plugin(target: DesktopTarget, id: &str, swaps_back: bool) -> Vec<String> {
+    // A plugin that never displaced anything has nothing to restore, so
+    // disabling it is the whole story and there is no absence to warn about.
+    // Without this the switcher would inherit the widget's "the built-in was
+    // not restored" note, which describes a bar it was never part of.
+    if !target.clones_builtin() {
+        return match std::process::Command::new("omarchy")
+            .args(["plugin", "disable", id])
+            .output()
+        {
+            Ok(output) if output.status.success() => Vec::new(),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+            Ok(_) | Err(_) => vec![
+                "could not ask omarchy to disable it; if it is still around:".to_string(),
+                format!("  omarchy plugin disable {id}"),
+            ],
+        };
+    }
     match std::process::Command::new("omarchy")
         .args(["plugin", "disable", id])
         .output()
@@ -339,7 +409,7 @@ pub fn enable(target: DesktopTarget) -> io::Result<Vec<String>> {
         // cached manifest still lacks `clonedFrom`, and enable would then
         // place the widget beside the built-in instead of swapping it in.
         // No CLI, an error, or unparseable output ends the wait immediately.
-        match discovered_current(id) {
+        match discovered_current(target) {
             Some(false) => std::thread::sleep(std::time::Duration::from_millis(50)),
             _ => break,
         }
@@ -354,6 +424,9 @@ pub fn enable(target: DesktopTarget) -> io::Result<Vec<String>> {
             String::from_utf8_lossy(&output.stderr).trim()
         )));
     }
+    if !target.clones_builtin() {
+        return Ok(vec!["enabled".to_string()]);
+    }
     Ok(vec![
         "enabled on your bar, in the built-in workspaces widget's place".to_string(),
     ])
@@ -364,8 +437,9 @@ pub fn enable(target: DesktopTarget) -> io::Result<Vec<String>> {
 /// freshly written upgrade is told apart from a stale cached registration.
 /// `None` when the list cannot be read (or predates the `clonedFrom` field in
 /// its output, which reads as never-current and simply exhausts the poll).
-fn discovered_current(id: &str) -> Option<bool> {
-    let source = manifest_clone_source();
+fn discovered_current(target: DesktopTarget) -> Option<bool> {
+    let id = target.plugin_id();
+    let source = manifest_clone_source(target);
     Some(
         plugin_list()?
             .iter()
@@ -373,9 +447,10 @@ fn discovered_current(id: &str) -> Option<bool> {
     )
 }
 
-/// The `omarchy.clonedFrom` the shipped manifest declares.
-fn manifest_clone_source() -> String {
-    serde_json::from_str::<serde_json::Value>(MANIFEST)
+/// The `omarchy.clonedFrom` the shipped manifest declares. Empty for a plugin
+/// that displaces nothing.
+fn manifest_clone_source(target: DesktopTarget) -> String {
+    serde_json::from_str::<serde_json::Value>(target.manifest())
         .ok()
         .and_then(|manifest| {
             manifest["omarchy"]["clonedFrom"]
@@ -429,13 +504,15 @@ pub fn statuses() -> Vec<DesktopStatus> {
 pub fn status(target: DesktopTarget) -> DesktopStatus {
     let directory = plugin_dir(target).unwrap_or_default();
     let installed = installed_version(&directory);
-    let expected = expected_version();
+    let expected = expected_version(target);
     let state = match &installed {
         None => InstallState::NotInstalled,
         // The version alone is not enough: a widget file that failed to write,
         // was truncated, or was edited by hand would otherwise be reported
         // current, which is the one thing this is here to prevent.
-        Some(version) if *version == expected && files_match(&directory) => InstallState::Current,
+        Some(version) if *version == expected && files_match(&directory, target) => {
+            InstallState::Current
+        }
         Some(_) => InstallState::Outdated,
     };
 
@@ -458,9 +535,9 @@ fn installed_version(directory: &Path) -> Option<String> {
 /// the manifest included, since a manifest whose version still matches but
 /// whose `kinds` or `entryPoints` were mangled is one Omarchy may refuse to
 /// load, and saying "current" about that helps nobody.
-fn files_match(directory: &Path) -> bool {
-    std::iter::once((MANIFEST_NAME, MANIFEST))
-        .chain(ASSETS)
+fn files_match(directory: &Path, target: DesktopTarget) -> bool {
+    std::iter::once((MANIFEST_NAME, target.manifest()))
+        .chain(target.assets().iter().copied())
         .all(|(name, contents)| {
             std::fs::read_to_string(directory.join(name)).is_ok_and(|found| found == contents)
         })
@@ -474,8 +551,8 @@ mod tests {
     fn the_shipped_manifest_says_what_omarchy_requires() {
         // A manifest Omarchy cannot read is the one failure with no symptom:
         // the widget simply never appears, and nothing reports why.
-        let manifest: serde_json::Value =
-            serde_json::from_str(MANIFEST).expect("manifest is valid json");
+        let manifest: serde_json::Value = serde_json::from_str(DesktopTarget::Omarchy.manifest())
+            .expect("manifest is valid json");
 
         assert_eq!(manifest["schemaVersion"], 1);
         assert_eq!(manifest["id"], DesktopTarget::Omarchy.plugin_id());
@@ -491,7 +568,10 @@ mod tests {
             .as_str()
             .expect("a bar widget names its entry point");
         assert!(
-            ASSETS.iter().any(|(name, _)| *name == entry),
+            DesktopTarget::Omarchy
+                .assets()
+                .iter()
+                .any(|(name, _)| *name == entry),
             "the entry point {entry} must be a file we install"
         );
 
@@ -504,8 +584,42 @@ mod tests {
 
     #[test]
     fn the_expected_version_comes_from_the_manifest_itself() {
-        assert_eq!(expected_version(), manifest_version(MANIFEST).unwrap());
-        assert!(!expected_version().is_empty());
+        for target in DesktopTarget::ALL {
+            assert_eq!(
+                expected_version(target),
+                manifest_version(target.manifest()).unwrap()
+            );
+            assert!(!expected_version(target).is_empty());
+        }
+    }
+
+    #[test]
+    fn the_switcher_manifest_says_what_omarchy_requires() {
+        // An overlay rather than a bar widget, and it displaces nothing: no
+        // clonedFrom, so enabling it adds a pane instead of taking a slot.
+        let manifest: serde_json::Value = serde_json::from_str(DesktopTarget::Switcher.manifest())
+            .expect("manifest is valid json");
+
+        assert_eq!(manifest["schemaVersion"], 1);
+        assert_eq!(manifest["id"], DesktopTarget::Switcher.plugin_id());
+        assert_eq!(manifest["kinds"], serde_json::json!(["overlay"]));
+        assert!(
+            manifest["keepLoaded"] == true,
+            "a pane that is toggled must already be loaded when the key is hit"
+        );
+        assert!(manifest["omarchy"]["clonedFrom"].is_null());
+        assert!(!DesktopTarget::Switcher.clones_builtin());
+
+        let entry = manifest["entryPoints"]["overlay"]
+            .as_str()
+            .expect("an overlay names its entry point");
+        assert!(
+            DesktopTarget::Switcher
+                .assets()
+                .iter()
+                .any(|(name, _)| *name == entry),
+            "the entry point {entry} must be a file we install"
+        );
     }
 
     /// The asset with its comments removed. What the widget is forbidden to do
