@@ -20,6 +20,7 @@ use clap::{Parser, Subcommand};
 mod doctor;
 mod focus;
 mod setup;
+mod starter;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -291,6 +292,13 @@ fn run_setup(
     all: bool,
     no_alias: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Before any form of setup, and only ever once: a commented file so the
+    // settings can be found at all. Failing to write it is not a reason to
+    // refuse to set anything up — it configures nothing by design.
+    if let Ok(Some(path)) = starter::write_if_absent() {
+        println!("wrote {} — every setting, commented out", path.display());
+        println!();
+    }
     if all {
         return setup::all(no_alias);
     }

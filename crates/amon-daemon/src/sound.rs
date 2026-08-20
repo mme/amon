@@ -4,8 +4,10 @@
 //! transition, holds the configuration already, and one process making one
 //! sound beats several racing to make the same one.
 //!
-//! Off unless asked for. A tool that starts making noise on upgrade is a tool
-//! people turn off entirely.
+//! On by default, and rare by construction: an agent finishing while you were
+//! not looking, or starting to wait for you. A notification nobody knows exists
+//! notifies nobody, which is why it is not opt-in — the config file `amon
+//! setup` writes shows how to turn it off.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -374,9 +376,26 @@ mod tests {
     }
 
     #[test]
-    fn a_silenced_config_spawns_nothing() {
-        // The whole guard: `enabled` defaults false, so an upgrade never
-        // starts making noise at somebody.
-        assert!(!SoundConfig::default().enabled);
+    fn sound_is_on_unless_turned_off() {
+        // Deliberately not opt-in: these fire only when an agent finished
+        // unwatched or started waiting, and a notification nobody knows exists
+        // notifies nobody.
+        assert!(SoundConfig::default().enabled);
+    }
+
+    #[test]
+    fn turning_it_off_stops_everything() {
+        let silent = SoundConfig {
+            enabled: false,
+            ..SoundConfig::default()
+        };
+        let notifier = Notifier::default();
+        notifier.record("a1", Some(Sound::Done), &silent);
+        // Recorded — a crossing still supersedes what came before — but with
+        // nothing scheduled behind it.
+        assert_eq!(
+            notifier.generations.lock().expect("lock").get("a1"),
+            Some(&1)
+        );
     }
 }

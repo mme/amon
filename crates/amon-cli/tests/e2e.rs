@@ -1849,3 +1849,73 @@ fn doctor_names_a_path_only_where_something_is() {
         "but a missing one names no file: {absent}"
     );
 }
+
+fn config_file(sandbox: &Sandbox) -> std::path::PathBuf {
+    sandbox.config_path(&format!(
+        "{}/config.toml",
+        amon_protocol::paths::app_dir_name()
+    ))
+}
+
+#[test]
+fn setup_leaves_a_commented_config_behind() {
+    // Not needed for anything to work — every setting has a default. It exists
+    // so the settings can be found at all, which reading an ADR is not.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    assert!(!config_file(&sandbox).exists());
+
+    sandbox.run(&["setup", "claude"]);
+
+    let written = std::fs::read_to_string(config_file(&sandbox)).expect("a config file");
+    // Every line commented, so writing it changes nothing.
+    for line in written.lines() {
+        let line = line.trim();
+        assert!(
+            line.is_empty() || line.starts_with('#') || line.starts_with('['),
+            "a starter config must configure nothing: {line}"
+        );
+    }
+    assert!(
+        written.contains("enabled = false"),
+        "and show how to silence the sounds: {written}"
+    );
+    assert!(written.contains("frame_ms"), "{written}");
+    assert!(written.contains("marker_beats"), "{written}");
+}
+
+#[test]
+fn setup_never_rewrites_a_config_you_have_edited() {
+    // The moment it exists it is the user's, and setup runs often.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    let path = config_file(&sandbox);
+    std::fs::create_dir_all(path.parent().expect("dir")).expect("dir");
+    let mine = "[sound]\nenabled = false\n";
+    std::fs::write(&path, mine).expect("write");
+
+    sandbox.run(&["setup", "claude"]);
+    sandbox.run(&["setup", "--all"]);
+
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("still there"),
+        mine,
+        "byte-identical after two more setups"
+    );
+}
+
+#[test]
+fn sound_is_on_without_a_config_file() {
+    // The default the daemon reports when there is nothing to read.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["status"]);
+
+    let frame = ask_for_config(&sandbox);
+
+    assert_eq!(
+        frame["result"]["config"]["sound"]["enabled"], true,
+        "{frame}"
+    );
+}

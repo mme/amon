@@ -261,7 +261,7 @@
         "sound": {
           "$ref": "#/$defs/SoundConfig",
           "default": {
-            "enabled": false
+            "enabled": true
           }
         }
       },
@@ -736,8 +736,8 @@
           ]
         },
         "enabled": {
-          "default": false,
-          "description": "Off unless asked for. A tool that starts making noise on upgrade is a\ntool people turn off entirely.",
+          "default": true,
+          "description": "On unless turned off.\n\nThis started as off-by-default, reasoning that a tool which begins\nmaking noise on upgrade is a tool people turn off entirely. The counter\nis stronger: the whole point is to tell you about an agent you are *not*\nwatching, and a notification nobody knows exists notifies nobody. The\ntwo sounds are rare — an agent finishing unwatched, or starting to wait\nfor you — and the config file `amon setup` writes shows how to silence\nthem.",
           "type": "boolean"
         }
       },

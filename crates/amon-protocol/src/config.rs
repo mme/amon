@@ -60,11 +60,18 @@ pub struct GlyphConfig {
 }
 
 /// When to make a noise, and which one.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct SoundConfig {
-    /// Off unless asked for. A tool that starts making noise on upgrade is a
-    /// tool people turn off entirely.
+    /// On unless turned off.
+    ///
+    /// This started as off-by-default, reasoning that a tool which begins
+    /// making noise on upgrade is a tool people turn off entirely. The counter
+    /// is stronger: the whole point is to tell you about an agent you are *not*
+    /// watching, and a notification nobody knows exists notifies nobody. The
+    /// two sounds are rare — an agent finishing unwatched, or starting to wait
+    /// for you — and the config file `amon setup` writes shows how to silence
+    /// them.
     pub enabled: bool,
     /// Played when an agent finishes without being watched. Absent means the
     /// bundled sound; a relative path resolves from the config file's own
@@ -74,4 +81,14 @@ pub struct SoundConfig {
     /// Played when an agent starts waiting for a human.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blocked: Option<String>,
+}
+
+impl Default for SoundConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            done: None,
+            blocked: None,
+        }
+    }
 }

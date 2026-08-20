@@ -25,6 +25,16 @@ mod sound;
 
 pub use registry::Registry;
 
+/// Where the user's configuration lives.
+///
+/// Exposed from here because the daemon is the only thing that reads it
+/// (ADR-0012), so it is the only thing that should be believed about where it
+/// is. The CLI needs it to write a starter file, and a second definition of
+/// that path is a second thing to get wrong.
+pub fn config_path() -> Option<std::path::PathBuf> {
+    config::path()
+}
+
 /// Runs the daemon until it is asked to shut down, taking the socket over from
 /// an older daemon if one holds it.
 pub fn run(version: String) -> std::io::Result<()> {

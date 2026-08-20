@@ -40,10 +40,18 @@ done    = "󰗠"
 focused = "󱓻"
 
 [sound]
-enabled = true
+# enabled = false          # on unless you turn it off
 # done    = "~/sounds/ding.mp3"
 # blocked = "~/sounds/alert.mp3"
 ```
+
+**`amon setup` writes this file once, entirely commented out, and never
+rewrites it.** Every setting has a default, so the file is needed for nothing —
+it exists to be *found*. A setting nobody knows about configures nothing, and
+requiring someone to read an ADR to learn that glyphs can be changed is not an
+interface. Writing it changes no behaviour, which is what makes writing it safe;
+and the moment it exists it is the user's, so setup — which runs often — must
+never touch it again.
 
 Glyphs are plain characters, deliberately. Not markup, not a styling language:
 the idle workspace keeps the underline it computes for itself, and nothing in
@@ -58,6 +66,13 @@ and will already hold the config; wrappers would mean one config parser per
 agent and several processes racing to play the same ding at once.
 
 Two sounds, matching herdr's, on the transitions amon already names:
+
+Sound is **on by default**. That reverses the first decision here, which was
+off-unless-asked-for, reasoning that a tool which starts making noise on upgrade
+is a tool people turn off entirely. The counter is stronger: the whole point of
+these two sounds is an agent you are *not* watching, and a notification nobody
+knows exists notifies nobody. They are rare by construction — the two crossings
+below, nothing else — and the file setup writes shows how to silence them.
 
 - **`blocked`** — the agent needs a human. Plays on every entry to `Blocked`.
 - **`done`** — the agent finished. Plays on entry to `Idle` **only when the
