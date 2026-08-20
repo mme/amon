@@ -109,6 +109,10 @@ pub fn interactive() -> Result<(), Box<dyn std::error::Error>> {
     if !confirmed {
         return Ok(());
     }
+    // A blank line between the screen the user just acted on and the report of
+    // what that did. Without it the first tick sits flush against the help
+    // line, and the two read as one block.
+    println!();
 
     let mut actions = Vec::new();
     for row in &rows {
@@ -219,6 +223,9 @@ pub fn remove_everything(assume_yes: bool) -> Result<(), Box<dyn std::error::Err
             println!("nothing removed");
             return Ok(());
         }
+        // Same margin as the setup screen: the answer, then a gap, then what
+        // the answer did.
+        println!();
     }
 
     apply(&actions)
