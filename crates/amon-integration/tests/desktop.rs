@@ -612,3 +612,31 @@ fn the_window_takes_the_pane_size_every_time_it_opens() {
         );
     }
 }
+
+/// The pane and `amon status` round ages the same way.
+///
+/// The rule now exists twice — once in Rust for the CLI, once in QML because
+/// the pane cannot call it — and two implementations of one rule drift. A row
+/// reading "1h" beside a `amon status` line reading "59m" for the same agent
+/// would be a small thing that quietly makes both untrustworthy.
+#[test]
+fn the_pane_ages_agents_the_way_the_cli_does() {
+    const CLI: &str = include_str!("../../amon-cli/src/main.rs");
+
+    // Seconds below a minute, minutes below an hour, hours after that.
+    for boundary in ["0..=59", "60..=3599"] {
+        assert!(
+            CLI.contains(boundary),
+            "the CLI's age rule still reads {boundary}"
+        );
+    }
+    for boundary in ["seconds < 60", "seconds < 3600"] {
+        assert!(
+            AGENT_STATES.contains(boundary),
+            "the pane's age rule still reads {boundary}"
+        );
+    }
+    for unit in ["\"s\"", "\"m\"", "\"h\""] {
+        assert!(AGENT_STATES.contains(unit), "the pane still names {unit}");
+    }
+}

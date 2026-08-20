@@ -165,6 +165,26 @@ Item {
       root.shell.hide((root.manifest && root.manifest.id) || "sh.amon.switcher")
   }
 
+  // Going to the agent a row names. The daemon hands out the compositor's own
+  // token for the window; it is passed back untouched rather than parsed, which
+  // is the whole contract on that field. Absent off a supported compositor, so
+  // a row without one simply does nothing rather than dispatching nonsense.
+  //
+  // The modal closes on the way — you asked to be somewhere else.
+  function goTo(entry) {
+    if (!entry || !entry.window) return
+    goToAgent.command = ["hyprctl", "dispatch",
+                         "hl.dsp.focus({ window = \"address:0x" + entry.window + "\" })"]
+    goToAgent.running = true
+    if (root.opened) root.dismiss()
+  }
+
+  Process {
+    id: goToAgent
+    running: false
+    command: []
+  }
+
   // Focus by title, because that is all Hyprland can match on: every Quickshell
   // window shares the class `org.quickshell`. Anchored, so it means this window
   // and not one whose title happens to begin the same way.
@@ -251,6 +271,15 @@ Item {
           if (event.key === Qt.Key_Escape) {
             root.dismiss()
             event.accepted = true
+          } else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
+            modalView.moveSelection(1)
+            event.accepted = true
+          } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) {
+            modalView.moveSelection(-1)
+            event.accepted = true
+          } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+            modalView.activateSelection()
+            event.accepted = true
           } else if (event.key === Qt.Key_F) {
             // What the header's `[F]loat` promises. Bare, and first-letter, the
             // way the Tailscale panel spends `t`, `c`, `n`, `d` and `s` — with
@@ -264,22 +293,21 @@ Item {
       // Inset by the card's own insets rather than by its padding: a border has
       // width, and `contentTopInset` is padding plus that width. Using padding
       // directly would tuck the first row under a thick themed border.
-      Column {
+      AgentsView {
+        id: modalView
+
         anchors.fill: parent
         anchors.topMargin: card.contentTopInset
         anchors.rightMargin: card.contentRightInset
         anchors.bottomMargin: card.contentBottomInset
         anchors.leftMargin: card.contentLeftInset
-        spacing: root.contentSpacing
 
-        AgentsView {
-          width: parent.width
-          agents: agents
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          contentSpacing: root.contentSpacing
-          onPopOutRequested: root.popOut()
-        }
+        agents: agents
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        contentSpacing: root.contentSpacing
+        onPopOutRequested: root.popOut()
+        onActivated: function(entry) { root.goTo(entry) }
       }
     }
   }
@@ -332,6 +360,7 @@ Item {
       agents: agents
       poppedOut: true
       floating: root.windowFloating
+      onActivated: function(entry) { root.goTo(entry) }
       foreground: root.foreground
       fontFamily: root.fontFamily
       contentSpacing: root.contentSpacing

@@ -30,6 +30,11 @@ Item {
   // where a derived one would not be.
   property var counts: root.emptyCounts()
 
+  // The agents the pane lists, ordered so that each workspace's agents are
+  // together and the most urgent of them is first. Assigned in `recompute` for
+  // the same reason `counts` is: `agents` is mutated in place.
+  property var rows: []
+
   function emptyCounts() {
     return ({ blocked: 0, done: 0, working: 0, idle: 0 })
   }
@@ -197,6 +202,7 @@ Item {
   function recompute() {
     const next = ({})
     const tally = root.emptyCounts()
+    const listed = []
     for (const id in root.agents) {
       const agent = root.agents[id]
       if (!agent.workspace) continue          // ssh, tmux, unmapped: not ours to place
@@ -205,12 +211,57 @@ Item {
       // workspace to switch to, and a figure you cannot act on is a figure
       // that only raises questions.
       tally[agent.state] += 1
+      listed.push(agent)
       const previous = next[agent.workspace]
       if (previous === undefined || root.rank(agent.state) < root.rank(previous))
         next[agent.workspace] = agent.state
     }
     root.stateByWorkspace = next
     root.counts = tally
+    listed.sort(root.compareRows)
+    root.rows = listed
+  }
+
+  // Grouped by workspace, and within a workspace the agent that most wants you
+  // first — `order` again, so the pane, the bar, `amon status` and `amon focus`
+  // all agree about which agent matters most.
+  //
+  // Workspaces sort as numbers where they look like numbers. Omarchy names them
+  // "1".."10" by default but a named workspace is legal, and comparing those as
+  // strings would put "10" before "2".
+  function compareRows(left, right) {
+    if (left.workspace !== right.workspace) {
+      const a = Number(left.workspace)
+      const b = Number(right.workspace)
+      if (!isNaN(a) && !isNaN(b)) return a - b
+      return left.workspace < right.workspace ? -1 : 1
+    }
+    const rank = root.rank(left.state) - root.rank(right.state)
+    if (rank !== 0) return rank
+    return left.agent < right.agent ? -1 : (left.agent > right.agent ? 1 : 0)
+  }
+
+  // The heading a row carries, or "" when the row above it already sits under
+  // that heading. One flat list with headings folded into it, which is how
+  // Omarchy's network panel separates known networks from the rest — and it is
+  // why the list can stay a single ListView with one selection running through
+  // it, rather than a column of lists with a cursor that has to cross between
+  // them.
+  function sectionTitle(index) {
+    const rows = root.rows
+    if (index < 0 || index >= rows.length) return ""
+    if (index > 0 && rows[index - 1].workspace === rows[index].workspace) return ""
+    return "WORKSPACE " + rows[index].workspace
+  }
+
+  // The shortest form that is still unambiguous, matching `age` in the CLI so
+  // that a row here and a line of `amon status` never disagree about how long
+  // an agent has been at something. A test holds the two together.
+  function age(since, now) {
+    const seconds = Math.max(0, Math.floor(((now || Date.now()) - since) / 1000))
+    if (seconds < 60) return seconds + "s"
+    if (seconds < 3600) return Math.floor(seconds / 60) + "m"
+    return Math.floor(seconds / 3600) + "h"
   }
 
   // `unknown` is deliberately absent: an unrecognised process is usually not an
@@ -225,8 +276,26 @@ Item {
   function remember(entry) {
     if (!entry || !entry.id) return
     const state = root.displayState(entry)
-    if (state === "") delete root.agents[entry.id]
-    else root.agents[entry.id] = { workspace: entry.workspace || "", state: state }
+    if (state === "") {
+      delete root.agents[entry.id]
+      return
+    }
+    // The whole of what a row needs, copied out of the daemon's entry once. The
+    // bar only ever wanted `workspace` and `state`; the pane draws the agent
+    // itself, so it needs the rest — and taking it here means the pane never
+    // touches the wire format.
+    root.agents[entry.id] = {
+      id: entry.id,
+      agent: entry.agent || "",
+      state: state,
+      workspace: entry.workspace || "",
+      cwd: entry.cwd || "",
+      stateSince: entry.state_since || 0,
+      // Opaque, and handed back to the compositor rather than parsed (ADR-0011
+      // and the note on AgentEntry::window). Absent off a supported compositor,
+      // which is why every use of it is guarded.
+      window: entry.window || ""
+    }
   }
 
   function forget(id) {
@@ -237,6 +306,7 @@ Item {
     root.agents = ({})
     root.stateByWorkspace = ({})
     root.counts = root.emptyCounts()
+    root.rows = []
     root.seeded = false
     root.pending = []
   }
