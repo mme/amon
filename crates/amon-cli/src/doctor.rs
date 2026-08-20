@@ -121,13 +121,21 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
                 "",
             );
         } else {
-            print_line("session", &format!("shims: {}", shimmed.join(", ")), "");
+            // One line per file, with where it is — the same shape the
+            // integrations use, because a shim is the same kind of fact: a
+            // thing amon put somewhere that you may want to go and look at.
+            let directory = shims::dir().unwrap_or_default();
             let stranded = shims::stranded();
-            if !stranded.is_empty() {
+            for command in shimmed {
+                let note = if stranded.contains(&command) {
+                    format!("{command} (no integration left)")
+                } else {
+                    command.clone()
+                };
                 print_line(
                     "session",
-                    &format!("stranded (integration gone): {}", stranded.join(", ")),
-                    "",
+                    &note,
+                    &directory.join(&command).display().to_string(),
                 );
             }
         }

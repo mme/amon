@@ -1795,6 +1795,31 @@ fn a_shim_called_from_inside_amon_does_not_wrap_twice() {
 }
 
 #[test]
+fn doctor_names_each_shim_as_a_file() {
+    // Same shape as an integration: what it is, then where it is — a shim is
+    // the same kind of fact, a thing amon put somewhere you may want to look.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    sandbox.run(&["setup", "claude"]);
+
+    let stdout = read_to_string(&sandbox.run(&["doctor"]).stdout[..]);
+
+    let line = stdout
+        .lines()
+        .find(|line| line.contains("session") && line.contains("claude"))
+        .expect("the shim is reported");
+    assert!(
+        line.contains(&format!(
+            "{}/shims/claude",
+            amon_protocol::paths::app_dir_name()
+        )),
+        "with the file it actually is: {line}"
+    );
+}
+
+#[test]
 fn doctor_names_a_path_only_where_something_is() {
     // A not-installed row used to print where the hook *would* go, which reads
     // as a list of files — every one of them absent. There is no "where" for a
