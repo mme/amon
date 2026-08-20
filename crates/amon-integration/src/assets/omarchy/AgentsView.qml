@@ -138,7 +138,11 @@ Item {
       // from that.
       text: "[F]loat"
       tooltipText: "Open in a floating window that stays on screen"
-      foreground: view.foreground
+      // Muted, at the same weight as `[Super+Drag to move]` — the two are the
+      // same kind of thing in the same corner: an aside about the window, not
+      // anything about your agents. Button paints both its glyph and its label
+      // from `foreground`, so this dims the pair together.
+      foreground: view.dim
       fontFamily: view.fontFamily
       onClicked: view.popOutRequested()
     }
