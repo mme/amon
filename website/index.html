@@ -341,8 +341,12 @@
   .panel-name{display:flex; flex-direction:column; gap:1px; min-width:0}
   .panel-name b{font-size:14px; font-weight:700; color:var(--ink)}
   .panel-counts{font-size:10.5px; letter-spacing:.1em; color:var(--muted); white-space:nowrap}
-  .panel-float{margin-left:auto; display:flex; align-items:center; gap:7px;
+  .panel-float{display:flex; align-items:center; gap:7px;
                font-size:12px; color:var(--muted); white-space:nowrap}
+  /* Specific enough to outrank .panel-cell's `margin:0`, which is declared
+     after this and at the same weight — that is what was leaving Float sitting
+     in the middle of the header. */
+  .panel-head > .panel-float{margin-left:auto}
   .panel-float u{text-decoration:underline; text-underline-offset:2px}
 
   .panel-rule{height:1px; background:var(--rule-soft); margin:12px 0 10px}
@@ -361,7 +365,7 @@
      genuinely a control. */
   .panel-cell{appearance:none; background:none; border:0; margin:0; padding:7px 0;
               font:inherit; font-size:12.5px; color:var(--muted); text-align:left;
-              cursor:help; min-width:0; border-radius:5px}
+              cursor:default; min-width:0; border-radius:5px}
   .panel-cell:hover,.panel-cell:focus-visible{color:var(--ink); outline:none;
               background:color-mix(in oklab, var(--ink) 9%, transparent)}
   .panel-cell.is-glyph{display:flex; align-items:center; justify-content:center;
@@ -370,6 +374,23 @@
      codepoints, and a web font carries neither reliably. The same marks the bar
      figure above uses, out of the same sprite. */
   .panel-glyph{width:14px; height:14px; display:block; color:inherit}
+
+  /* The working spinner turns. Not the page performing at you — this is what
+     the glyph does in the panel, and a still one says the wrong thing about an
+     agent that is mid-task.
+     Two dots going round: top, right, bottom, left. Each of the four positions
+     is lit for two of the four frames, so every dot runs the same half-on cycle
+     and only its phase differs. 200ms a frame, the panel's own default. */
+  @keyframes panel-dot{ 0%,49.9%{opacity:1} 50%,100%{opacity:.16} }
+  .panel-dot{animation:panel-dot 800ms steps(1,end) infinite}
+  .panel-dot.tr{animation-delay:0ms}
+  .panel-dot.tl{animation-delay:-200ms}
+  .panel-dot.bl{animation-delay:-400ms}
+  .panel-dot.br{animation-delay:-600ms}
+  @media (prefers-reduced-motion: reduce){
+    .panel-dot{animation:none}
+    .panel-dot.bl,.panel-dot.br{opacity:.16}
+  }
   .panel-cell.is-who{display:grid; grid-column:2 / 4;
                      grid-template-columns:5.5rem minmax(0,1fr); gap:0 10px; align-items:center}
   .panel-cell.is-who b{color:var(--ink); font-weight:700}
@@ -381,13 +402,21 @@
   .panel-cell.is-branch,.panel-cell.is-state{overflow:hidden; text-overflow:ellipsis;
                           white-space:nowrap}
 
-  .panel-caption{position:relative; padding-top:14px}
-  .panel-caption p{margin:0; font-size:13.5px; color:var(--muted); min-height:2.4em;
-                   max-width:62ch; transition:opacity 160ms ease}
-  .panel-caption.is-fading p{opacity:0}
-  .panel-caption b{color:var(--ink); font-weight:inherit}
+  /* A quiet standing line, because a bubble that only exists on hover cannot
+     tell anyone it is there. */
+  .panel-hint{padding-top:14px; font-size:13.5px; color:var(--muted)}
 
-  @media (prefers-reduced-motion: reduce){ .panel-caption p{transition:none} }
+  /* The explanation itself follows the pointer. Fixed rather than absolute so
+     it is never clipped by the card, and pointer-events:none so it can sit
+     under the cursor without stealing the hover it is describing. */
+  .panel-bubble{position:fixed; z-index:20; max-width:min(46ch,calc(100vw - 24px));
+                padding:9px 11px; border:1px solid var(--rule); border-radius:8px;
+                background:var(--raised); color:var(--muted); font-size:12.5px;
+                line-height:1.45; pointer-events:none;
+                box-shadow:0 6px 22px rgba(0,0,0,.28)}
+  .panel-bubble[hidden]{display:none}
+  .panel-bubble p{margin:0}
+  .panel-bubble b{color:var(--ink); font-weight:inherit}
 
   /* Narrow: the branch is the first thing to go, because on a phone the panel
      is being recognised rather than read. */
@@ -734,7 +763,7 @@
 
           <button class="panel-cell panel-group" type="button" data-why="group" style="grid-column:1/-1">WORKSPACE 1</button>
           <div class="panel-row is-cursor">
-            <button class="panel-cell is-glyph" type="button" data-why="glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8.7" cy="14.55" r="2.35" fill="currentColor"/><circle cx="15.3" cy="9.45" r="2.35" fill="currentColor"/></svg></button>
+            <button class="panel-cell is-glyph" type="button" data-why="glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle class="panel-dot tl" cx="8.7" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot tr" cx="15.3" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot bl" cx="8.7" cy="14.55" r="2.35" fill="currentColor"/><circle class="panel-dot br" cx="15.3" cy="14.55" r="2.35" fill="currentColor"/></svg></button>
             <button class="panel-cell is-who" type="button" data-why="who" data-line="Mid-task. amon knows because it reads what the agent writes to the terminal — no plugin, no integration on the agent's side.">
               <b>claude</b><span>~/Projects/amon.sh</span>
             </button>
@@ -751,11 +780,11 @@
             <button class="panel-cell is-state" type="button" data-why="state">needs input</button>
             <button class="panel-cell is-age" type="button" data-why="age">2m</button>
           </div>
-          <button class="panel-cell panel-group" type="button" data-why="group" style="grid-column:1/-1">WORKSPACE 2</button>
+          <button class="panel-cell panel-group" type="button" data-why="group" style="grid-column:1/-1">WORKSPACE 3</button>
           <div class="panel-row">
             <button class="panel-cell is-glyph" type="button" data-why="glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg></button>
             <button class="panel-cell is-who" type="button" data-why="who" data-line="It finished while you were looking at something else. <b>done</b> means finished and unseen — once you have been there, it is simply idle.">
-              <b>claude</b><span>~/work/atlas</span>
+              <b>pi</b><span>~/work/atlas</span>
             </button>
             <button class="panel-cell is-branch" type="button" data-why="branch">atlas-api</button>
             <button class="panel-cell is-state" type="button" data-why="state">done</button>
@@ -773,10 +802,11 @@
           </div>
       </div>
 
-      <figcaption class="panel-caption">
-        <p class="panel-line">Every agent amon can see, grouped by the workspace it is on.
-           Hover anything here to find out what it says.</p>
-      </figcaption>
+      <figcaption class="panel-hint">Hover anything in the panel — or tap it, on a
+         phone — to see what it says.</figcaption>
+      <!-- Announced to a screen reader on focus, where the bubble means nothing. -->
+      <span class="sr panel-said" aria-live="polite"></span>
+      <div class="panel-bubble" hidden><p></p></div>
     </figure>
 
     <p>The panel is a list, not a dashboard: it opens on <span class="lift">Super+A</span>,
@@ -1548,16 +1578,18 @@
     });
   })();
   // ---- the agent panel ---------------------------------------------------
-  // Hover or focus a part, read what it is. No timer and no autoplay: the top
-  // bar above is this page's one moving figure, and a second one competing for
-  // the same attention would make both harder to read.
+  // Hover a part, read what it is, in a bubble that follows the pointer. No
+  // timer and no autoplay: the top bar above is this page's one moving figure,
+  // and the only thing that moves here is the spinner, which moves in the real
+  // panel too.
   (function(){
     var figure = document.querySelector('.panel');
     if (!figure) return;
 
-    var caption = figure.querySelector('.panel-caption'),
-        line    = figure.querySelector('.panel-line'),
-        REST    = line.innerHTML;
+    var bubble = figure.querySelector('.panel-bubble'),
+        copy   = bubble.querySelector('p'),
+        said   = figure.querySelector('.panel-said'),
+        shown  = null;
 
     // What each kind of target says. Rows carry their own line on the element,
     // because each agent's situation is particular to it; everything else is a
@@ -1578,34 +1610,81 @@
             + 'on screen while you work. <b>Super+O</b> puts it back.'
     };
 
-    function say(html){
-      if (html === line.innerHTML) return;
-      if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        line.innerHTML = html;
-        return;
+    function lineFor(cell){
+      return cell.getAttribute('data-line') || COLUMNS[cell.getAttribute('data-why')] || '';
+    }
+
+    // Above the pointer by preference, below it when there is no room, and
+    // never past either edge — a bubble half off-screen is worse than none.
+    function place(x, y){
+      var pad = 12,
+          w = bubble.offsetWidth,
+          h = bubble.offsetHeight,
+          left = Math.min(Math.max(pad, x - w / 2), window.innerWidth - w - pad),
+          top  = y - h - 14;
+      if (top < pad) top = y + 22;
+      bubble.style.left = Math.round(left) + 'px';
+      bubble.style.top  = Math.round(top) + 'px';
+    }
+
+    function show(cell, x, y){
+      var html = lineFor(cell);
+      if (!html) return hide();
+      if (cell !== shown){
+        copy.innerHTML = html;
+        said.textContent = copy.textContent;
+        shown = cell;
       }
-      caption.classList.add('is-fading');
-      window.setTimeout(function(){
-        line.innerHTML = html;
-        caption.classList.remove('is-fading');
-      }, 160);
+      bubble.hidden = false;
+      place(x, y);
     }
 
-    function explain(cell){
-      if (!cell) return say(REST);
-      say(cell.getAttribute('data-line') || COLUMNS[cell.getAttribute('data-why')] || REST);
+    function hide(){
+      bubble.hidden = true;
+      shown = null;
+      said.textContent = '';
     }
 
-    figure.addEventListener('pointerover', function(event){
-      explain(event.target.closest('.panel-cell'));
+    function atCentre(cell){
+      var box = cell.getBoundingClientRect();
+      show(cell, box.left + box.width / 2, box.top);
+    }
+
+    // Pointer. Touch is handled on tap below, because a touch "hover" is a tap
+    // that has already happened and would show a bubble nobody asked for.
+    figure.addEventListener('pointermove', function(event){
+      if (event.pointerType === 'touch') return;
+      var cell = event.target.closest('.panel-cell');
+      if (cell) show(cell, event.clientX, event.clientY);
+      else hide();
     });
-    figure.addEventListener('pointerleave', function(){ explain(null); });
+    figure.addEventListener('pointerleave', hide);
+
+    // Tap. The same cell again puts it away, which is the dismissal nearest to
+    // hand; anywhere off the figure does too.
+    figure.addEventListener('pointerup', function(event){
+      if (event.pointerType !== 'touch') return;
+      var cell = event.target.closest('.panel-cell');
+      if (!cell || cell === shown) return hide();
+      atCentre(cell);
+    });
+    document.addEventListener('pointerdown', function(event){
+      if (!figure.contains(event.target)) hide();
+    });
+
+    // Keyboard. The bubble is placed against the element rather than a cursor
+    // there is not one of, and Escape puts it away.
     figure.addEventListener('focusin', function(event){
-      explain(event.target.closest('.panel-cell'));
+      var cell = event.target.closest('.panel-cell');
+      if (cell) atCentre(cell);
     });
     figure.addEventListener('focusout', function(event){
-      if (!figure.contains(event.relatedTarget)) explain(null);
+      if (!figure.contains(event.relatedTarget)) hide();
     });
+    document.addEventListener('keydown', function(event){
+      if (event.key === 'Escape' && !bubble.hidden) hide();
+    });
+    addEventListener('scroll', function(){ if (!bubble.hidden) hide(); }, {passive: true});
   })();
 
 </script>
