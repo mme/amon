@@ -341,13 +341,6 @@
   .panel-name{display:flex; flex-direction:column; gap:1px; min-width:0}
   .panel-name b{font-size:14px; font-weight:700; color:var(--ink)}
   .panel-counts{font-size:10.5px; letter-spacing:.1em; color:var(--muted); white-space:nowrap}
-  .panel-float{display:flex; align-items:center; gap:7px;
-               font-size:12px; color:var(--muted); white-space:nowrap}
-  /* Specific enough to outrank .panel-cell's `margin:0`, which is declared
-     after this and at the same weight — that is what was leaving Float sitting
-     in the middle of the header. */
-  .panel-head > .panel-float{margin-left:auto}
-  .panel-float u{text-decoration:underline; text-underline-offset:2px}
 
   .panel-rule{height:1px; background:var(--rule-soft); margin:12px 0 10px}
 
@@ -363,11 +356,14 @@
   /* Every hover target is a button: the figure is read by pointer, by tab and
      by screen reader, and one element cannot serve all three unless it is
      genuinely a control. */
-  .panel-cell{appearance:none; background:none; border:0; margin:0; padding:7px 0;
-              font:inherit; font-size:12.5px; color:var(--muted); text-align:left;
-              cursor:default; min-width:0; border-radius:5px}
-  .panel-cell:hover,.panel-cell:focus-visible{color:var(--ink); outline:none;
-              background:color-mix(in oklab, var(--ink) 9%, transparent)}
+  .panel-cell{padding:7px 0; font-size:12.5px; color:var(--muted); min-width:0}
+
+  /* Hover moves the cursor rather than lighting a second row, which is what the
+     real panel does with the mouse. `:has` is what lets the resting row give up
+     its highlight to whichever row the pointer is on; without it both light,
+     which is wrong but not broken. */
+  .panel-row:hover{background:color-mix(in oklab, var(--ink) 7%, transparent)}
+  .panel-card:has(.panel-row:hover) .panel-row.is-cursor:not(:hover){background:none}
   .panel-cell.is-glyph{display:flex; align-items:center; justify-content:center;
               padding-left:0; padding-right:0}
   /* The glyphs are drawn, not typed: the panel shows Nerd Font and braille
@@ -402,21 +398,6 @@
   .panel-cell.is-branch,.panel-cell.is-state{overflow:hidden; text-overflow:ellipsis;
                           white-space:nowrap}
 
-  /* A quiet standing line, because a bubble that only exists on hover cannot
-     tell anyone it is there. */
-  .panel-hint{padding-top:14px; font-size:13.5px; color:var(--muted)}
-
-  /* The explanation itself follows the pointer. Fixed rather than absolute so
-     it is never clipped by the card, and pointer-events:none so it can sit
-     under the cursor without stealing the hover it is describing. */
-  .panel-bubble{position:fixed; z-index:20; max-width:min(46ch,calc(100vw - 24px));
-                padding:9px 11px; border:1px solid var(--rule); border-radius:8px;
-                background:var(--raised); color:var(--muted); font-size:12.5px;
-                line-height:1.45; pointer-events:none;
-                box-shadow:0 6px 22px rgba(0,0,0,.28)}
-  .panel-bubble[hidden]{display:none}
-  .panel-bubble p{margin:0}
-  .panel-bubble b{color:var(--ink); font-weight:inherit}
 
   /* Narrow: the branch is the first thing to go, because on a phone the panel
      is being recognised rather than read. */
@@ -726,14 +707,15 @@
 
   <section class="plate">
     <header>
-      <h2>Super+A rounds up every agent in one place</h2>
+      <h2>Super+A rounds them up in one place</h2>
     </header>
 
     <!--
-      The agent panel, replicated. Every part that has something to say is a
-      real button carrying data-why; the caption below reads it. Deliberately
-      still: the reader drives it, and the page already has one figure that
-      moves on its own.
+      The agent panel, replicated. A picture and not a control: nothing here is
+      clickable, because nothing here does anything — the row under the pointer
+      lights up the way it does in the real panel, and that is the whole of the
+      interaction. The one thing that moves is the spinner, which moves there
+      too.
     -->
     <figure class="panel">
       <div class="panel-card">
@@ -754,59 +736,43 @@
             <b>amon</b>
             <span class="panel-counts">1 NEEDS INPUT &middot; 1 DONE &middot; 1 RUNNING &middot; 1 IDLE</span>
           </span>
-          <button class="panel-cell panel-float" type="button" data-why="float">
-            <svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.2" y="5.2" width="17.6" height="13.6" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="12" y="11.4" width="6.6" height="5.2" rx="1.2" fill="currentColor"/></svg><span><u>F</u>loat</span>
-          </button>
         </div>
 
         <div class="panel-rule" aria-hidden="true"></div>
 
-          <button class="panel-cell panel-group" type="button" data-why="group" style="grid-column:1/-1">WORKSPACE 1</button>
+          <div class="panel-group" style="grid-column:1/-1">WORKSPACE 1</div>
           <div class="panel-row is-cursor">
-            <button class="panel-cell is-glyph" type="button" data-why="glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle class="panel-dot tl" cx="8.7" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot tr" cx="15.3" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot bl" cx="8.7" cy="14.55" r="2.35" fill="currentColor"/><circle class="panel-dot br" cx="15.3" cy="14.55" r="2.35" fill="currentColor"/></svg></button>
-            <button class="panel-cell is-who" type="button" data-why="who" data-line="Mid-task. amon knows because it reads what the agent writes to the terminal — no plugin, no integration on the agent's side.">
-              <b>claude</b><span>~/Projects/amon.sh</span>
-            </button>
-            <button class="panel-cell is-branch" type="button" data-why="branch">main</button>
-            <button class="panel-cell is-state" type="button" data-why="state">running</button>
-            <button class="panel-cell is-age" type="button" data-why="age">4m</button>
+            <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle class="panel-dot tl" cx="8.7" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot tr" cx="15.3" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot bl" cx="8.7" cy="14.55" r="2.35" fill="currentColor"/><circle class="panel-dot br" cx="15.3" cy="14.55" r="2.35" fill="currentColor"/></svg></span>
+            <span class="panel-cell is-who"><b>claude</b><span>~/Projects/amon.sh</span></span>
+            <span class="panel-cell is-branch">main</span>
+            <span class="panel-cell is-state">running</span>
+            <span class="panel-cell is-age">4m</span>
           </div>
           <div class="panel-row">
-            <button class="panel-cell is-glyph" type="button" data-why="glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg></button>
-            <button class="panel-cell is-who" type="button" data-why="who" data-line="It stopped to ask you something, and nothing moves until you answer. This is the one the panel exists for.">
-              <b>codex</b><span>~/Projects/amon.sh</span>
-            </button>
-            <button class="panel-cell is-branch" type="button" data-why="branch">fix/detect-flake</button>
-            <button class="panel-cell is-state" type="button" data-why="state">needs input</button>
-            <button class="panel-cell is-age" type="button" data-why="age">2m</button>
+            <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg></span>
+            <span class="panel-cell is-who"><b>codex</b><span>~/Projects/amon.sh</span></span>
+            <span class="panel-cell is-branch">fix/detect-flake</span>
+            <span class="panel-cell is-state">done</span>
+            <span class="panel-cell is-age">2m</span>
           </div>
-          <button class="panel-cell panel-group" type="button" data-why="group" style="grid-column:1/-1">WORKSPACE 3</button>
+          <div class="panel-group" style="grid-column:1/-1">WORKSPACE 3</div>
           <div class="panel-row">
-            <button class="panel-cell is-glyph" type="button" data-why="glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg></button>
-            <button class="panel-cell is-who" type="button" data-why="who" data-line="It finished while you were looking at something else. <b>done</b> means finished and unseen — once you have been there, it is simply idle.">
-              <b>pi</b><span>~/work/atlas</span>
-            </button>
-            <button class="panel-cell is-branch" type="button" data-why="branch">atlas-api</button>
-            <button class="panel-cell is-state" type="button" data-why="state">done</button>
-            <button class="panel-cell is-age" type="button" data-why="age">6m</button>
+            <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg></span>
+            <span class="panel-cell is-who"><b>pi</b><span>~/work/atlas</span></span>
+            <span class="panel-cell is-branch">atlas-api</span>
+            <span class="panel-cell is-state">needs input</span>
+            <span class="panel-cell is-age">6m</span>
           </div>
-          <button class="panel-cell panel-group" type="button" data-why="group" style="grid-column:1/-1">WORKSPACE 4</button>
+          <div class="panel-group" style="grid-column:1/-1">WORKSPACE 4</div>
           <div class="panel-row">
-            <button class="panel-cell is-glyph" type="button" data-why="glyph" aria-label="no glyph: idle"></button>
-            <button class="panel-cell is-who" type="button" data-why="who" data-line="Sitting waiting for you to give it something to do.">
-              <b>opencode</b><span>~/.cache/worktrees/site</span>
-            </button>
-            <button class="panel-cell is-branch" type="button" data-why="branch">website</button>
-            <button class="panel-cell is-state" type="button" data-why="state">idle</button>
-            <button class="panel-cell is-age" type="button" data-why="age">41m</button>
+            <span class="panel-cell is-glyph"></span>
+            <span class="panel-cell is-who"><b>opencode</b><span>~/.cache/worktrees/site</span></span>
+            <span class="panel-cell is-branch">website</span>
+            <span class="panel-cell is-state">idle</span>
+            <span class="panel-cell is-age">41m</span>
           </div>
       </div>
 
-      <figcaption class="panel-hint">Hover anything in the panel — or tap it, on a
-         phone — to see what it says.</figcaption>
-      <!-- Announced to a screen reader on focus, where the bubble means nothing. -->
-      <span class="sr panel-said" aria-live="polite"></span>
-      <div class="panel-bubble" hidden><p></p></div>
     </figure>
 
     <p>The panel is a list, not a dashboard: it opens on <span class="lift">Super+A</span>,
@@ -1577,116 +1543,6 @@
       if (!root.getAttribute('data-theme')) label();
     });
   })();
-  // ---- the agent panel ---------------------------------------------------
-  // Hover a part, read what it is, in a bubble that follows the pointer. No
-  // timer and no autoplay: the top bar above is this page's one moving figure,
-  // and the only thing that moves here is the spinner, which moves in the real
-  // panel too.
-  (function(){
-    var figure = document.querySelector('.panel');
-    if (!figure) return;
-
-    var bubble = figure.querySelector('.panel-bubble'),
-        copy   = bubble.querySelector('p'),
-        said   = figure.querySelector('.panel-said'),
-        shown  = null;
-
-    // What each kind of target says. Rows carry their own line on the element,
-    // because each agent's situation is particular to it; everything else is a
-    // column, and a column means the same thing on every row.
-    var COLUMNS = {
-      glyph:  'What the agent is doing, in one character \u2014 the same one the top bar '
-            + 'draws next to the workspace number.',
-      branch: 'The branch that directory is on. A worktree is checked out somewhere like '
-            + '<b>~/.cache/worktrees/site</b>, whose path names neither the project nor the '
-            + 'branch, so this is often the only thing telling two of them apart.',
-      state:  'Four states, and only one of them asks anything of you: <b>needs input</b>. '
-            + '<b>done</b> means finished while you were elsewhere.',
-      age:    'How long it has been doing that. The same figure <b>amon status</b> prints.',
-      group:  'Agents are grouped by the workspace they are on, and inside a group they stay '
-            + 'in the order you started them \u2014 a list that reorders itself while you read '
-            + 'it is a list you cannot point at.',
-      float:  'Pops the panel out into a window of its own, floating and pinned, so it stays '
-            + 'on screen while you work. <b>Super+O</b> puts it back.'
-    };
-
-    function lineFor(cell){
-      return cell.getAttribute('data-line') || COLUMNS[cell.getAttribute('data-why')] || '';
-    }
-
-    // Above the pointer by preference, below it when there is no room, and
-    // never past either edge — a bubble half off-screen is worse than none.
-    function place(x, y){
-      var pad = 12,
-          w = bubble.offsetWidth,
-          h = bubble.offsetHeight,
-          left = Math.min(Math.max(pad, x - w / 2), window.innerWidth - w - pad),
-          top  = y - h - 14;
-      if (top < pad) top = y + 22;
-      bubble.style.left = Math.round(left) + 'px';
-      bubble.style.top  = Math.round(top) + 'px';
-    }
-
-    function show(cell, x, y){
-      var html = lineFor(cell);
-      if (!html) return hide();
-      if (cell !== shown){
-        copy.innerHTML = html;
-        said.textContent = copy.textContent;
-        shown = cell;
-      }
-      bubble.hidden = false;
-      place(x, y);
-    }
-
-    function hide(){
-      bubble.hidden = true;
-      shown = null;
-      said.textContent = '';
-    }
-
-    function atCentre(cell){
-      var box = cell.getBoundingClientRect();
-      show(cell, box.left + box.width / 2, box.top);
-    }
-
-    // Pointer. Touch is handled on tap below, because a touch "hover" is a tap
-    // that has already happened and would show a bubble nobody asked for.
-    figure.addEventListener('pointermove', function(event){
-      if (event.pointerType === 'touch') return;
-      var cell = event.target.closest('.panel-cell');
-      if (cell) show(cell, event.clientX, event.clientY);
-      else hide();
-    });
-    figure.addEventListener('pointerleave', hide);
-
-    // Tap. The same cell again puts it away, which is the dismissal nearest to
-    // hand; anywhere off the figure does too.
-    figure.addEventListener('pointerup', function(event){
-      if (event.pointerType !== 'touch') return;
-      var cell = event.target.closest('.panel-cell');
-      if (!cell || cell === shown) return hide();
-      atCentre(cell);
-    });
-    document.addEventListener('pointerdown', function(event){
-      if (!figure.contains(event.target)) hide();
-    });
-
-    // Keyboard. The bubble is placed against the element rather than a cursor
-    // there is not one of, and Escape puts it away.
-    figure.addEventListener('focusin', function(event){
-      var cell = event.target.closest('.panel-cell');
-      if (cell) atCentre(cell);
-    });
-    figure.addEventListener('focusout', function(event){
-      if (!figure.contains(event.relatedTarget)) hide();
-    });
-    document.addEventListener('keydown', function(event){
-      if (event.key === 'Escape' && !bubble.hidden) hide();
-    });
-    addEventListener('scroll', function(){ if (!bubble.hidden) hide(); }, {passive: true});
-  })();
-
 </script>
 </body>
 </html>
