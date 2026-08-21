@@ -155,7 +155,8 @@ FocusScope {
       // this shell comes from. It promises a small pane that stays put over
       // everything else, and the window rule amon installs makes that true: the
       // window opens floating and pinned, so it is on every workspace until you
-      // send it back with Super+O.
+      // say otherwise. Super+O unpins and tiles it — it does not close it, and
+      // does not bring the modal back.
       iconText: "󰹙"
       // The key that does this, marked by underlining it — the convention for a
       // mnemonic in a label, and quieter than brackets, which interrupt the

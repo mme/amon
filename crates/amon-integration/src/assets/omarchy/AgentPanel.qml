@@ -294,7 +294,9 @@ Item {
 
     // The size the window asks for. Where it lands and whether it floats is
     // the window rule's business, not QML's — the compositor is better placed
-    // to decide that, and it is the same rule Super+O toggles back off.
+    // to decide that. Super+O changes what this window is doing rather than
+    // what the rule says: the rule still applies to the next one that maps
+    // under this title.
     // The same figures the modal is built from, so popping out moves the pane
     // rather than resizing it. Only the screen clamp differs, and only because
     // a window the compositor places cannot be clamped to a surface that is not

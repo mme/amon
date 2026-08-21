@@ -180,9 +180,15 @@ hl.layer_rule({{ match = {{ namespace = "^amon-panel$" }}, no_anim = true, anima
 -- and refuses to pin one that is tiled, so `float` here is not decoration —
 -- without it the `pin` is declined and nothing says so.
 --
--- Super+O is the way back: `omarchy-hyprland-window-pop` branches on whether a
--- window is already pinned, so the key that pops other windows out puts this
--- one away.
+-- Super+O unpins and tiles it. It does not put it away: the window stays open
+-- and the modal does not come back — measured, after claiming otherwise from
+-- reading the script.
+--
+-- `omarchy-hyprland-window-pop` branches on whether a window is already pinned,
+-- and this one is pinned from the moment it maps, so the first press always
+-- takes the un-pin branch. A second press takes the other, which floats and
+-- resizes to that script's own default of 1300x900 — twice what the pane asks
+-- for, and nothing on this side can say otherwise.
 hl.window_rule({{
   match = {{ class = "org.quickshell", title = "^amon — agents$" }},
   float = true,
