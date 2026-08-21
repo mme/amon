@@ -222,9 +222,16 @@ Item {
     root.rows = listed
   }
 
-  // Grouped by workspace, and within a workspace the agent that most wants you
-  // first — `order` again, so the pane, the bar, `amon status` and `amon focus`
-  // all agree about which agent matters most.
+  // Grouped by workspace, and within a workspace in the order they were
+  // started — oldest first, so a workspace reads as you built it up and a new
+  // agent appears at the bottom.
+  //
+  // Ordered by something that cannot change, deliberately. Sorting by state put
+  // the agent that most wanted you at the top of its group, which sounds right
+  // and reads badly: rows move while you are looking at them, and the row under
+  // the cursor is not the row you were about to choose. What an agent is doing
+  // is already said by its glyph, its word, and the count in the header — none
+  // of which move.
   //
   // Workspaces sort as numbers where they look like numbers. Omarchy names them
   // "1".."10" by default but a named workspace is legal, and comparing those as
@@ -236,9 +243,10 @@ Item {
       if (!isNaN(a) && !isNaN(b)) return a - b
       return left.workspace < right.workspace ? -1 : 1
     }
-    const rank = root.rank(left.state) - root.rank(right.state)
-    if (rank !== 0) return rank
-    return left.agent < right.agent ? -1 : (left.agent > right.agent ? 1 : 0)
+    if (left.startedAt !== right.startedAt) return left.startedAt - right.startedAt
+    // Two agents started in the same millisecond is not a real case; this only
+    // keeps the order total so the sort cannot wobble.
+    return left.id < right.id ? -1 : (left.id > right.id ? 1 : 0)
   }
 
   // The heading a row carries, or "" when the row above it already sits under
@@ -290,6 +298,8 @@ Item {
       state: state,
       workspace: entry.workspace || "",
       cwd: entry.cwd || "",
+      // What orders rows within a workspace. Never changes, which is the point.
+      startedAt: entry.started_at || 0,
       // Absent outside a repository and on a detached HEAD, which the pane
       // draws as an empty column rather than as a placeholder.
       branch: entry.branch || "",
