@@ -255,6 +255,15 @@ FocusScope {
       foreground: view.foreground
     }
 
+    // Everything the header leaves. Measured from the pieces above rather than
+    // from this item's own content, which would be a loop: the column would
+    // size to its children and the list to the column.
+    Item {
+      id: body
+
+      width: parent.width
+      height: Math.max(0, view.height - hero.height - rule.height - view.contentSpacing * 2)
+
     // One flat list with the workspace headings folded into it, the way the
     // network panel separates known networks from the others. A ListView rather
     // than a Repeater in a Column, for the same reason it uses one:
@@ -263,11 +272,8 @@ FocusScope {
     ListView {
       id: list
 
-      width: parent.width
-      // Whatever the header leaves. Measured from the pieces above rather
-      // than from this item's own content, which would be a loop: the column
-      // would size to the list and the list to the column.
-      height: Math.max(0, view.height - hero.height - rule.height - view.contentSpacing * 2)
+      anchors.fill: parent
+      visible: view.agents.rows.length > 0
       spacing: Style.space(4)
       clip: true
       boundsBehavior: Flickable.StopAtBounds
@@ -311,6 +317,47 @@ FocusScope {
           }
         }
       }
+    }
+
+    // Nothing to list. Centred in the same region the list would fill, so the
+    // pane keeps its shape whether or not there is anything in it.
+    //
+    // "No agents" and not "no agents running": `running` is a state a row can
+    // be in, and one word meaning two things in one pane is how you end up
+    // wondering whether an idle agent counts. It is the same phrase the header
+    // above already uses, so the two lines agree rather than each inventing a
+    // way to say it.
+    Column {
+      visible: view.agents.rows.length === 0
+      anchors.centerIn: parent
+      width: Math.min(parent.width - Style.space(48), Style.space(380))
+      spacing: Style.space(10)
+
+      Text {
+        width: parent.width
+        horizontalAlignment: Text.AlignHCenter
+        text: "No agents"
+        color: view.foreground
+        font.family: view.fontFamily
+        font.pixelSize: Style.font.subtitle
+        font.bold: true
+      }
+
+      Text {
+        width: parent.width
+        horizontalAlignment: Text.AlignHCenter
+        wrapMode: Text.WordWrap
+        // Both ways in: the one you already have open, and the one that needs
+        // no terminal. The chord is Omarchy's own — `SUPER + SHIFT + CTRL + A`,
+        // bound to `omarchy-agent --pick`, which launches your default agent
+        // and offers the picker when you have not chosen one.
+        text: "Start one in a terminal, or press Super+Shift+Ctrl+A to launch the default."
+        color: view.dim
+        font.family: view.fontFamily
+        font.pixelSize: Style.font.body
+        lineHeight: 1.35
+      }
+    }
     }
   }
   }
