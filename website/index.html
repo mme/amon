@@ -104,6 +104,17 @@
   .masthead p .lift:last-child{display:block}
   /* raises a phrase out of the muted body text to full ink */
   .lift{color:var(--ink)}
+  /* The two names, set as names, in the one section that is about the pair of
+     them. Only the body copy: the heading below sets them as an equation and
+     wants its own weight.
+     Transformed rather than typed in capitals, so the text stays "Omarchy" and
+     "amon" for anything that copies it or reads it out. */
+  .pairing header p .lift{text-transform:uppercase}
+  /* A hair more air under this heading than the others get. Set as capitals,
+     OMARCHY sits tight against the line above it in a way the lowercase
+     openings elsewhere do not — 5px on top of the header's own gap, which is
+     enough to see and not enough to read as a new rhythm. */
+  .pairing header p:first-of-type{margin-top:5px}
   /* Three actions, ranked: bare icons for the two that ask little, and one
      solid block for install — the page's only inverted element. */
   .actions{display:flex; align-items:center; justify-content:center;
@@ -660,7 +671,7 @@
     </div>
   </header>
 
-  <section class="plate">
+  <section class="plate pairing">
     <header>
       <h2>omarchy + amon = the agent-native OS</h2>
       <p><span class="lift">Omarchy</span> is the perfect environment for using agents. A workspace holds everything
