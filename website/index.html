@@ -325,6 +325,80 @@
     .explain-stem,.explain-copy,.explain-line{transition:none}
   }
 
+
+  /* ---- the agent panel -------------------------------------------------
+     A replica rather than a diagram: the same columns in the same order, so
+     someone who reads this and then installs amon recognises what opens.
+     Nothing here animates on its own — the panel is a thing you look at and
+     read, not a thing that performs, and the top bar above already carries
+     this page's one moving figure. */
+  .panel{margin:0; display:flex; flex-direction:column}
+  .panel-card{border:1px solid var(--rule); border-radius:10px; background:var(--raised);
+              padding:14px; overflow:hidden}
+
+  .panel-head{display:flex; align-items:center; gap:12px}
+  .panel-mark{width:27px; height:26px; flex:none; color:var(--ink); display:block}
+  .panel-name{display:flex; flex-direction:column; gap:1px; min-width:0}
+  .panel-name b{font-size:14px; font-weight:700; color:var(--ink)}
+  .panel-counts{font-size:10.5px; letter-spacing:.1em; color:var(--muted); white-space:nowrap}
+  .panel-float{margin-left:auto; display:flex; align-items:center; gap:7px;
+               font-size:12px; color:var(--muted); white-space:nowrap}
+  .panel-float u{text-decoration:underline; text-underline-offset:2px}
+
+  .panel-rule{height:1px; background:var(--rule-soft); margin:12px 0 10px}
+
+  .panel-group{font-size:10.5px; letter-spacing:.1em; color:var(--muted);
+               padding:6px 0 2px}
+
+  /* One grid shared by every row, so the columns line up down the list the way
+     they do in the real panel. */
+  .panel-row{display:grid; grid-template-columns:18px 5.5rem minmax(0,1fr) 7.5rem 5.5rem 2.5rem;
+             align-items:center; gap:0 10px; border-radius:6px}
+  .panel-row.is-cursor{background:color-mix(in oklab, var(--ink) 7%, transparent)}
+
+  /* Every hover target is a button: the figure is read by pointer, by tab and
+     by screen reader, and one element cannot serve all three unless it is
+     genuinely a control. */
+  .panel-cell{appearance:none; background:none; border:0; margin:0; padding:7px 0;
+              font:inherit; font-size:12.5px; color:var(--muted); text-align:left;
+              cursor:help; min-width:0; border-radius:5px}
+  .panel-cell:hover,.panel-cell:focus-visible{color:var(--ink); outline:none;
+              background:color-mix(in oklab, var(--ink) 9%, transparent)}
+  .panel-cell.is-glyph{display:flex; align-items:center; justify-content:center;
+              padding-left:0; padding-right:0}
+  /* The glyphs are drawn, not typed: the panel shows Nerd Font and braille
+     codepoints, and a web font carries neither reliably. The same marks the bar
+     figure above uses, out of the same sprite. */
+  .panel-glyph{width:14px; height:14px; display:block; color:inherit}
+  .panel-cell.is-who{display:grid; grid-column:2 / 4;
+                     grid-template-columns:5.5rem minmax(0,1fr); gap:0 10px; align-items:center}
+  .panel-cell.is-who b{color:var(--ink); font-weight:700}
+  /* No right-to-left trick to elide from the head of the path the way the real
+     panel does: it reverses the leading "~/" and prints "Projects/amon.sh/~".
+     These paths are written to fit instead. */
+  .panel-cell.is-who span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .panel-cell.is-age{text-align:right}
+  .panel-cell.is-branch,.panel-cell.is-state{overflow:hidden; text-overflow:ellipsis;
+                          white-space:nowrap}
+
+  .panel-caption{position:relative; padding-top:14px}
+  .panel-caption p{margin:0; font-size:13.5px; color:var(--muted); min-height:2.4em;
+                   max-width:62ch; transition:opacity 160ms ease}
+  .panel-caption.is-fading p{opacity:0}
+  .panel-caption b{color:var(--ink); font-weight:inherit}
+
+  @media (prefers-reduced-motion: reduce){ .panel-caption p{transition:none} }
+
+  /* Narrow: the branch is the first thing to go, because on a phone the panel
+     is being recognised rather than read. */
+  @media (max-width:640px){
+    /* The branch goes first, and the state keeps its full width: "needs input"
+       is the one word on the row worth crossing the page for, and a path that
+       loses its tail is still recognisable where a truncated state is not. */
+    .panel-row{grid-template-columns:18px 4.2rem minmax(0,1fr) 6.4rem 2.4rem}
+    .panel-cell.is-branch{display:none}
+    .panel-cell.is-who{grid-template-columns:4.2rem minmax(0,1fr)}
+  }
 </style>
 </head>
 <body>
@@ -625,6 +699,92 @@
     <header>
       <h2>Super+A rounds up every agent in one place</h2>
     </header>
+
+    <!--
+      The agent panel, replicated. Every part that has something to say is a
+      real button carrying data-why; the caption below reads it. Deliberately
+      still: the reader drives it, and the page already has one figure that
+      moves on its own.
+    -->
+    <figure class="panel">
+      <div class="panel-card">
+        <div class="panel-head">
+          <!--
+            The mark alone, not amon-logo.svg: that file carries the wordmark
+            under the head, and the panel sets the name in its own type right
+            beside this. Same paths, viewBoxed to the mark's own bounds so no
+            coordinate had to be moved to crop it.
+          -->
+          <svg class="panel-mark" viewBox="33.75 16 194.5 183.5" aria-hidden="true">
+            <path fill="currentColor" fill-rule="evenodd" d="M 205.5 133 C 205.5 163.75 205.56 180.06 194.64 189.81 C 182.77 200.41 159.67 199.5 131 199.5 C 102.33 199.5 79.23 200.41 67.36 189.81 C 56.44 180.06 56.5 163.75 56.5 133 C 56.5 102.25 56.44 85.94 67.36 76.19 C 79.23 65.59 102.33 66.5 131 66.5 C 159.67 66.5 182.77 65.59 194.64 76.19 C 205.56 85.94 205.5 102.25 205.5 133 Z M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/>
+            <path fill="currentColor" d="M 33.75 120.5 A 7.25 7.25 0 0 1 48.25 120.5 L 48.25 145.5 A 7.25 7.25 0 0 1 33.75 145.5 Z M 213.75 120.5 A 7.25 7.25 0 0 1 228.25 120.5 L 228.25 145.5 A 7.25 7.25 0 0 1 213.75 145.5 Z"/>
+            <circle fill="currentColor" cx="131" cy="29" r="13"/>
+            <path d="M 131 42 L 131 56" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
+          </svg>
+          <span class="panel-name">
+            <b>amon</b>
+            <span class="panel-counts">1 NEEDS INPUT &middot; 1 DONE &middot; 1 RUNNING &middot; 1 IDLE</span>
+          </span>
+          <button class="panel-cell panel-float" type="button" data-why="float">
+            <svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.2" y="5.2" width="17.6" height="13.6" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="12" y="11.4" width="6.6" height="5.2" rx="1.2" fill="currentColor"/></svg><span><u>F</u>loat</span>
+          </button>
+        </div>
+
+        <div class="panel-rule" aria-hidden="true"></div>
+
+          <button class="panel-cell panel-group" type="button" data-why="group" style="grid-column:1/-1">WORKSPACE 1</button>
+          <div class="panel-row is-cursor">
+            <button class="panel-cell is-glyph" type="button" data-why="glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8.7" cy="14.55" r="2.35" fill="currentColor"/><circle cx="15.3" cy="9.45" r="2.35" fill="currentColor"/></svg></button>
+            <button class="panel-cell is-who" type="button" data-why="who" data-line="Mid-task. amon knows because it reads what the agent writes to the terminal — no plugin, no integration on the agent's side.">
+              <b>claude</b><span>~/Projects/amon.sh</span>
+            </button>
+            <button class="panel-cell is-branch" type="button" data-why="branch">main</button>
+            <button class="panel-cell is-state" type="button" data-why="state">running</button>
+            <button class="panel-cell is-age" type="button" data-why="age">4m</button>
+          </div>
+          <div class="panel-row">
+            <button class="panel-cell is-glyph" type="button" data-why="glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg></button>
+            <button class="panel-cell is-who" type="button" data-why="who" data-line="It stopped to ask you something, and nothing moves until you answer. This is the one the panel exists for.">
+              <b>codex</b><span>~/Projects/amon.sh</span>
+            </button>
+            <button class="panel-cell is-branch" type="button" data-why="branch">fix/detect-flake</button>
+            <button class="panel-cell is-state" type="button" data-why="state">needs input</button>
+            <button class="panel-cell is-age" type="button" data-why="age">2m</button>
+          </div>
+          <button class="panel-cell panel-group" type="button" data-why="group" style="grid-column:1/-1">WORKSPACE 2</button>
+          <div class="panel-row">
+            <button class="panel-cell is-glyph" type="button" data-why="glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg></button>
+            <button class="panel-cell is-who" type="button" data-why="who" data-line="It finished while you were looking at something else. <b>done</b> means finished and unseen — once you have been there, it is simply idle.">
+              <b>claude</b><span>~/work/atlas</span>
+            </button>
+            <button class="panel-cell is-branch" type="button" data-why="branch">atlas-api</button>
+            <button class="panel-cell is-state" type="button" data-why="state">done</button>
+            <button class="panel-cell is-age" type="button" data-why="age">6m</button>
+          </div>
+          <button class="panel-cell panel-group" type="button" data-why="group" style="grid-column:1/-1">WORKSPACE 4</button>
+          <div class="panel-row">
+            <button class="panel-cell is-glyph" type="button" data-why="glyph" aria-label="no glyph: idle"></button>
+            <button class="panel-cell is-who" type="button" data-why="who" data-line="Sitting waiting for you to give it something to do.">
+              <b>opencode</b><span>~/.cache/worktrees/site</span>
+            </button>
+            <button class="panel-cell is-branch" type="button" data-why="branch">website</button>
+            <button class="panel-cell is-state" type="button" data-why="state">idle</button>
+            <button class="panel-cell is-age" type="button" data-why="age">41m</button>
+          </div>
+      </div>
+
+      <figcaption class="panel-caption">
+        <p class="panel-line">Every agent amon can see, grouped by the workspace it is on.
+           Hover anything here to find out what it says.</p>
+      </figcaption>
+    </figure>
+
+    <p>The panel is a list, not a dashboard: it opens on <span class="lift">Super+A</span>,
+       tells you which agents want you, and gets out of the way. Arrow keys, <span
+       class="lift">j/k</span> and <span class="lift">Ctrl+N/P</span> all walk it;
+       <span class="lift">Enter</span> takes you to the agent you land on.
+       <span class="lift">F</span> pops it out into a window that stays on screen while
+       you work.</p>
   </section>
 </main>
 
@@ -1387,6 +1547,67 @@
       if (!root.getAttribute('data-theme')) label();
     });
   })();
+  // ---- the agent panel ---------------------------------------------------
+  // Hover or focus a part, read what it is. No timer and no autoplay: the top
+  // bar above is this page's one moving figure, and a second one competing for
+  // the same attention would make both harder to read.
+  (function(){
+    var figure = document.querySelector('.panel');
+    if (!figure) return;
+
+    var caption = figure.querySelector('.panel-caption'),
+        line    = figure.querySelector('.panel-line'),
+        REST    = line.innerHTML;
+
+    // What each kind of target says. Rows carry their own line on the element,
+    // because each agent's situation is particular to it; everything else is a
+    // column, and a column means the same thing on every row.
+    var COLUMNS = {
+      glyph:  'What the agent is doing, in one character \u2014 the same one the top bar '
+            + 'draws next to the workspace number.',
+      branch: 'The branch that directory is on. A worktree is checked out somewhere like '
+            + '<b>~/.cache/worktrees/site</b>, whose path names neither the project nor the '
+            + 'branch, so this is often the only thing telling two of them apart.',
+      state:  'Four states, and only one of them asks anything of you: <b>needs input</b>. '
+            + '<b>done</b> means finished while you were elsewhere.',
+      age:    'How long it has been doing that. The same figure <b>amon status</b> prints.',
+      group:  'Agents are grouped by the workspace they are on, and inside a group they stay '
+            + 'in the order you started them \u2014 a list that reorders itself while you read '
+            + 'it is a list you cannot point at.',
+      float:  'Pops the panel out into a window of its own, floating and pinned, so it stays '
+            + 'on screen while you work. <b>Super+O</b> puts it back.'
+    };
+
+    function say(html){
+      if (html === line.innerHTML) return;
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        line.innerHTML = html;
+        return;
+      }
+      caption.classList.add('is-fading');
+      window.setTimeout(function(){
+        line.innerHTML = html;
+        caption.classList.remove('is-fading');
+      }, 160);
+    }
+
+    function explain(cell){
+      if (!cell) return say(REST);
+      say(cell.getAttribute('data-line') || COLUMNS[cell.getAttribute('data-why')] || REST);
+    }
+
+    figure.addEventListener('pointerover', function(event){
+      explain(event.target.closest('.panel-cell'));
+    });
+    figure.addEventListener('pointerleave', function(){ explain(null); });
+    figure.addEventListener('focusin', function(event){
+      explain(event.target.closest('.panel-cell'));
+    });
+    figure.addEventListener('focusout', function(event){
+      if (!figure.contains(event.relatedTarget)) explain(null);
+    });
+  })();
+
 </script>
 </body>
 </html>
