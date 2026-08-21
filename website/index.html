@@ -20,25 +20,10 @@
     /* which switch icon shows: offer the mode you would move to */
     --sun:block; --moon:none;
   }
-  @media (prefers-color-scheme:light){
-    :root:not([data-theme="dark"]){
-      /* Near-white, not the mark's #EAE6E4: as a full page that value reads
-         gray, though it reads white as a swatch against near-black. It keeps
-         its job below as the desktop's own screen. */
-      --ground:#FDFCFB; --raised:#F4F2F0; --sunk:#EAE6E4;
-      --rule:#DBD6D2; --rule-soft:#ECE8E4;
-      --ink:#0F0C0E; --muted:#6B6461;
-      --accent:#4A3FD0;
-      --sun:none; --moon:block;
-    }
-  }
-  :root[data-theme="light"]{
-    --ground:#FDFCFB; --raised:#F4F2F0; --sunk:#EAE6E4;
-    --rule:#DBD6D2; --rule-soft:#ECE8E4;
-    --ink:#0F0C0E; --muted:#6B6461;
-    --accent:#4A3FD0;
-    --sun:none; --moon:block;
-  }
+  /* Light mode is switched off for now — not merely hidden. Leaving the media
+     query in place would have the page turn light for anyone whose system asks
+     for it, which is exactly the thing being switched off. The palette is kept
+     below the fold of this rule so it can come back in one edit. */
 
   *{box-sizing:border-box}
   html{color-scheme:dark light}
@@ -57,6 +42,10 @@
           display:grid; place-items:center; width:34px; height:34px; padding:0;
           background:var(--ground); border:0; border-radius:2px;
           color:var(--muted); cursor:pointer}
+  /* `display:grid` above outranks the `hidden` attribute's own display:none, so
+     the attribute did nothing on its own. Hidden rather than deleted: light mode
+     is off for now, and this is the one line that brings the switch back. */
+  .themer[hidden]{display:none}
   .themer:hover{color:var(--ink)}
   .themer:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
   .themer svg{width:17px; height:17px; display:block}
@@ -417,12 +406,22 @@
            padding:16px 18px}
   /* Scrolls on its own rather than pushing the page sideways on a phone. */
   .snippet pre{margin:0; overflow-x:auto}
-  .snippet code{display:block; white-space:pre;
+  .snippet code{display:block; white-space:pre; color:var(--muted);
                 font-family:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
-                font-size:13px; letter-spacing:-.01em; line-height:2;
+                font-size:13px; letter-spacing:-.01em;
+                /* A terminal's own leading, near enough. At 2 the transcript
+                   read as a list of separate lines rather than as a session. */
+                line-height:1.65;
                 color:var(--ink)}
-  /* No `$` in front of the lines: it is not part of the command, and a prompt
-     that cannot be copied is a prompt someone copies anyway. */
+  /* A transcript, so the parts are told apart the way a terminal tells them
+     apart: what you typed is the page's ink, what came back is a step down, and
+     the two marks amon draws in colour keep it. */
+  .snippet .t-p{color:var(--muted)}                 /* the prompt */
+  .snippet .t-in{color:var(--ink)}                  /* what you typed */
+  .snippet .t-o{color:var(--muted)}                 /* what it printed */
+  .snippet .t-x{color:var(--accent)}                /* the picker's [x] */
+  .snippet .t-c{color:var(--ink)}                   /* the picker's cursor */
+  .snippet .t-ok{color:var(--ink)}
 
   .snippet-copy{position:absolute; top:12px; right:12px;
                 display:inline-flex; align-items:center; gap:.4rem;
@@ -456,7 +455,7 @@
 </head>
 <body>
 
-<button class="themer" id="themer" type="button" aria-label="Switch to light mode">
+<button class="themer" id="themer" type="button" hidden aria-label="Switch to light mode">
   <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
        stroke-linecap="round" aria-hidden="true">
     <circle cx="12" cy="12" r="4.4"/>
@@ -827,7 +826,7 @@
 
   <section class="plate">
     <header>
-      <h2>Install in 30 seconds</h2>
+      <h2>Install and setup in 30 seconds</h2>
     </header>
 
     <!--
@@ -836,9 +835,25 @@
       alternatives.
     -->
     <figure class="snippet">
-      <pre><code id="install-commands">yay -S amon-bin
-amon setup</code></pre>
-      <button class="snippet-copy" type="button" id="copy-install" title="Copy both commands">
+      <pre><code><span class="t-p">~ &#10095;</span> <span class="t-in">yay -S amon-bin</span>
+<span class="t-o">(1/1) installing amon-bin                       [######################] 100%</span>
+<span class="t-p">~ &#10095;</span> <span class="t-in">amon setup</span>
+Set up amon <span class="t-o">— space toggles, enter applies</span>
+
+<span class="t-c">&#9656;</span> <span class="t-x">[x]</span> pi        <span class="t-o">detected</span>
+  <span class="t-x">[x]</span> claude    <span class="t-o">detected</span>
+  <span class="t-x">[x]</span> codex     <span class="t-o">detected</span>
+  <span class="t-x">[x]</span> opencode  <span class="t-o">detected</span>
+
+<span class="t-o">agents get session hooks and their name aliased
+to run under amon.</span>
+
+<span class="t-o">space toggle · enter apply · q quit</span>
+
+<span class="t-ok">✓</span> amon installed.</code></pre>
+      <button class="snippet-copy" type="button" id="copy-install"
+              title="Copy the install command"
+              data-copy="yay -S amon-bin &amp;&amp; amon setup &amp;&amp; source ~/.bashrc">
         <svg class="icon icon-copy" viewBox="0 0 24 24" aria-hidden="true">
           <rect x="8.6" y="3.4" width="11.8" height="15" rx="2.6"
                 fill="none" stroke="currentColor" stroke-width="1.9"/>
@@ -1581,37 +1596,9 @@ amon setup</code></pre>
     });
   })();
 
-  // Nothing is stored. Every visit starts on the system setting, and the CSS
-  // falls back to dark when the system expresses no preference. Toggling only
-  // lasts as long as the page does.
-  (function(){
-    var root = document.documentElement,
-        btn = document.getElementById('themer');
-
-    function current(){
-      var set = root.getAttribute('data-theme');
-      if (set) return set;
-      return matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-    }
-    // The icon is chosen in CSS from the theme tokens; only the label needs
-    // syncing, and it names the destination the way the icon does.
-    function label(){
-      btn.setAttribute('aria-label',
-        current() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
-    }
-    label();
-
-    btn.addEventListener('click', function(){
-      var next = current() === 'dark' ? 'light' : 'dark';
-      root.setAttribute('data-theme', next);
-      label();
-    });
-
-    // Still following the OS? Then keep up when it changes.
-    matchMedia('(prefers-color-scheme: light)').addEventListener('change', function(){
-      if (!root.getAttribute('data-theme')) label();
-    });
-  })();
+  // The theme toggle is off for now: the page is dark, whatever the system
+  // asks for. Its button is still in the markup, hidden, so bringing it back is
+  // one attribute and this block.
   // ---- the agent panel ---------------------------------------------------
   // The cursor follows the pointer, as it does in the real panel: hovering a
   // row makes it the selected one, and it stays selected while the pointer is
@@ -1641,20 +1628,22 @@ amon setup</code></pre>
     card.addEventListener('pointerleave', function(){ put(resting); });
   })();
 
-  // The install block: one button, both lines, exactly as they are written —
-  // taken from the element rather than repeated here, so the page cannot end up
-  // showing one command and copying another.
+  // The install block. What is shown is a transcript — two commands and what
+  // they print — and what is copied is the single line that does both and
+  // sources the shell afterwards, so the aliases work in the terminal you are
+  // already in. They are deliberately not the same text, which is why the
+  // command is on the button rather than read back out of the picture.
   (function(){
     var button = document.getElementById('copy-install');
     if (!button) return;
-    var commands = document.getElementById('install-commands').textContent.trim(),
+    var commands = button.getAttribute('data-copy'),
         status = document.getElementById('copy-install-status'),
         timer;
 
     button.addEventListener('click', function(){
       navigator.clipboard.writeText(commands).then(function(){
         button.classList.add('is-copied');
-        status.textContent = 'Copied both commands';
+        status.textContent = 'Copied ' + commands;
         clearTimeout(timer);
         timer = setTimeout(function(){
           button.classList.remove('is-copied');
@@ -1662,7 +1651,7 @@ amon setup</code></pre>
         }, 1600);
       }).catch(function(){
         // Clipboard refused — say so rather than showing a check that lied.
-        status.textContent = 'Copy blocked. Select the commands and press Ctrl+C.';
+        status.textContent = 'Copy blocked: ' + commands;
       });
     });
   })();
