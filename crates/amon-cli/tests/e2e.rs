@@ -1997,3 +1997,38 @@ fn the_super_a_binding_opens_the_pane() {
         "binding twice would leave both in place: {lua}"
     );
 }
+
+/// An agent with nothing to say comes back after the daemon dies.
+///
+/// The sibling test above passes without any of this: its fake agent settles
+/// its state right around the kill, so a patch is due, the write fails, and the
+/// reconnect follows. A long-running agent that has already settled sends
+/// nothing — and a socket is only tested by writing to it, so the wrapper sat
+/// believing it was connected. Restarting a daemon under three live agents left
+/// two of them invisible, and they were invisible precisely because they were
+/// quiet.
+#[test]
+fn a_quiet_agent_comes_back_after_the_daemon_dies() {
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", "#!/bin/sh\nsleep 30\n");
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    sandbox.wait_for_status("the agent to register", |agents| {
+        agent_named(agents, "claude").is_some()
+    });
+    // Long enough for its state to settle, so that nothing is waiting to be
+    // sent when the daemon goes. That is the whole point of the case.
+    std::thread::sleep(std::time::Duration::from_secs(3));
+
+    let mut client = Client::new(sandbox.connect());
+    client.send(r#"{"id":"1","method":"daemon.shutdown"}"#);
+    let _ = client.read_frame();
+    drop(client);
+
+    sandbox.wait_for_status("the quiet agent to come back", |agents| {
+        agent_named(agents, "claude").is_some()
+    });
+
+    let _ = child.kill();
+    let _ = child.wait();
+}

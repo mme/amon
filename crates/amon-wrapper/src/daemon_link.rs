@@ -19,6 +19,28 @@ use amon_protocol::{AgentEntry, AgentPatch, Hello, Method, Request, Role, PROTOC
 
 const FIRST_RETRY: Duration = Duration::from_millis(100);
 const MAX_RETRY: Duration = Duration::from_secs(30);
+/// How often a connected link proves itself.
+///
+/// A socket is only tested by writing to it, so a wrapper with nothing to say
+/// never learns that the daemon went away. It waits for the agent's next state
+/// change — which for an idle agent can be hours — and until then it is
+/// connected to nothing while believing otherwise. Restarting the daemon left
+/// two of three live agents invisible, and they were invisible because they
+/// were quiet.
+///
+/// Re-registering rather than pinging, because the wrapper keeps its entry
+/// current by applying its own patches to it: the message that proves the
+/// socket is alive is exactly the one that restores this agent to a daemon that
+/// came back empty. Detection and repair are the same act.
+///
+/// The registry answers a repeat register on the same connection with
+/// `AgentUpdated` rather than `AgentConnected`, so no subscriber sees a
+/// reconnection that did not happen.
+/// Five seconds: long enough that the traffic is nothing — one small message
+/// per agent, and the registry answers it without waking a subscriber that
+/// would not otherwise have been woken — and short enough that an agent lost to
+/// a daemon restart is back before anyone goes looking for it.
+const HEARTBEAT: Duration = Duration::from_secs(5);
 /// Long enough that a wedged daemon cannot stall the link thread behind the
 /// agent's own progress, short enough to notice a dead socket promptly.
 const IO_TIMEOUT: Duration = Duration::from_secs(2);
@@ -58,10 +80,9 @@ fn run(rx: mpsc::Receiver<Message>, version: String) {
     let mut retry = FIRST_RETRY;
 
     loop {
-        // When connected there is nothing to retry, so block until there is
-        // something to send; otherwise wake up to try reconnecting.
+        // Connected, wake on the heartbeat; disconnected, wake to retry.
         let wait = if connection.is_some() {
-            Duration::from_secs(3600)
+            HEARTBEAT
         } else {
             retry
         };
@@ -90,7 +111,17 @@ fn run(rx: mpsc::Receiver<Message>, version: String) {
                     }
                 }
             }
-            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Timeout) => {
+                // Nothing to say. While connected that is the heartbeat: send
+                // the entry we hold, which either goes through — proving the
+                // daemon is there and restoring us if it had forgotten — or
+                // fails, and the reconnect below takes over.
+                if let (Some(link), Some(entry)) = (connection.as_mut(), entry.as_ref()) {
+                    if link.send(Method::AgentRegister(entry.clone())).is_err() {
+                        connection = None;
+                    }
+                }
+            }
             // The wrapper is shutting down. Dropping the connection is how the
             // daemon learns the agent is gone (ADR-0002), so there is nothing
             // to send.
