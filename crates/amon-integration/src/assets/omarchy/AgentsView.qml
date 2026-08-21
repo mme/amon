@@ -157,13 +157,17 @@ FocusScope {
       // window opens floating and pinned, so it is on every workspace until you
       // send it back with Super+O.
       iconText: "󰹙"
-      // The bracket marks the key that does this, the way `[Super+Drag to move]`
-      // does in the popped-out window — brackets mean "keyboard" throughout this
-      // pane. Omarchy has no such convention: its own panels carry bare-letter
-      // shortcuts that appear nowhere on screen, which is why nobody knows the
-      // Tailscale panel copies an IP on `c`. Showing the key is worth departing
-      // from that.
-      text: "[F]loat"
+      // The key that does this, marked by underlining it — the convention for a
+      // mnemonic in a label, and quieter than brackets, which interrupt the
+      // word to say the same thing. Omarchy has neither convention: its own
+      // panels carry bare-letter shortcuts that appear nowhere on screen, which
+      // is why nobody knows the Tailscale panel copies an IP on `c`. Showing
+      // the key at all is the departure; how it is shown is just taste.
+      //
+      // Markup, because underlining part of a string is not something a font
+      // property can do. Button's label sets no `textFormat`, so it is AutoText
+      // and renders this.
+      text: "<u>F</u>loat"
       tooltipText: "Open in a floating window that stays on screen"
       // Muted, at the same weight as `[Super+Drag to move]` — the two are the
       // same kind of thing in the same corner: an aside about the window, not
