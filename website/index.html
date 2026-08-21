@@ -358,12 +358,10 @@
      genuinely a control. */
   .panel-cell{padding:7px 0; font-size:12.5px; color:var(--muted); min-width:0}
 
-  /* Hover moves the cursor rather than lighting a second row, which is what the
-     real panel does with the mouse. `:has` is what lets the resting row give up
-     its highlight to whichever row the pointer is on; without it both light,
-     which is wrong but not broken. */
-  .panel-row:hover{background:color-mix(in oklab, var(--ink) 7%, transparent)}
-  .panel-card:has(.panel-row:hover) .panel-row.is-cursor:not(:hover){background:none}
+  /* The cursor is a class, not `:hover`, and the script below moves it. A pure
+     hover rule cannot hold a highlight while the pointer crosses the gaps and
+     the workspace headings between rows, so the cursor snapped back to the
+     resting row every time it passed over one. */
   .panel-cell.is-glyph{display:flex; align-items:center; justify-content:center;
               padding-left:0; padding-right:0}
   /* The glyphs are drawn, not typed: the panel shows Nerd Font and braille
@@ -712,8 +710,8 @@
 
     <!--
       The agent panel, replicated. A picture and not a control: nothing here is
-      clickable, because nothing here does anything — the row under the pointer
-      lights up the way it does in the real panel, and that is the whole of the
+      clickable, because nothing here does anything — the cursor follows the
+      pointer the way it does in the real panel, and that is the whole of the
       interaction. The one thing that moves is the spinner, which moves there
       too.
     -->
@@ -1543,6 +1541,35 @@
       if (!root.getAttribute('data-theme')) label();
     });
   })();
+  // ---- the agent panel ---------------------------------------------------
+  // The cursor follows the pointer, as it does in the real panel: hovering a
+  // row makes it the selected one, and it stays selected while the pointer is
+  // anywhere in the panel — over a gap, over a workspace heading — because a
+  // highlight that snaps back to the top whenever you cross a divider is a
+  // highlight you cannot aim.
+  //
+  // The resting row comes back when the pointer leaves, so the figure is the
+  // same picture whenever nobody is touching it.
+  (function(){
+    var card = document.querySelector('.panel-card');
+    if (!card) return;
+
+    var resting = card.querySelector('.panel-row.is-cursor'),
+        current = resting;
+
+    function put(row){
+      if (!row || row === current) return;
+      if (current) current.classList.remove('is-cursor');
+      row.classList.add('is-cursor');
+      current = row;
+    }
+
+    card.addEventListener('pointermove', function(event){
+      put(event.target.closest('.panel-row'));
+    });
+    card.addEventListener('pointerleave', function(){ put(resting); });
+  })();
+
 </script>
 </body>
 </html>
