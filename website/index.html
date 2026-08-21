@@ -437,12 +437,14 @@
                 cursor:pointer; transition:opacity 130ms ease}
   .snippet-copy:hover{opacity:.88}
   .snippet-copy:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
-  .snippet-copy svg{width:13px; height:13px; display:block; flex:none}
-  /* A check at rest would say the copying had already happened. The clipboard
-     becomes the check, the way the CTA's Omarchy mark does. */
-  .snippet-copy .icon-check{display:none}
-  .snippet-copy.is-copied .icon-copy{display:none}
-  .snippet-copy.is-copied .icon-check{display:block}
+  /* The hero's mark, not a clipboard of my own: at this size a drawn clipboard
+     is two rounded rectangles overlapping, and the back sheet's corner reads as
+     a notch in the button. The two buttons say the same word and hand over the
+     same command, so they carry the same mark and swap it for the same check. */
+  .snippet-copy .mark{width:15px; height:15px; display:block; flex:none}
+  .snippet-copy .mark-check{display:none}
+  .snippet-copy.is-copied .mark-omarchy{display:none}
+  .snippet-copy.is-copied .mark-check{display:block}
   /* The two words share a cell, so the button keeps its width when it swaps and
      the corner does not twitch. Same trick as the CTA's Install/Copied. */
   .snippet-copy .label{display:grid}
@@ -855,17 +857,16 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
       <button class="snippet-copy" type="button" id="copy-install"
               title="Copy the install command"
               data-copy="yay -S amon-bin &amp;&amp; amon setup &amp;&amp; source ~/.bashrc">
-        <svg class="icon icon-copy" viewBox="0 0 24 24" aria-hidden="true">
-          <rect x="8.6" y="3.4" width="11.8" height="15" rx="2.6"
-                fill="none" stroke="currentColor" stroke-width="1.9"/>
-          <path d="M15.4 20.6H6.2a2.6 2.6 0 0 1-2.6-2.6V7"
-                fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
-        </svg>
-        <svg class="icon icon-check" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-copied"/></svg>
+        <span class="mark mark-omarchy" aria-hidden="true"></span>
+        <svg class="mark mark-check" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-copied"/></svg>
         <span class="label"><span class="label-copy">Install</span><span class="label-copied">Copied</span></span>
       </button>
       <span class="sr" role="status" id="copy-install-status"></span>
     </figure>
+
+    <p>amon is made to run seamlessly on your Omarchy setup. There is nothing to
+       configure: setup finds the agents you already have, puts their state in your
+       bar, adds the panel and takes the keys it needs.</p>
   </section>
 </main>
 
