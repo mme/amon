@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "sh.amon.switcher",
+  "id": "sh.amon.panel",
   "name": "Agents (amon)",
   "version": "0.2.0",
   "author": "amon",
@@ -10,6 +10,6 @@
   ],
   "keepLoaded": true,
   "entryPoints": {
-    "overlay": "Switcher.qml"
+    "overlay": "AgentPanel.qml"
   }
 }

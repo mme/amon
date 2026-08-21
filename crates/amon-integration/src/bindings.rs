@@ -143,7 +143,7 @@ if binary then
   end
 end
 
--- Super+A opens the agent pane. Bound whether or not amon's binary is there:
+-- Super+A opens the agent panel. Bound whether or not amon's binary is there:
 -- the pane is a shell plugin, and the shell is what answers this — `amon remove`
 -- takes the plugin and this file together, so there is no state where the key
 -- outlives the thing it opens.
@@ -153,7 +153,7 @@ end
 -- launches the default agent, CTRL+A is audio — so the unmodified one is the
 -- slot left for the thing you reach for most.
 hl.unbind("SUPER + A")
-o.bind("SUPER + A", "Agents", "omarchy-shell shell toggle sh.amon.switcher")
+o.bind("SUPER + A", "Agents", "omarchy-shell shell toggle sh.amon.panel")
 
 -- Omarchy fades every layer surface in and out — `looknfeel.lua` gives both
 -- `layersIn` and `layersOut` a fade — and then exempts its own panes by
@@ -163,16 +163,16 @@ o.bind("SUPER + A", "Agents", "omarchy-shell shell toggle sh.amon.switcher")
 -- it is copied in the same shape, both fields and all: `animation = "none"`
 -- on its own was tried first and left the fade exactly as it was.
 --
--- The namespace has to match `WlrLayershell.namespace` in Switcher.qml, and is
+-- The namespace has to match `WlrLayershell.namespace` in AgentPanel.qml, and is
 -- anchored so it matches that surface and nothing else. A test holds the two
 -- together, because a rule naming a surface that does not exist fails silently
 -- by simply not applying.
-hl.layer_rule({{ match = {{ namespace = "^amon-switcher$" }}, no_anim = true, animation = "none" }})
+hl.layer_rule({{ match = {{ namespace = "^amon-panel$" }}, no_anim = true, animation = "none" }})
 
 -- The pane, popped out into a window of its own. Every Quickshell window shares
 -- the class `org.quickshell`, so the title is the only thing that can single
 -- this one out — it is matched exactly, and a test holds it to the title
--- Switcher.qml sets.
+-- AgentPanel.qml sets.
 --
 -- Floating and pinned from the moment it maps, which is what makes the
 -- picture-in-picture icon on it honest: it sits above the tiling and follows

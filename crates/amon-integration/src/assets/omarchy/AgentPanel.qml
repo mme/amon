@@ -162,7 +162,7 @@ Item {
   function dismiss() {
     root.opened = false
     if (root.shell && typeof root.shell.hide === "function")
-      root.shell.hide((root.manifest && root.manifest.id) || "sh.amon.switcher")
+      root.shell.hide((root.manifest && root.manifest.id) || "sh.amon.panel")
   }
 
   // Going to the agent a row names. The daemon hands out the compositor's own
@@ -209,7 +209,7 @@ Item {
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
 
-    WlrLayershell.namespace: "amon-switcher"
+    WlrLayershell.namespace: "amon-panel"
     WlrLayershell.layer: WlrLayer.Overlay
     // Exclusive, so the pane answers the keyboard while it is up — Escape has
     // to work without clicking first.

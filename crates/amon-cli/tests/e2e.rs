@@ -1921,7 +1921,7 @@ fn sound_is_on_without_a_config_file() {
 }
 
 #[test]
-fn setup_installs_the_switcher_pane_beside_the_widget() {
+fn setup_installs_the_panel_pane_beside_the_widget() {
     // Two plugins now, and they differ: the widget takes the built-in's bar
     // slot, the pane displaces nothing.
     let sandbox = Sandbox::new();
@@ -1934,12 +1934,12 @@ fn setup_installs_the_switcher_pane_beside_the_widget() {
     let output = sandbox.run(&["setup", "--all"]);
 
     assert!(output.status.success(), "{output:?}");
-    let plugin = sandbox.config_path("omarchy/plugins/sh.amon.switcher");
+    let plugin = sandbox.config_path("omarchy/plugins/sh.amon.panel");
     let manifest = std::fs::read_to_string(plugin.join("manifest.json")).expect("a manifest");
     let manifest: serde_json::Value = serde_json::from_str(&manifest).expect("valid json");
     assert_eq!(manifest["kinds"], serde_json::json!(["overlay"]));
     assert!(
-        plugin.join("Switcher.qml").is_file(),
+        plugin.join("AgentPanel.qml").is_file(),
         "the entry point is installed"
     );
     assert!(
@@ -1949,21 +1949,21 @@ fn setup_installs_the_switcher_pane_beside_the_widget() {
 
     let calls = std::fs::read_to_string(&record).expect("omarchy invoked");
     assert!(
-        calls.contains("plugin enable sh.amon.switcher"),
+        calls.contains("plugin enable sh.amon.panel"),
         "and it is enabled, not just written: {calls}"
     );
     assert!(
-        String::from_utf8_lossy(&output.stdout).contains("✓ Super+A agent pane"),
+        String::from_utf8_lossy(&output.stdout).contains("✓ Super+A agent panel"),
         "{output:?}"
     );
 }
 
 #[test]
-fn removing_everything_takes_the_switcher_pane() {
+fn removing_everything_takes_the_panel_pane() {
     let sandbox = Sandbox::new();
     sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
     sandbox.run(&["setup", "--all"]);
-    let plugin = sandbox.config_path("omarchy/plugins/sh.amon.switcher");
+    let plugin = sandbox.config_path("omarchy/plugins/sh.amon.panel");
     assert!(plugin.exists());
 
     let output = sandbox.run(&["remove", "--all"]);
@@ -1985,7 +1985,7 @@ fn the_super_a_binding_opens_the_pane() {
 
     assert!(lua.contains("SUPER + A"), "{lua}");
     assert!(
-        lua.contains("toggle sh.amon.switcher"),
+        lua.contains("toggle sh.amon.panel"),
         "bound to the plugin's own toggle: {lua}"
     );
     let unbind = lua

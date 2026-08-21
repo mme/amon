@@ -23,16 +23,16 @@ pub enum DesktopTarget {
     /// The Omarchy shell's bar (Quickshell), Quattro and later.
     Omarchy,
     /// The pane Super+A opens, listing every agent amon can see.
-    Switcher,
+    Panel,
 }
 
 impl DesktopTarget {
-    pub const ALL: [Self; 2] = [Self::Omarchy, Self::Switcher];
+    pub const ALL: [Self; 2] = [Self::Omarchy, Self::Panel];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Omarchy => "omarchy",
-            Self::Switcher => "switcher",
+            Self::Panel => "panel",
         }
     }
 
@@ -41,14 +41,14 @@ impl DesktopTarget {
     fn plugin_id(self) -> &'static str {
         match self {
             Self::Omarchy => "sh.amon.workspaces",
-            Self::Switcher => "sh.amon.switcher",
+            Self::Panel => "sh.amon.panel",
         }
     }
 
     fn manifest(self) -> &'static str {
         match self {
             Self::Omarchy => WORKSPACES_MANIFEST,
-            Self::Switcher => SWITCHER_MANIFEST,
+            Self::Panel => PANEL_MANIFEST,
         }
     }
 
@@ -56,7 +56,7 @@ impl DesktopTarget {
     fn assets(self) -> &'static [(&'static str, &'static str)] {
         match self {
             Self::Omarchy => &WORKSPACES_ASSETS,
-            Self::Switcher => &SWITCHER_ASSETS,
+            Self::Panel => &PANEL_ASSETS,
         }
     }
 
@@ -64,7 +64,7 @@ impl DesktopTarget {
     ///
     /// Only the workspaces widget does: its manifest declares `clonedFrom`, so
     /// enabling swaps it into the built-in's bar slot and disabling swaps the
-    /// built-in back (ADR-0008). The switcher is an overlay that stands beside
+    /// built-in back (ADR-0008). The panel is an overlay that stands beside
     /// everything else and displaces nothing, so there is no built-in to
     /// restore and nothing to warn about when it goes.
     fn clones_builtin(self) -> bool {
@@ -75,8 +75,8 @@ impl DesktopTarget {
 const WORKSPACES_MANIFEST: &str = include_str!("assets/omarchy/manifest.json");
 const WORKSPACES_QML: &str = include_str!("assets/omarchy/Workspaces.qml");
 const AGENT_STATES_QML: &str = include_str!("assets/omarchy/AgentStates.qml");
-const SWITCHER_MANIFEST: &str = include_str!("assets/omarchy/switcher-manifest.json");
-const SWITCHER_QML: &str = include_str!("assets/omarchy/Switcher.qml");
+const PANEL_MANIFEST: &str = include_str!("assets/omarchy/panel-manifest.json");
+const PANEL_QML: &str = include_str!("assets/omarchy/AgentPanel.qml");
 const AMON_MARK_QML: &str = include_str!("assets/omarchy/AmonMark.qml");
 const AGENTS_VIEW_QML: &str = include_str!("assets/omarchy/AgentsView.qml");
 
@@ -91,8 +91,8 @@ const WORKSPACES_ASSETS: [(&str, &str); 2] = [
     ("AgentStates.qml", AGENT_STATES_QML),
 ];
 
-const SWITCHER_ASSETS: [(&str, &str); 4] = [
-    ("Switcher.qml", SWITCHER_QML),
+const PANEL_ASSETS: [(&str, &str); 4] = [
+    ("AgentPanel.qml", PANEL_QML),
     ("AgentsView.qml", AGENTS_VIEW_QML),
     ("AmonMark.qml", AMON_MARK_QML),
     // The bar widget's model, shared verbatim. Two copies of the socket
@@ -132,6 +132,34 @@ pub fn plugin_dir(target: DesktopTarget) -> Option<PathBuf> {
             .join("plugins")
             .join(target.plugin_id()),
     )
+}
+
+fn plugins_root() -> Option<PathBuf> {
+    Some(omarchy_config_dir()?.join("plugins"))
+}
+
+/// Whether a plugin directory is one amon wrote, judged without knowing what
+/// amon used to put in it.
+///
+/// [`ours`] compares the installed manifest against the shipped one and checks
+/// every file amon writes — neither of which is available for a name amon no
+/// longer ships. The manifest's author is what is left, and it is enough: a
+/// directory someone else created under a retired amon id is theirs, and amon
+/// removing it on their behalf would be the worse mistake.
+fn ours_by_marker(directory: &Path) -> bool {
+    let Ok(metadata) = std::fs::symlink_metadata(directory) else {
+        return false;
+    };
+    if metadata.file_type().is_symlink() {
+        return false;
+    }
+    let Ok(manifest) = std::fs::read_to_string(directory.join(MANIFEST_NAME)) else {
+        return false;
+    };
+    serde_json::from_str::<serde_json::Value>(&manifest)
+        .ok()
+        .and_then(|value| value.get("author")?.as_str().map(str::to_owned))
+        .is_some_and(|author| author == "amon")
 }
 
 fn missing_home() -> io::Error {
@@ -220,6 +248,63 @@ fn not_ours(directory: &Path) -> io::Error {
 /// is touched. In particular `shell.json` is left alone; it becomes the user's
 /// canonical file the moment they edit it, and Omarchy does not deep-merge, so
 /// amon writing into it could silently discard bar layout the user chose.
+/// Plugin ids amon used to install under and no longer does.
+///
+/// A rename is not a rename to the desktop: the old directory stays where it
+/// was, and the shell goes on loading it, because a plugin is whatever is in
+/// `~/.config/omarchy/plugins`. Leaving one behind means two copies of the same
+/// pane loaded at once, one of them bound to nothing.
+///
+/// Retiring rather than deleting the name outright, because these have to keep
+/// being recognised for exactly as long as someone might still have one.
+const RETIRED_PLUGIN_IDS: &[&str] = &[
+    // Renamed to sh.amon.panel: it lists agents rather than switching between
+    // them, and "switcher" described a thing it had stopped being.
+    "sh.amon.switcher",
+];
+
+/// Removes any plugin amon installed under a name it has since stopped using.
+///
+/// Run from both install and uninstall: setting up must not leave the previous
+/// name loaded beside the new one, and removing everything must not leave it
+/// behind as the one thing `amon remove` does not know about.
+///
+/// Only touches directories amon recognises as its own, on the same test used
+/// everywhere else — a directory someone else put there under that name is
+/// theirs, whatever it is called.
+pub fn retire_old_plugins() -> Vec<String> {
+    let mut notes = Vec::new();
+    for id in RETIRED_PLUGIN_IDS {
+        let Some(directory) = plugins_root().map(|root| root.join(id)) else {
+            continue;
+        };
+        if std::fs::symlink_metadata(&directory).is_err() {
+            continue;
+        }
+        if !ours_by_marker(&directory) {
+            continue;
+        }
+        notes.extend(disable_by_id(id));
+        match std::fs::remove_dir_all(&directory) {
+            Ok(()) => notes.push(format!("removed {id}, which amon no longer installs")),
+            Err(error) => notes.push(format!("could not remove {id}: {error}")),
+        }
+    }
+    notes
+}
+
+/// `omarchy plugin disable <id>`, for an id with no `DesktopTarget` behind it.
+fn disable_by_id(id: &str) -> Vec<String> {
+    match std::process::Command::new("omarchy")
+        .args(["plugin", "disable", id])
+        .output()
+    {
+        Ok(output) if output.status.success() => Vec::new(),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+        Ok(_) | Err(_) => vec![format!("  omarchy plugin disable {id}")],
+    }
+}
+
 pub fn install(target: DesktopTarget) -> io::Result<Vec<String>> {
     let directory = plugin_dir(target).ok_or_else(missing_home)?;
     if !ours(&directory, target)? {
@@ -234,14 +319,19 @@ pub fn install(target: DesktopTarget) -> io::Result<Vec<String>> {
     }
     std::fs::write(directory.join(MANIFEST_NAME), target.manifest())?;
 
+    // Before announcing the new one, take away any older name for it, or the
+    // shell loads both.
+    let mut retired = retire_old_plugins();
+
     let id = target.plugin_id();
     if !target.clones_builtin() {
-        return Ok(vec![
+        retired.extend([
             format!("installed {} to {}", id, directory.display()),
             String::new(),
             "Enable it:".to_string(),
             format!("  omarchy plugin enable {id}"),
         ]);
+        return Ok(retired);
     }
     Ok(vec![
         format!("installed {} to {}", id, directory.display()),
@@ -260,8 +350,13 @@ pub fn install(target: DesktopTarget) -> io::Result<Vec<String>> {
 /// (`omarchy plugin remove` sequences itself the same way.)
 pub fn uninstall(target: DesktopTarget) -> io::Result<Vec<String>> {
     let directory = plugin_dir(target).ok_or_else(missing_home)?;
+    // Even when the current name is not installed: a machine that never got
+    // the new one may still be holding the old.
+    let retired = retire_old_plugins();
     if std::fs::symlink_metadata(&directory).is_err() {
-        return Ok(vec![format!("{} is not installed", target.plugin_id())]);
+        let mut notes = retired;
+        notes.push(format!("{} is not installed", target.plugin_id()));
+        return Ok(notes);
     }
     if !ours(&directory, target)? {
         return Err(not_ours(&directory));
@@ -294,7 +389,8 @@ pub fn uninstall(target: DesktopTarget) -> io::Result<Vec<String>> {
     // exactly the outcome wanted — whatever that is, it is not amon's.
     let _ = std::fs::remove_dir(&directory);
 
-    let mut notes = vec![format!("removed {} from {}", id, directory.display())];
+    let mut notes = retired;
+    notes.push(format!("removed {} from {}", id, directory.display()));
     notes.extend(restore_note);
     Ok(notes)
 }
@@ -309,7 +405,7 @@ pub fn uninstall(target: DesktopTarget) -> io::Result<Vec<String>> {
 fn disable_plugin(target: DesktopTarget, id: &str, swaps_back: bool) -> Vec<String> {
     // A plugin that never displaced anything has nothing to restore, so
     // disabling it is the whole story and there is no absence to warn about.
-    // Without this the switcher would inherit the widget's "the built-in was
+    // Without this the panel would inherit the widget's "the built-in was
     // not restored" note, which describes a bar it was never part of.
     if !target.clones_builtin() {
         return match std::process::Command::new("omarchy")
@@ -594,27 +690,27 @@ mod tests {
     }
 
     #[test]
-    fn the_switcher_manifest_says_what_omarchy_requires() {
+    fn the_panel_manifest_says_what_omarchy_requires() {
         // An overlay rather than a bar widget, and it displaces nothing: no
         // clonedFrom, so enabling it adds a pane instead of taking a slot.
-        let manifest: serde_json::Value = serde_json::from_str(DesktopTarget::Switcher.manifest())
-            .expect("manifest is valid json");
+        let manifest: serde_json::Value =
+            serde_json::from_str(DesktopTarget::Panel.manifest()).expect("manifest is valid json");
 
         assert_eq!(manifest["schemaVersion"], 1);
-        assert_eq!(manifest["id"], DesktopTarget::Switcher.plugin_id());
+        assert_eq!(manifest["id"], DesktopTarget::Panel.plugin_id());
         assert_eq!(manifest["kinds"], serde_json::json!(["overlay"]));
         assert!(
             manifest["keepLoaded"] == true,
             "a pane that is toggled must already be loaded when the key is hit"
         );
         assert!(manifest["omarchy"]["clonedFrom"].is_null());
-        assert!(!DesktopTarget::Switcher.clones_builtin());
+        assert!(!DesktopTarget::Panel.clones_builtin());
 
         let entry = manifest["entryPoints"]["overlay"]
             .as_str()
             .expect("an overlay names its entry point");
         assert!(
-            DesktopTarget::Switcher
+            DesktopTarget::Panel
                 .assets()
                 .iter()
                 .any(|(name, _)| *name == entry),

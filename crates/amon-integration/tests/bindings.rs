@@ -178,20 +178,20 @@ fn a_symlinked_bindings_file_is_not_written_through() {
 }
 
 /// The pane's namespace is written in two files that cannot see each other:
-/// `WlrLayershell.namespace` in Switcher.qml names the surface, and the layer
+/// `WlrLayershell.namespace` in AgentPanel.qml names the surface, and the layer
 /// rule in amon.lua exempts it from Omarchy's global layer fade. A rule naming
 /// a surface that does not exist is not an error — Hyprland simply never
 /// applies it, and the only symptom is a pane that fades when nothing says it
 /// should. So the two are checked against each other here rather than by eye.
 #[test]
 fn the_layer_rule_names_the_surface_the_qml_creates() {
-    const QML: &str = include_str!("../src/assets/omarchy/Switcher.qml");
+    const QML: &str = include_str!("../src/assets/omarchy/AgentPanel.qml");
 
     let namespace = QML
         .lines()
         .find_map(|line| line.trim().strip_prefix("WlrLayershell.namespace:"))
         .map(|value| value.trim().trim_matches('"').to_string())
-        .expect("Switcher.qml sets a layershell namespace");
+        .expect("AgentPanel.qml sets a layershell namespace");
 
     let home = Home::new();
     home.write_theirs(THEIRS);
@@ -215,7 +215,7 @@ fn the_layer_rule_names_the_surface_the_qml_creates() {
 }
 
 /// The popped-out window's title is written in two files that cannot see each
-/// other: Switcher.qml sets it on the FloatingWindow, and the window rule in
+/// other: AgentPanel.qml sets it on the FloatingWindow, and the window rule in
 /// amon.lua matches on it. Title is the *only* discriminator available —
 /// Hyprland reports every Quickshell window under the class `org.quickshell` —
 /// so if the two drift, the rule matches nothing. That is not an error either:
@@ -223,7 +223,7 @@ fn the_layer_rule_names_the_surface_the_qml_creates() {
 /// that promised otherwise becomes the only thing that says so.
 #[test]
 fn the_window_rule_matches_the_title_the_qml_sets() {
-    const QML: &str = include_str!("../src/assets/omarchy/Switcher.qml");
+    const QML: &str = include_str!("../src/assets/omarchy/AgentPanel.qml");
 
     let title = QML
         .lines()
@@ -232,7 +232,7 @@ fn the_window_rule_matches_the_title_the_qml_sets() {
                 .strip_prefix("readonly property string windowTitle:")
         })
         .map(|value| value.trim().trim_matches('"').to_string())
-        .expect("Switcher.qml titles its window");
+        .expect("AgentPanel.qml titles its window");
 
     let home = Home::new();
     home.write_theirs(THEIRS);

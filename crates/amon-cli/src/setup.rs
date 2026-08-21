@@ -137,7 +137,7 @@ pub fn interactive() -> Result<(), Box<dyn std::error::Error>> {
     // `amon remove`'s job — the screen has no box left to untick.
     if desktop::cli_present() {
         actions.push(Action::SetupWidget);
-        actions.push(Action::SetupSwitcher);
+        actions.push(Action::SetupPanel);
         actions.push(Action::SetupBindings);
     }
     apply(&actions)
@@ -157,7 +157,7 @@ pub fn all(no_alias: bool) -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     if desktop::cli_present() {
         actions.push(Action::SetupWidget);
-        actions.push(Action::SetupSwitcher);
+        actions.push(Action::SetupPanel);
         actions.push(Action::SetupBindings);
     }
     if actions.is_empty() {
@@ -184,8 +184,8 @@ pub fn remove_everything(assume_yes: bool) -> Result<(), Box<dyn std::error::Err
     if widget_installed {
         actions.push(Action::RemoveWidget);
     }
-    if desktop::status(DesktopTarget::Switcher).state != InstallState::NotInstalled {
-        actions.push(Action::RemoveSwitcher);
+    if desktop::status(DesktopTarget::Panel).state != InstallState::NotInstalled {
+        actions.push(Action::RemovePanel);
     }
     if bindings::installed() {
         actions.push(Action::RemoveBindings);
@@ -228,7 +228,7 @@ pub fn remove_everything(assume_yes: bool) -> Result<(), Box<dyn std::error::Err
                     println!("  {label} — {}", owned_by(*target))
                 }
                 Action::RemoveWidget => println!("  workspace switcher widget"),
-                Action::RemoveSwitcher => println!("  the Super+A agent pane"),
+                Action::RemovePanel => println!("  the Super+A agent panel"),
                 Action::RemoveBindings => println!("  Super+0-9 agent bindings"),
                 _ => {}
             }
@@ -281,8 +281,8 @@ enum Action {
     },
     SetupWidget,
     RemoveWidget,
-    SetupSwitcher,
-    RemoveSwitcher,
+    SetupPanel,
+    RemovePanel,
     SetupBindings,
     RemoveBindings,
     /// Drops the whole bashrc block. Only `amon remove` with no target queues
@@ -464,24 +464,24 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                     println!("✗ workspace switcher widget — {error}");
                 }
             },
-            Action::SetupSwitcher => {
+            Action::SetupPanel => {
                 // No `clonedFrom`, so it displaces nothing and there is no bar
                 // to restart for: enabling is the whole of it.
-                let result = desktop::install(DesktopTarget::Switcher)
-                    .and_then(|_| desktop::enable(DesktopTarget::Switcher));
+                let result = desktop::install(DesktopTarget::Panel)
+                    .and_then(|_| desktop::enable(DesktopTarget::Panel));
                 match result {
-                    Ok(_) => println!("✓ Super+A agent pane — installed and enabled"),
+                    Ok(_) => println!("✓ Super+A agent panel — installed and enabled"),
                     Err(error) => {
                         failed = true;
-                        println!("✗ Super+A agent pane — {error}");
+                        println!("✗ Super+A agent panel — {error}");
                     }
                 }
             }
-            Action::RemoveSwitcher => match desktop::uninstall(DesktopTarget::Switcher) {
-                Ok(_) => println!("✓ Super+A agent pane — removed"),
+            Action::RemovePanel => match desktop::uninstall(DesktopTarget::Panel) {
+                Ok(_) => println!("✓ Super+A agent panel — removed"),
                 Err(error) => {
                     failed = true;
-                    println!("✗ Super+A agent pane — {error}");
+                    println!("✗ Super+A agent panel — {error}");
                 }
             },
             Action::SetupBindings => match bindings::install() {

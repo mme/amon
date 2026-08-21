@@ -20,7 +20,7 @@ Item {
   // entry disappears when its wrapper disconnects (ADR-0002).
   property var agents: ({})
 
-  // How many agents are in each state, across every workspace. The switcher's
+  // How many agents are in each state, across every workspace. The panel's
   // header reads this; the bar does not.
   //
   // Assigned rather than bound, because `agents` is mutated in place — a

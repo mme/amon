@@ -553,7 +553,7 @@ fn the_header_takes_its_order_from_the_ranking() {
 /// property.
 #[test]
 fn the_window_and_the_modal_are_built_from_the_same_figures() {
-    const SWITCHER: &str = include_str!("../src/assets/omarchy/Switcher.qml");
+    const PANEL: &str = include_str!("../src/assets/omarchy/AgentPanel.qml");
 
     for expected in [
         // The window takes them raw...
@@ -566,7 +566,7 @@ fn the_window_and_the_modal_are_built_from_the_same_figures() {
         "cardHeight: Math.min(root.paneHeight",
     ] {
         assert!(
-            SWITCHER.contains(expected),
+            PANEL.contains(expected),
             "the pane is sized by `{expected}`, so popping out moves it rather \
              than resizing it"
         );
@@ -583,9 +583,9 @@ fn the_window_and_the_modal_are_built_from_the_same_figures() {
 /// compositor rule instead, where it would be wrong the moment the bar changed.
 #[test]
 fn the_modal_centres_where_a_window_centres() {
-    const SWITCHER: &str = include_str!("../src/assets/omarchy/Switcher.qml");
+    const PANEL: &str = include_str!("../src/assets/omarchy/AgentPanel.qml");
     assert!(
-        SWITCHER.contains("exclusionMode: ExclusionMode.Normal"),
+        PANEL.contains("exclusionMode: ExclusionMode.Normal"),
         "the modal is inset by the bar, like a window is"
     );
 }
@@ -602,13 +602,13 @@ fn the_modal_centres_where_a_window_centres() {
 /// amount of sharing figures can fix.
 #[test]
 fn the_window_takes_the_pane_size_every_time_it_opens() {
-    const SWITCHER: &str = include_str!("../src/assets/omarchy/Switcher.qml");
+    const PANEL: &str = include_str!("../src/assets/omarchy/AgentPanel.qml");
     for expected in [
         "popped.width = root.paneWidth",
         "popped.height = root.paneHeight",
     ] {
         assert!(
-            SWITCHER.contains(expected),
+            PANEL.contains(expected),
             "the window is re-sized on show: `{expected}`"
         );
     }
