@@ -442,7 +442,12 @@ FocusScope {
       anchors.right: ageText.left
       anchors.rightMargin: Style.space(10)
       anchors.verticalCenter: parent.verticalCenter
-      width: Style.space(62)
+      // Wide enough for the longest word this column can hold. "needs input"
+      // is eleven characters, and the menu font advances exactly 0.6em, so at
+      // body size it needs 80px — the column was 62 and had been quietly
+      // eliding it to "needs i…" since the list was written. Nothing showed it
+      // until an agent was actually blocked.
+      width: Style.space(86)
       text: view.labels[row.entry.state] || row.entry.state
       color: view.dim
       font.family: view.fontFamily
