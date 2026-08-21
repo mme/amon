@@ -290,6 +290,9 @@ Item {
       state: state,
       workspace: entry.workspace || "",
       cwd: entry.cwd || "",
+      // Absent outside a repository and on a detached HEAD, which the pane
+      // draws as an empty column rather than as a placeholder.
+      branch: entry.branch || "",
       stateSince: entry.state_since || 0,
       // Opaque, and handed back to the compositor rather than parsed (ADR-0011
       // and the note on AgentEntry::window). Absent off a supported compositor,

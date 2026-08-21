@@ -144,14 +144,17 @@ impl From<MethodError> for Error {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServerFrame {
     Response(Response),
-    Event(Event),
+    /// Boxed because an event carries a whole [`crate::AgentEntry`] and a
+    /// response carries almost nothing, so an unboxed variant would make every
+    /// response as large as the largest event.
+    Event(Box<Event>),
 }
 
 impl ServerFrame {
     pub fn parse(line: &str) -> Result<Self, serde_json::Error> {
         let value: serde_json::Value = serde_json::from_str(line)?;
         if value.get("event").is_some() {
-            serde_json::from_value(value).map(Self::Event)
+            serde_json::from_value(value).map(Box::new).map(Self::Event)
         } else {
             serde_json::from_value(value).map(Self::Response)
         }

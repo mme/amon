@@ -66,6 +66,14 @@ pub struct AgentEntry {
     /// Display name of the workspace holding [`AgentEntry::window`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
+    /// The git branch [`AgentEntry::cwd`] is on, when it is on one.
+    ///
+    /// Absent outside a repository, and absent on a detached HEAD — which has
+    /// a commit but no branch. Read from `.git/HEAD` rather than by running
+    /// git, so a directory git would understand and this does not reads as
+    /// absent too: a blank column rather than a wrong one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
     /// Whether the agent's terminal *view* has input focus. Absent until a
     /// focus signal arrives; a focused window can host many views, so this is
     /// finer-grained than the compositor's notion of focus.
@@ -150,6 +158,15 @@ pub struct AgentPatch {
         deserialize_with = "present_or_null"
     )]
     pub window: Option<Option<String>>,
+    /// Two levels deep, like [`AgentPatch::window`]: checking out a detached
+    /// HEAD has to be expressible as "no longer on a branch" rather than
+    /// leaving the old name standing.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_or_null"
+    )]
+    pub branch: Option<Option<String>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -214,6 +231,9 @@ impl AgentPatch {
         }
         if let Some(workspace) = &self.workspace {
             entry.workspace = workspace.clone();
+        }
+        if let Some(branch) = &self.branch {
+            entry.branch = branch.clone();
         }
         if let Some(focused) = self.focused {
             entry.focused = focused;

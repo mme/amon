@@ -13,6 +13,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use amon_protocol::{env as protocol_env, AgentEntry, AgentState};
 
+mod branch;
 mod daemon_link;
 mod focus;
 mod hook_socket;
@@ -111,10 +112,16 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
         agent_session_path: None,
         window: None,
         workspace: None,
+        // Read before the agent is registered, so a row never appears without
+        // its branch and then acquires one a second later.
+        branch: branch::read(&cwd),
         focused: None,
         seen: None,
     });
 
+    // Kept before `Setup` takes ownership of `cwd`; the watcher outlives this
+    // scope and needs its own copy.
+    let watched_directory = cwd.clone();
     let focus_shared = focus::Shared::default();
     let observer_thread = observer::spawn(
         observer::Setup {
@@ -127,6 +134,12 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
         link,
         inbox,
     );
+
+    // Outside the terminal check below, deliberately. A window only exists for
+    // an agent running in a terminal, so `hypr` is rightly guarded — but a
+    // branch is a fact about a directory. `amon claude > log` has a cwd and a
+    // branch like any other agent, and its row should say so.
+    branch::watch(watched_directory, signals.clone());
 
     let raw = tty::RawMode::enter()?;
     // Only a real terminal has focus to report, and only a real terminal may

@@ -421,6 +421,7 @@ fn order_in_rust() -> Vec<String> {
         agent_session_path: None,
         window: None,
         workspace: None,
+        branch: None,
         focused: None,
         seen,
     };
@@ -667,5 +668,39 @@ fn the_pane_answers_arrows_vi_and_emacs() {
     );
     for chord in ["Qt.Key_N", "Qt.Key_P", "Qt.ControlModifier"] {
         assert!(VIEW.contains(chord), "Emacs navigation still reads {chord}");
+    }
+}
+
+/// The pane's model copies whole agents out of the daemon's entries by hand, so
+/// a field added to the wire is not a field the pane can draw until it is
+/// copied here too.
+///
+/// Missing one fails in the quietest possible way: the column renders, aligned
+/// and empty, for every agent forever, and everything around it looks correct.
+#[test]
+fn the_model_copies_every_field_the_rows_draw() {
+    const VIEW: &str = include_str!("../src/assets/omarchy/AgentsView.qml");
+
+    // What `remember` copies out of the daemon's entry.
+    let copied: Vec<String> = AGENT_STATES
+        .lines()
+        .skip_while(|line| !line.contains("root.agents[entry.id] = {"))
+        .take_while(|line| !line.trim_start().starts_with("}"))
+        .filter_map(|line| line.split(':').next())
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty() && !name.starts_with("//"))
+        .collect();
+    assert!(copied.contains(&"branch".to_string()), "copied: {copied:?}");
+
+    // Every `row.entry.<field>` a row draws has to be one of them.
+    for (index, _) in VIEW.match_indices("row.entry.") {
+        let field: String = VIEW[index + "row.entry.".len()..]
+            .chars()
+            .take_while(|character| character.is_ascii_alphanumeric() || *character == '_')
+            .collect();
+        assert!(
+            copied.contains(&field),
+            "a row draws row.entry.{field}, which the model never copies: {copied:?}"
+        );
     }
 }

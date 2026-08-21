@@ -455,10 +455,31 @@ FocusScope {
       elide: Text.ElideRight
     }
 
+    // The branch, when the directory is on one. Blank otherwise: outside a
+    // repository, or on a detached HEAD.
+    //
+    // It earns a column because the path cannot answer it. In an ordinary
+    // checkout the path already names the project, but a linked worktree lives
+    // somewhere like ~/.cache/claude-worktrees/amon-website, which names
+    // neither the project nor the branch — and two agents in two worktrees of
+    // one project are otherwise the same row twice.
+    Text {
+      id: branchText
+      anchors.right: stateText.left
+      anchors.rightMargin: Style.space(10)
+      anchors.verticalCenter: parent.verticalCenter
+      width: Style.space(118)
+      text: row.entry.branch
+      color: view.dim
+      font.family: view.fontFamily
+      font.pixelSize: Style.font.body
+      elide: Text.ElideRight
+    }
+
     Text {
       anchors.left: agentName.right
       anchors.leftMargin: Style.space(8)
-      anchors.right: stateText.left
+      anchors.right: branchText.left
       anchors.rightMargin: Style.space(10)
       anchors.verticalCenter: parent.verticalCenter
       text: view.shortPath(row.entry.cwd)
