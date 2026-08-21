@@ -405,7 +405,7 @@ FocusScope {
         if (row.entry.state === "working") return view.agents.spinner
         return ""
       }
-      color: row.entry.state === "blocked" ? Color.urgent : view.foreground
+      color: view.foreground
       font.family: view.fontFamily
       font.pixelSize: Style.font.body
     }
@@ -444,7 +444,7 @@ FocusScope {
       anchors.verticalCenter: parent.verticalCenter
       width: Style.space(62)
       text: view.labels[row.entry.state] || row.entry.state
-      color: row.entry.state === "blocked" ? Color.urgent : view.dim
+      color: view.dim
       font.family: view.fontFamily
       font.pixelSize: Style.font.body
       elide: Text.ElideRight
