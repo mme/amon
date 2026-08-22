@@ -142,6 +142,59 @@ if binary then
     o.bind(key, "Switch to workspace " .. workspace, {command} .. " focus " .. workspace)
   end
 end
+
+-- Super+A opens the agent panel. Bound whether or not amon's binary is there:
+-- the pane is a shell plugin, and the shell is what answers this — `amon remove`
+-- takes the plugin and this file together, so there is no state where the key
+-- outlives the thing it opens.
+--
+-- The bare key, deliberately. Omarchy leaves A unbound while spending every
+-- modified form of it — SHIFT+A is ChatGPT, SHIFT+ALT+A is Grok, SHIFT+CTRL+A
+-- launches the default agent, CTRL+A is audio — so the unmodified one is the
+-- slot left for the thing you reach for most.
+hl.unbind("SUPER + A")
+o.bind("SUPER + A", "Agents", "omarchy-shell shell toggle sh.amon.panel")
+
+-- Omarchy fades every layer surface in and out — `looknfeel.lua` gives both
+-- `layersIn` and `layersOut` a fade — and then exempts its own panes by
+-- namespace in `apps/omarchy-shell.lua`. The clipboard, the emoji picker and
+-- the menu are all on that list, which is the whole reason they open instantly
+-- while an identically written pane does not. This is that same exemption, and
+-- it is copied in the same shape, both fields and all: `animation = "none"`
+-- on its own was tried first and left the fade exactly as it was.
+--
+-- The namespace has to match `WlrLayershell.namespace` in AgentPanel.qml, and is
+-- anchored so it matches that surface and nothing else. A test holds the two
+-- together, because a rule naming a surface that does not exist fails silently
+-- by simply not applying.
+hl.layer_rule({{ match = {{ namespace = "^amon-panel$" }}, no_anim = true, animation = "none" }})
+
+-- The pane, popped out into a window of its own. Every Quickshell window shares
+-- the class `org.quickshell`, so the title is the only thing that can single
+-- this one out — it is matched exactly, and a test holds it to the title
+-- AgentPanel.qml sets.
+--
+-- Floating and pinned from the moment it maps, which is what makes the
+-- picture-in-picture icon on it honest: it sits above the tiling and follows
+-- you across workspaces. Hyprland refuses to pin a window that is fullscreen,
+-- and refuses to pin one that is tiled, so `float` here is not decoration —
+-- without it the `pin` is declined and nothing says so.
+--
+-- Super+O unpins and tiles it. It does not put it away: the window stays open
+-- and the modal does not come back — measured, after claiming otherwise from
+-- reading the script.
+--
+-- `omarchy-hyprland-window-pop` branches on whether a window is already pinned,
+-- and this one is pinned from the moment it maps, so the first press always
+-- takes the un-pin branch. A second press takes the other, which floats and
+-- resizes to that script's own default of 1300x900 — twice what the pane asks
+-- for, and nothing on this side can say otherwise.
+hl.window_rule({{
+  match = {{ class = "org.quickshell", title = "^amon — agents$" }},
+  float = true,
+  pin = true,
+  center = true,
+}})
 "#,
         path = lua_string(binary),
         shim_dir = lua_string(shims),

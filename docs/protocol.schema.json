@@ -27,6 +27,13 @@
           },
           "type": "array"
         },
+        "branch": {
+          "description": "The git branch [`AgentEntry::cwd`] is on, when it is on one.\n\nAbsent outside a repository, and absent on a detached HEAD — which has\na commit but no branch. Read from `.git/HEAD` rather than by running\ngit, so a directory git would understand and this does not reads as\nabsent too: a blank column rather than a wrong one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "cwd": {
           "type": "string"
         },
@@ -123,6 +130,13 @@
           ]
         },
         "agent_session_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "branch": {
+          "description": "Two levels deep, like [`AgentPatch::window`]: checking out a detached\nHEAD has to be expressible as \"no longer on a branch\" rather than\nleaving the old name standing.",
           "type": [
             "string",
             "null"

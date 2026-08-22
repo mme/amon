@@ -421,6 +421,7 @@ fn order_in_rust() -> Vec<String> {
         agent_session_path: None,
         window: None,
         workspace: None,
+        branch: None,
         focused: None,
         seen,
     };
@@ -454,4 +455,252 @@ fn the_widget_ranks_states_the_way_rust_does() {
         order_in_rust(),
         "the widget's `order` array has drifted from AgentEntry::attention"
     );
+}
+
+/// The pane's header, which counts what the bar widget's model tallies. Shared
+/// by the Super+A modal and the popped-out window, so this is the one file that
+/// decides how either of them names a state.
+const AGENTS_VIEW: &str = include_str!("../src/assets/omarchy/AgentsView.qml");
+
+/// The counters `emptyCounts` starts every tally from.
+fn counters_in_the_widget() -> Vec<String> {
+    let line = AGENT_STATES
+        .lines()
+        .skip_while(|line| !line.contains("function emptyCounts()"))
+        .find(|line| line.trim_start().starts_with("return ({"))
+        .expect("emptyCounts returns an object literal");
+    keys_of(line.split(['{', '}']).nth(1).expect("an object literal"))
+}
+
+/// The states the header has a word for, out of its `labels` block.
+fn labels_in_the_header() -> Vec<String> {
+    let block: String = AGENTS_VIEW
+        .lines()
+        .skip_while(|line| !line.contains("readonly property var labels:"))
+        .skip(1)
+        .take_while(|line| !line.trim_start().starts_with("})"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(!block.is_empty(), "the header labels its states somewhere");
+    keys_of(&block)
+}
+
+/// The names on the left of the colons in a QML object literal's body.
+fn keys_of(body: &str) -> Vec<String> {
+    body.split(',')
+        .filter_map(|field| field.split(':').next())
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .collect()
+}
+
+/// Every state the widget ranks must also be a counter it starts at zero.
+///
+/// `recompute` tallies with `tally[agent.state] += 1`, so a state that is
+/// ranked but missing from `emptyCounts` increments `undefined` — which is
+/// NaN, and NaN travels to the header as a perfectly ordinary number. Nothing
+/// throws, nothing logs; the pane just says "NaN RUNNING". Only comparing the
+/// two lists catches it.
+#[test]
+fn the_states_and_the_counters_are_the_same_set() {
+    let mut counters = counters_in_the_widget();
+    let mut states = order_in_the_widget();
+    counters.sort();
+    states.sort();
+    assert_eq!(
+        states, counters,
+        "every ranked state is counted, and no more"
+    );
+}
+
+/// And every one of them has a word in the header.
+///
+/// The header walks the model's ranking to build its line, so a state with no
+/// label reaches the pane as "2 undefined". Same silent shape as the NaN
+/// above, from the other file.
+#[test]
+fn the_header_has_a_word_for_every_state() {
+    let mut labelled = labels_in_the_header();
+    let mut states = order_in_the_widget();
+    labelled.sort();
+    states.sort();
+    assert_eq!(
+        states, labelled,
+        "every ranked state is named in the header"
+    );
+}
+
+/// The header's figures run most-urgent-first, like everything else in amon.
+///
+/// It reads the order off the model rather than writing it out, which is the
+/// point — this pins that it still does, because hand-listing the states here
+/// would compile and read fine while quietly ordering the line by hand.
+#[test]
+fn the_header_takes_its_order_from_the_ranking() {
+    assert!(
+        AGENTS_VIEW.contains("for (const state of view.agents.order)"),
+        "the header walks the model's ranking to build its line"
+    );
+}
+
+/// The pane the modal draws and the pane the window draws are one pane, so both
+/// are built from one pair of figures.
+///
+/// They drifted once: the window kept a hardcoded height after the modal's
+/// changed, and popping out resized the pane in front of the user. Nothing
+/// failed, because no test in this workspace executes QML — the only thing that
+/// can catch it is reading the source and insisting both sides name the same
+/// property.
+#[test]
+fn the_window_and_the_modal_are_built_from_the_same_figures() {
+    const PANEL: &str = include_str!("../src/assets/omarchy/AgentPanel.qml");
+
+    for expected in [
+        // The window takes them raw...
+        "implicitWidth: root.paneWidth",
+        "implicitHeight: root.paneHeight",
+        // ...and the modal takes the same two, clamped to the screen. The clamp
+        // is the one thing they cannot share: `panel` does not exist while the
+        // modal is closed, and a window sized from it opens at its minimum.
+        "cardWidth: Math.min(root.paneWidth",
+        "cardHeight: Math.min(root.paneHeight",
+    ] {
+        assert!(
+            PANEL.contains(expected),
+            "the pane is sized by `{expected}`, so popping out moves it rather \
+             than resizing it"
+        );
+    }
+}
+
+/// The modal respects exclusive zones, which is what puts it where the window
+/// goes.
+///
+/// Hyprland centres windows within the usable area, always — `center`, `move`
+/// with percentages, every form was tried. So a modal spanning the whole screen
+/// centres half the bar's height above the window it pops out into, and the
+/// pane visibly jumps. Ignoring the bar here would put that half-height into a
+/// compositor rule instead, where it would be wrong the moment the bar changed.
+#[test]
+fn the_modal_centres_where_a_window_centres() {
+    const PANEL: &str = include_str!("../src/assets/omarchy/AgentPanel.qml");
+    assert!(
+        PANEL.contains("exclusionMode: ExclusionMode.Normal"),
+        "the modal is inset by the bar, like a window is"
+    );
+}
+
+/// The window is re-sized every time it opens, not just the first time.
+///
+/// It outlives being closed — that is what `keepLoaded` buys, and what lets the
+/// modal shut without taking the window down with it. So it carries whatever
+/// geometry it last had: tile it with Super+T, or drag an edge, and
+/// `implicitWidth` stops applying, because implicit size is an initial value
+/// rather than a standing instruction. Without an assignment on the way in,
+/// reopening hands back the tile's dimensions and popping out resizes the pane
+/// in front of the user — the same symptom as the drift above, from a cause no
+/// amount of sharing figures can fix.
+#[test]
+fn the_window_takes_the_pane_size_every_time_it_opens() {
+    const PANEL: &str = include_str!("../src/assets/omarchy/AgentPanel.qml");
+    for expected in [
+        "popped.width = root.paneWidth",
+        "popped.height = root.paneHeight",
+    ] {
+        assert!(
+            PANEL.contains(expected),
+            "the window is re-sized on show: `{expected}`"
+        );
+    }
+}
+
+/// The pane and `amon status` round ages the same way.
+///
+/// The rule now exists twice — once in Rust for the CLI, once in QML because
+/// the pane cannot call it — and two implementations of one rule drift. A row
+/// reading "1h" beside a `amon status` line reading "59m" for the same agent
+/// would be a small thing that quietly makes both untrustworthy.
+#[test]
+fn the_pane_ages_agents_the_way_the_cli_does() {
+    const CLI: &str = include_str!("../../amon-cli/src/main.rs");
+
+    // Seconds below a minute, minutes below an hour, hours after that.
+    for boundary in ["0..=59", "60..=3599"] {
+        assert!(
+            CLI.contains(boundary),
+            "the CLI's age rule still reads {boundary}"
+        );
+    }
+    for boundary in ["seconds < 60", "seconds < 3600"] {
+        assert!(
+            AGENT_STATES.contains(boundary),
+            "the pane's age rule still reads {boundary}"
+        );
+    }
+    for unit in ["\"s\"", "\"m\"", "\"h\""] {
+        assert!(AGENT_STATES.contains(unit), "the pane still names {unit}");
+    }
+}
+
+/// The pane navigates the way the rest of the desktop does, plus Emacs.
+///
+/// Arrows and vi's j/k come from Omarchy's own PanelKeyCatcher rather than from
+/// a hand-written copy, so the pane keeps answering whatever that component
+/// answers. It has no Emacs bindings, which is the one thing added on top.
+///
+/// The FocusScope is the load-bearing part and the least obvious. PanelKeyCatcher
+/// declares `focus: true`, which does nothing inside a plain Item: the host takes
+/// active focus on the view itself and the catcher never receives a key. That
+/// exact mistake shipped in this file once — arrows and j/k were dead while
+/// Ctrl-N still worked, because the Ctrl chords are handled on the view and
+/// everything else on the child.
+#[test]
+fn the_pane_answers_arrows_vi_and_emacs() {
+    const VIEW: &str = include_str!("../src/assets/omarchy/AgentsView.qml");
+
+    assert!(
+        VIEW.contains("FocusScope {"),
+        "the view is a FocusScope, or its key catcher never gets focus"
+    );
+    assert!(
+        VIEW.contains("PanelKeyCatcher {"),
+        "arrows and j/k come from Omarchy's own dispatcher"
+    );
+    for chord in ["Qt.Key_N", "Qt.Key_P", "Qt.ControlModifier"] {
+        assert!(VIEW.contains(chord), "Emacs navigation still reads {chord}");
+    }
+}
+
+/// The pane's model copies whole agents out of the daemon's entries by hand, so
+/// a field added to the wire is not a field the pane can draw until it is
+/// copied here too.
+///
+/// Missing one fails in the quietest possible way: the column renders, aligned
+/// and empty, for every agent forever, and everything around it looks correct.
+#[test]
+fn the_model_copies_every_field_the_rows_draw() {
+    const VIEW: &str = include_str!("../src/assets/omarchy/AgentsView.qml");
+
+    // What `remember` copies out of the daemon's entry.
+    let copied: Vec<String> = AGENT_STATES
+        .lines()
+        .skip_while(|line| !line.contains("root.agents[entry.id] = {"))
+        .take_while(|line| !line.trim_start().starts_with("}"))
+        .filter_map(|line| line.split(':').next())
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty() && !name.starts_with("//"))
+        .collect();
+    assert!(copied.contains(&"branch".to_string()), "copied: {copied:?}");
+
+    // Every `row.entry.<field>` a row draws has to be one of them.
+    for (index, _) in VIEW.match_indices("row.entry.") {
+        let field: String = VIEW[index + "row.entry.".len()..]
+            .chars()
+            .take_while(|character| character.is_ascii_alphanumeric() || *character == '_')
+            .collect();
+        assert!(
+            copied.contains(&field),
+            "a row draws row.entry.{field}, which the model never copies: {copied:?}"
+        );
+    }
 }

@@ -59,6 +59,9 @@ pub enum Signal {
         /// hook knows.
         session_start_source: Option<String>,
     },
+    /// The branch the agent's directory is on changed, or first became known.
+    /// `None` means it is on no branch: outside a repository, or detached.
+    Branch(Option<String>),
     AgentExited,
 }
 
@@ -175,6 +178,11 @@ impl Observer {
                 let mut patch = AgentPatch::new(&self.agent_id);
                 patch.window = Some(window);
                 patch.workspace = Some(workspace);
+                self.link.update(patch);
+            }
+            Signal::Branch(branch) => {
+                let mut patch = AgentPatch::new(&self.agent_id);
+                patch.branch = Some(branch);
                 self.link.update(patch);
             }
             Signal::Resize { cols, rows } => {

@@ -241,6 +241,13 @@ fn run_status(json: bool) -> Result<(), Box<dyn std::error::Error>> {
         .filter_map(|agent| agent.workspace.as_deref())
         .map(str::len)
         .max();
+    // Same rule for the branch: agents outside a repository are ordinary, and
+    // a column of dashes for them would be a column about nothing.
+    let branch_width = agents
+        .iter()
+        .filter_map(|agent| agent.branch.as_deref())
+        .map(str::len)
+        .max();
 
     for agent in agents {
         let workspace = match workspace_width {
@@ -251,8 +258,16 @@ fn run_status(json: bool) -> Result<(), Box<dyn std::error::Error>> {
             ),
             None => String::new(),
         };
+        let branch = match branch_width {
+            Some(width) => format!(
+                "{:<width$}  ",
+                agent.branch.as_deref().unwrap_or(""),
+                width = width
+            ),
+            None => String::new(),
+        };
         println!(
-            "{:<width$}  {:<8}  {:>5}  {workspace}{}",
+            "{:<width$}  {:<8}  {:>5}  {workspace}{branch}{}",
             agent.agent,
             agent.state.as_str(),
             age(agent.state_since),

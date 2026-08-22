@@ -176,3 +176,75 @@ fn a_symlinked_bindings_file_is_not_written_through() {
         "including the line to add: {notes:?}"
     );
 }
+
+/// The pane's namespace is written in two files that cannot see each other:
+/// `WlrLayershell.namespace` in AgentPanel.qml names the surface, and the layer
+/// rule in amon.lua exempts it from Omarchy's global layer fade. A rule naming
+/// a surface that does not exist is not an error — Hyprland simply never
+/// applies it, and the only symptom is a pane that fades when nothing says it
+/// should. So the two are checked against each other here rather than by eye.
+#[test]
+fn the_layer_rule_names_the_surface_the_qml_creates() {
+    const QML: &str = include_str!("../src/assets/omarchy/AgentPanel.qml");
+
+    let namespace = QML
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("WlrLayershell.namespace:"))
+        .map(|value| value.trim().trim_matches('"').to_string())
+        .expect("AgentPanel.qml sets a layershell namespace");
+
+    let home = Home::new();
+    home.write_theirs(THEIRS);
+    bindings::install().expect("install succeeds");
+    let ours = std::fs::read_to_string(home.ours()).expect("amon.lua written");
+
+    // Anchored, so it exempts this surface and no other that happens to start
+    // with the same letters.
+    assert!(
+        ours.contains(&format!("namespace = \"^{namespace}$\"")),
+        "the layer rule matches {namespace}: {ours}"
+    );
+    // Both fields, the way Omarchy writes its own exemptions in
+    // `apps/omarchy-shell.lua`. `animation = "none"` on its own does not
+    // stop the fade.
+    assert!(ours.contains("no_anim = true"), "no_anim is set: {ours}");
+    assert!(
+        ours.contains("animation = \"none\""),
+        "animation is off: {ours}"
+    );
+}
+
+/// The popped-out window's title is written in two files that cannot see each
+/// other: AgentPanel.qml sets it on the FloatingWindow, and the window rule in
+/// amon.lua matches on it. Title is the *only* discriminator available —
+/// Hyprland reports every Quickshell window under the class `org.quickshell` —
+/// so if the two drift, the rule matches nothing. That is not an error either:
+/// the window just opens tiled and unpinned, and the picture-in-picture icon
+/// that promised otherwise becomes the only thing that says so.
+#[test]
+fn the_window_rule_matches_the_title_the_qml_sets() {
+    const QML: &str = include_str!("../src/assets/omarchy/AgentPanel.qml");
+
+    let title = QML
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("readonly property string windowTitle:")
+        })
+        .map(|value| value.trim().trim_matches('"').to_string())
+        .expect("AgentPanel.qml titles its window");
+
+    let home = Home::new();
+    home.write_theirs(THEIRS);
+    bindings::install().expect("install succeeds");
+    let ours = std::fs::read_to_string(home.ours()).expect("amon.lua written");
+
+    assert!(
+        ours.contains(&format!("title = \"^{title}$\"")),
+        "the window rule matches {title}: {ours}"
+    );
+    // Pinning is what the icon promises. Hyprland declines to pin a tiled
+    // window, so the float is load-bearing rather than cosmetic.
+    assert!(ours.contains("pin = true"), "the window is pinned: {ours}");
+    assert!(ours.contains("float = true"), "and floated first: {ours}");
+}

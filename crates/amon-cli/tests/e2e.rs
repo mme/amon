@@ -1919,3 +1919,184 @@ fn sound_is_on_without_a_config_file() {
         "{frame}"
     );
 }
+
+#[test]
+fn setup_installs_the_panel_pane_beside_the_widget() {
+    // Two plugins now, and they differ: the widget takes the built-in's bar
+    // slot, the pane displaces nothing.
+    let sandbox = Sandbox::new();
+    let record = sandbox.runtime_path("omarchy-calls");
+    sandbox.fake_agent(
+        "omarchy",
+        &format!("#!/bin/sh\necho \"$*\" >> {}\n", path_str(&record)),
+    );
+
+    let output = sandbox.run(&["setup", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let plugin = sandbox.config_path("omarchy/plugins/sh.amon.panel");
+    let manifest = std::fs::read_to_string(plugin.join("manifest.json")).expect("a manifest");
+    let manifest: serde_json::Value = serde_json::from_str(&manifest).expect("valid json");
+    assert_eq!(manifest["kinds"], serde_json::json!(["overlay"]));
+    assert!(
+        plugin.join("AgentPanel.qml").is_file(),
+        "the entry point is installed"
+    );
+    assert!(
+        manifest["omarchy"]["clonedFrom"].is_null(),
+        "an overlay takes nobody's place"
+    );
+
+    let calls = std::fs::read_to_string(&record).expect("omarchy invoked");
+    assert!(
+        calls.contains("plugin enable sh.amon.panel"),
+        "and it is enabled, not just written: {calls}"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("✓ Super+A agent panel"),
+        "{output:?}"
+    );
+}
+
+#[test]
+fn removing_everything_takes_the_panel_pane() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
+    sandbox.run(&["setup", "--all"]);
+    let plugin = sandbox.config_path("omarchy/plugins/sh.amon.panel");
+    assert!(plugin.exists());
+
+    let output = sandbox.run(&["remove", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(!plugin.exists(), "the pane's plugin directory is gone");
+}
+
+#[test]
+fn the_super_a_binding_opens_the_pane() {
+    // The Lua file amon owns is what binds the key, so the plugin and its
+    // shortcut are installed and removed together.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
+    sandbox.run(&["setup", "--all"]);
+
+    let lua =
+        std::fs::read_to_string(sandbox.home_path(".config/hypr/amon.lua")).expect("amon.lua");
+
+    assert!(lua.contains("SUPER + A"), "{lua}");
+    assert!(
+        lua.contains("toggle sh.amon.panel"),
+        "bound to the plugin's own toggle: {lua}"
+    );
+    let unbind = lua
+        .find(r#"hl.unbind("SUPER + A")"#)
+        .expect("unbound first");
+    let bind = lua.find(r#"o.bind("SUPER + A""#).expect("then bound");
+    assert!(
+        unbind < bind,
+        "binding twice would leave both in place: {lua}"
+    );
+}
+
+/// An agent with nothing to say comes back after the daemon dies.
+///
+/// The sibling test above passes without any of this: its fake agent settles
+/// its state right around the kill, so a patch is due, the write fails, and the
+/// reconnect follows. A long-running agent that has already settled sends
+/// nothing — and a socket is only tested by writing to it, so the wrapper sat
+/// believing it was connected. Restarting a daemon under three live agents left
+/// two of them invisible, and they were invisible precisely because they were
+/// quiet.
+#[test]
+fn a_quiet_agent_comes_back_after_the_daemon_dies() {
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", "#!/bin/sh\nsleep 30\n");
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    sandbox.wait_for_status("the agent to register", |agents| {
+        agent_named(agents, "claude").is_some()
+    });
+    // Long enough for its state to settle, so that nothing is waiting to be
+    // sent when the daemon goes. That is the whole point of the case.
+    std::thread::sleep(std::time::Duration::from_secs(3));
+
+    let mut client = Client::new(sandbox.connect());
+    client.send(r#"{"id":"1","method":"daemon.shutdown"}"#);
+    let _ = client.read_frame();
+    drop(client);
+
+    sandbox.wait_for_status("the quiet agent to come back", |agents| {
+        agent_named(agents, "claude").is_some()
+    });
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// A sandbox leaves no daemon behind, even when it cannot ask one to go.
+///
+/// The polite `daemon.shutdown` only reaches a daemon that is listening. A
+/// daemon a wrapper spawned moments earlier may not have bound its socket when
+/// the test ends — it never hears the request, and once the sandbox's runtime
+/// directory is gone nothing can ever reach it again. ADR-0002 has the daemon
+/// linger forever rather than exit on its own, so a missed one runs until the
+/// developer notices and kills it by hand. Three were found doing exactly that.
+///
+/// Unreachability is simulated by unlinking the socket, which is the same
+/// position Drop is in when it cannot connect.
+#[test]
+fn a_sandbox_leaves_no_daemon_running() {
+    let socket;
+    let pid;
+    {
+        let sandbox = Sandbox::new();
+        // Any command that talks to the daemon starts one.
+        sandbox.run(&["status"]);
+        socket = sandbox.daemon_socket();
+        pid = daemon_pid_for(sandbox.runtime_dir()).expect("a daemon to have been started");
+
+        // Now it cannot be asked, only found.
+        std::fs::remove_file(&socket).expect("unlink the socket");
+    }
+
+    // Drop has run. Give the signal a moment to land.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::path::Path::new(&format!("/proc/{pid}")).exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "daemon {pid} outlived its sandbox"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+}
+
+/// The pid of the daemon serving `runtime`, if one is running.
+fn daemon_pid_for(runtime: &std::path::Path) -> Option<i32> {
+    use std::os::unix::ffi::OsStrExt;
+    let wanted = runtime.as_os_str().as_bytes();
+    for entry in std::fs::read_dir("/proc").ok()?.flatten() {
+        let Ok(pid) = entry.file_name().to_string_lossy().parse::<i32>() else {
+            continue;
+        };
+        let Ok(cmdline) = std::fs::read(entry.path().join("cmdline")) else {
+            continue;
+        };
+        let mut argv = cmdline.split(|byte| *byte == 0);
+        if !argv.next().unwrap_or_default().ends_with(b"amon")
+            || argv.next().unwrap_or_default() != b"daemon".as_slice()
+        {
+            continue;
+        }
+        let Ok(environ) = std::fs::read(entry.path().join("environ")) else {
+            continue;
+        };
+        if environ.split(|byte| *byte == 0).any(|entry| {
+            entry
+                .strip_prefix(b"XDG_RUNTIME_DIR=".as_slice())
+                .is_some_and(|value| value == wanted)
+        }) {
+            return Some(pid);
+        }
+    }
+    None
+}

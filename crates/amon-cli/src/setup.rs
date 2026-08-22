@@ -137,6 +137,7 @@ pub fn interactive() -> Result<(), Box<dyn std::error::Error>> {
     // `amon remove`'s job — the screen has no box left to untick.
     if desktop::cli_present() {
         actions.push(Action::SetupWidget);
+        actions.push(Action::SetupPanel);
         actions.push(Action::SetupBindings);
     }
     apply(&actions)
@@ -156,6 +157,7 @@ pub fn all(no_alias: bool) -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     if desktop::cli_present() {
         actions.push(Action::SetupWidget);
+        actions.push(Action::SetupPanel);
         actions.push(Action::SetupBindings);
     }
     if actions.is_empty() {
@@ -181,6 +183,9 @@ pub fn remove_everything(assume_yes: bool) -> Result<(), Box<dyn std::error::Err
         desktop::status(DesktopTarget::Omarchy).state != InstallState::NotInstalled;
     if widget_installed {
         actions.push(Action::RemoveWidget);
+    }
+    if desktop::status(DesktopTarget::Panel).state != InstallState::NotInstalled {
+        actions.push(Action::RemovePanel);
     }
     if bindings::installed() {
         actions.push(Action::RemoveBindings);
@@ -223,6 +228,7 @@ pub fn remove_everything(assume_yes: bool) -> Result<(), Box<dyn std::error::Err
                     println!("  {label} — {}", owned_by(*target))
                 }
                 Action::RemoveWidget => println!("  workspace switcher widget"),
+                Action::RemovePanel => println!("  the Super+A agent panel"),
                 Action::RemoveBindings => println!("  Super+0-9 agent bindings"),
                 _ => {}
             }
@@ -275,6 +281,8 @@ enum Action {
     },
     SetupWidget,
     RemoveWidget,
+    SetupPanel,
+    RemovePanel,
     SetupBindings,
     RemoveBindings,
     /// Drops the whole bashrc block. Only `amon remove` with no target queues
@@ -454,6 +462,26 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                 Err(error) => {
                     failed = true;
                     println!("✗ workspace switcher widget — {error}");
+                }
+            },
+            Action::SetupPanel => {
+                // No `clonedFrom`, so it displaces nothing and there is no bar
+                // to restart for: enabling is the whole of it.
+                let result = desktop::install(DesktopTarget::Panel)
+                    .and_then(|_| desktop::enable(DesktopTarget::Panel));
+                match result {
+                    Ok(_) => println!("✓ Super+A agent panel — installed and enabled"),
+                    Err(error) => {
+                        failed = true;
+                        println!("✗ Super+A agent panel — {error}");
+                    }
+                }
+            }
+            Action::RemovePanel => match desktop::uninstall(DesktopTarget::Panel) {
+                Ok(_) => println!("✓ Super+A agent panel — removed"),
+                Err(error) => {
+                    failed = true;
+                    println!("✗ Super+A agent panel — {error}");
                 }
             },
             Action::SetupBindings => match bindings::install() {

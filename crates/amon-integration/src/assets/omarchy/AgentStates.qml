@@ -20,6 +20,25 @@ Item {
   // entry disappears when its wrapper disconnects (ADR-0002).
   property var agents: ({})
 
+  // How many agents are in each state, across every workspace. The panel's
+  // header reads this; the bar does not.
+  //
+  // Assigned rather than bound, because `agents` is mutated in place — a
+  // `delete agents[id]` notifies nothing, so a binding over it would go stale
+  // the first time an agent disconnected. Every path that touches `agents`
+  // ends in `recompute`, which is what makes an assigned property honest here
+  // where a derived one would not be.
+  property var counts: root.emptyCounts()
+
+  // The agents the pane lists, ordered so that each workspace's agents are
+  // together and the most urgent of them is first. Assigned in `recompute` for
+  // the same reason `counts` is: `agents` is mutated in place.
+  property var rows: []
+
+  function emptyCounts() {
+    return ({ blocked: 0, done: 0, working: 0, idle: 0 })
+  }
+
   // Resolved the way the daemon resolves it: an explicit socket wins, then the
   // runtime directory. Without either there is nothing to connect to — the
   // daemon's last-resort path is per-uid and not derivable from QML.
@@ -182,14 +201,75 @@ Item {
 
   function recompute() {
     const next = ({})
+    const tally = root.emptyCounts()
+    const listed = []
     for (const id in root.agents) {
       const agent = root.agents[id]
       if (!agent.workspace) continue          // ssh, tmux, unmapped: not ours to place
+      // Counted after that test, so the header counts exactly the agents the
+      // desktop can show you. One over ssh or in a bare tmux session has no
+      // workspace to switch to, and a figure you cannot act on is a figure
+      // that only raises questions.
+      tally[agent.state] += 1
+      listed.push(agent)
       const previous = next[agent.workspace]
       if (previous === undefined || root.rank(agent.state) < root.rank(previous))
         next[agent.workspace] = agent.state
     }
     root.stateByWorkspace = next
+    root.counts = tally
+    listed.sort(root.compareRows)
+    root.rows = listed
+  }
+
+  // Grouped by workspace, and within a workspace in the order they were
+  // started — oldest first, so a workspace reads as you built it up and a new
+  // agent appears at the bottom.
+  //
+  // Ordered by something that cannot change, deliberately. Sorting by state put
+  // the agent that most wanted you at the top of its group, which sounds right
+  // and reads badly: rows move while you are looking at them, and the row under
+  // the cursor is not the row you were about to choose. What an agent is doing
+  // is already said by its glyph, its word, and the count in the header — none
+  // of which move.
+  //
+  // Workspaces sort as numbers where they look like numbers. Omarchy names them
+  // "1".."10" by default but a named workspace is legal, and comparing those as
+  // strings would put "10" before "2".
+  function compareRows(left, right) {
+    if (left.workspace !== right.workspace) {
+      const a = Number(left.workspace)
+      const b = Number(right.workspace)
+      if (!isNaN(a) && !isNaN(b)) return a - b
+      return left.workspace < right.workspace ? -1 : 1
+    }
+    if (left.startedAt !== right.startedAt) return left.startedAt - right.startedAt
+    // Two agents started in the same millisecond is not a real case; this only
+    // keeps the order total so the sort cannot wobble.
+    return left.id < right.id ? -1 : (left.id > right.id ? 1 : 0)
+  }
+
+  // The heading a row carries, or "" when the row above it already sits under
+  // that heading. One flat list with headings folded into it, which is how
+  // Omarchy's network panel separates known networks from the rest — and it is
+  // why the list can stay a single ListView with one selection running through
+  // it, rather than a column of lists with a cursor that has to cross between
+  // them.
+  function sectionTitle(index) {
+    const rows = root.rows
+    if (index < 0 || index >= rows.length) return ""
+    if (index > 0 && rows[index - 1].workspace === rows[index].workspace) return ""
+    return "WORKSPACE " + rows[index].workspace
+  }
+
+  // The shortest form that is still unambiguous, matching `age` in the CLI so
+  // that a row here and a line of `amon status` never disagree about how long
+  // an agent has been at something. A test holds the two together.
+  function age(since, now) {
+    const seconds = Math.max(0, Math.floor(((now || Date.now()) - since) / 1000))
+    if (seconds < 60) return seconds + "s"
+    if (seconds < 3600) return Math.floor(seconds / 60) + "m"
+    return Math.floor(seconds / 3600) + "h"
   }
 
   // `unknown` is deliberately absent: an unrecognised process is usually not an
@@ -204,8 +284,31 @@ Item {
   function remember(entry) {
     if (!entry || !entry.id) return
     const state = root.displayState(entry)
-    if (state === "") delete root.agents[entry.id]
-    else root.agents[entry.id] = { workspace: entry.workspace || "", state: state }
+    if (state === "") {
+      delete root.agents[entry.id]
+      return
+    }
+    // The whole of what a row needs, copied out of the daemon's entry once. The
+    // bar only ever wanted `workspace` and `state`; the pane draws the agent
+    // itself, so it needs the rest — and taking it here means the pane never
+    // touches the wire format.
+    root.agents[entry.id] = {
+      id: entry.id,
+      agent: entry.agent || "",
+      state: state,
+      workspace: entry.workspace || "",
+      cwd: entry.cwd || "",
+      // What orders rows within a workspace. Never changes, which is the point.
+      startedAt: entry.started_at || 0,
+      // Absent outside a repository and on a detached HEAD, which the pane
+      // draws as an empty column rather than as a placeholder.
+      branch: entry.branch || "",
+      stateSince: entry.state_since || 0,
+      // Opaque, and handed back to the compositor rather than parsed (ADR-0011
+      // and the note on AgentEntry::window). Absent off a supported compositor,
+      // which is why every use of it is guarded.
+      window: entry.window || ""
+    }
   }
 
   function forget(id) {
@@ -215,6 +318,8 @@ Item {
   function reset() {
     root.agents = ({})
     root.stateByWorkspace = ({})
+    root.counts = root.emptyCounts()
+    root.rows = []
     root.seeded = false
     root.pending = []
   }

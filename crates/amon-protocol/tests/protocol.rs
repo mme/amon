@@ -24,6 +24,7 @@ fn entry() -> AgentEntry {
         agent_session_path: None,
         window: None,
         workspace: None,
+        branch: None,
         focused: None,
         seen: None,
     }
@@ -113,7 +114,7 @@ fn unknown_fields_are_ignored() {
 fn unknown_events_are_skipped_not_fatal() {
     // A subscriber built against an older amon meets an event from a newer one.
     let frame = ServerFrame::parse(r#"{"event":"agent_teleported","params":{"id":"a1"}}"#).unwrap();
-    assert_eq!(frame, ServerFrame::Event(Event::Unknown));
+    assert_eq!(frame, ServerFrame::Event(Box::new(Event::Unknown)));
 }
 
 #[test]
@@ -128,7 +129,7 @@ fn server_frames_split_into_responses_and_events() {
     let line = serde_json::to_string(&event).unwrap();
     assert_eq!(
         ServerFrame::parse(&line).unwrap(),
-        ServerFrame::Event(event)
+        ServerFrame::Event(Box::new(event))
     );
 }
 
