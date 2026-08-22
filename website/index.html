@@ -474,8 +474,13 @@
   /* Grey until you point at one. Every shot is the same desktop, the same
      panel and the same four agents, so colour is the only thing that differs
      between them — which makes it the one thing worth spending on hover. */
-  .shots{list-style:none; margin:0; padding:0; display:grid; gap:10px;
-         grid-template-columns:repeat(auto-fill, minmax(230px, 1fr))}
+  /* One row, pushed sideways. Snapping so a flick lands on a shot rather than
+     between two, and the scrollbar left visible: a strip with no bar is a strip
+     nobody knows continues. */
+  .shots{list-style:none; margin:0; padding:0 0 12px; display:flex; gap:10px;
+         overflow-x:auto; scroll-snap-type:x mandatory; overscroll-behavior-x:contain;
+         scrollbar-color:var(--rule) transparent; scrollbar-width:thin}
+  .shots > li{flex:0 0 min(330px, 74vw); scroll-snap-align:start}
   .shot{display:block; width:100%; padding:0; border:0; background:none;
         position:relative; cursor:pointer; border-radius:6px; overflow:hidden;
         outline-offset:2px}
@@ -935,54 +940,81 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
 
   <section class="plate">
     <header>
-      <h2>It wears whatever theme you do</h2>
+      <h2>screenshots</h2>
     </header>
 
     <!--
-      Every Omarchy theme, the same desktop and the same four agents in each, so
-      the only thing that changes between them is the colour — which is the
-      whole claim. Grey until pointed at, for the same reason.
+      Every Omarchy theme, in roughly the order people reach for them. The same
+      desktop, the same panel and the same four agents in each, so the only
+      thing that differs is the colour — which is why the strip is grey until
+      pointed at, and why it scrolls rather than wrapping: a row you push
+      through reads as one set of variations, where a grid reads as a catalogue.
     -->
     <ul class="shots">
+        <li><button class="shot" type="button" data-full="shots/tokyo-night.jpg" data-theme="tokyo night">
+          <img src="shots/tokyo-night-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the tokyo night theme">
+          <span class="shot-name">tokyo night</span>
+        </button></li>
         <li><button class="shot" type="button" data-full="shots/catppuccin.jpg" data-theme="catppuccin">
           <img src="shots/catppuccin-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
                alt="The agent panel on the catppuccin theme">
           <span class="shot-name">catppuccin</span>
-        </button></li>
-        <li><button class="shot" type="button" data-full="shots/catppuccin-latte.jpg" data-theme="catppuccin latte">
-          <img src="shots/catppuccin-latte-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
-               alt="The agent panel on the catppuccin latte theme">
-          <span class="shot-name">catppuccin latte</span>
-        </button></li>
-        <li><button class="shot" type="button" data-full="shots/ethereal.jpg" data-theme="ethereal">
-          <img src="shots/ethereal-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
-               alt="The agent panel on the ethereal theme">
-          <span class="shot-name">ethereal</span>
-        </button></li>
-        <li><button class="shot" type="button" data-full="shots/everforest.jpg" data-theme="everforest">
-          <img src="shots/everforest-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
-               alt="The agent panel on the everforest theme">
-          <span class="shot-name">everforest</span>
-        </button></li>
-        <li><button class="shot" type="button" data-full="shots/flexoki-light.jpg" data-theme="flexoki light">
-          <img src="shots/flexoki-light-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
-               alt="The agent panel on the flexoki light theme">
-          <span class="shot-name">flexoki light</span>
         </button></li>
         <li><button class="shot" type="button" data-full="shots/gruvbox.jpg" data-theme="gruvbox">
           <img src="shots/gruvbox-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
                alt="The agent panel on the gruvbox theme">
           <span class="shot-name">gruvbox</span>
         </button></li>
-        <li><button class="shot" type="button" data-full="shots/hackerman.jpg" data-theme="hackerman">
-          <img src="shots/hackerman-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
-               alt="The agent panel on the hackerman theme">
-          <span class="shot-name">hackerman</span>
+        <li><button class="shot" type="button" data-full="shots/nord.jpg" data-theme="nord">
+          <img src="shots/nord-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the nord theme">
+          <span class="shot-name">nord</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/rose-pine.jpg" data-theme="rose pine">
+          <img src="shots/rose-pine-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the rose pine theme">
+          <span class="shot-name">rose pine</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/everforest.jpg" data-theme="everforest">
+          <img src="shots/everforest-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the everforest theme">
+          <span class="shot-name">everforest</span>
         </button></li>
         <li><button class="shot" type="button" data-full="shots/kanagawa.jpg" data-theme="kanagawa">
           <img src="shots/kanagawa-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
                alt="The agent panel on the kanagawa theme">
           <span class="shot-name">kanagawa</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/matte-black.jpg" data-theme="matte black">
+          <img src="shots/matte-black-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the matte black theme">
+          <span class="shot-name">matte black</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/catppuccin-latte.jpg" data-theme="catppuccin latte">
+          <img src="shots/catppuccin-latte-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the catppuccin latte theme">
+          <span class="shot-name">catppuccin latte</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/osaka-jade.jpg" data-theme="osaka jade">
+          <img src="shots/osaka-jade-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the osaka jade theme">
+          <span class="shot-name">osaka jade</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/ristretto.jpg" data-theme="ristretto">
+          <img src="shots/ristretto-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the ristretto theme">
+          <span class="shot-name">ristretto</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/miasma.jpg" data-theme="miasma">
+          <img src="shots/miasma-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the miasma theme">
+          <span class="shot-name">miasma</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/solitude.jpg" data-theme="solitude">
+          <img src="shots/solitude-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the solitude theme">
+          <span class="shot-name">solitude</span>
         </button></li>
         <li><button class="shot" type="button" data-full="shots/last-horizon.jpg" data-theme="last horizon">
           <img src="shots/last-horizon-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
@@ -994,55 +1026,30 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
                alt="The agent panel on the lumon theme">
           <span class="shot-name">lumon</span>
         </button></li>
+        <li><button class="shot" type="button" data-full="shots/hackerman.jpg" data-theme="hackerman">
+          <img src="shots/hackerman-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the hackerman theme">
+          <span class="shot-name">hackerman</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/flexoki-light.jpg" data-theme="flexoki light">
+          <img src="shots/flexoki-light-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the flexoki light theme">
+          <span class="shot-name">flexoki light</span>
+        </button></li>
         <li><button class="shot" type="button" data-full="shots/lupine.jpg" data-theme="lupine">
           <img src="shots/lupine-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
                alt="The agent panel on the lupine theme">
           <span class="shot-name">lupine</span>
         </button></li>
-        <li><button class="shot" type="button" data-full="shots/matte-black.jpg" data-theme="matte black">
-          <img src="shots/matte-black-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
-               alt="The agent panel on the matte black theme">
-          <span class="shot-name">matte black</span>
-        </button></li>
-        <li><button class="shot" type="button" data-full="shots/miasma.jpg" data-theme="miasma">
-          <img src="shots/miasma-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
-               alt="The agent panel on the miasma theme">
-          <span class="shot-name">miasma</span>
-        </button></li>
-        <li><button class="shot" type="button" data-full="shots/nord.jpg" data-theme="nord">
-          <img src="shots/nord-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
-               alt="The agent panel on the nord theme">
-          <span class="shot-name">nord</span>
-        </button></li>
-        <li><button class="shot" type="button" data-full="shots/osaka-jade.jpg" data-theme="osaka jade">
-          <img src="shots/osaka-jade-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
-               alt="The agent panel on the osaka jade theme">
-          <span class="shot-name">osaka jade</span>
+        <li><button class="shot" type="button" data-full="shots/ethereal.jpg" data-theme="ethereal">
+          <img src="shots/ethereal-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the ethereal theme">
+          <span class="shot-name">ethereal</span>
         </button></li>
         <li><button class="shot" type="button" data-full="shots/retro-82.jpg" data-theme="retro 82">
           <img src="shots/retro-82-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
                alt="The agent panel on the retro 82 theme">
           <span class="shot-name">retro 82</span>
-        </button></li>
-        <li><button class="shot" type="button" data-full="shots/ristretto.jpg" data-theme="ristretto">
-          <img src="shots/ristretto-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
-               alt="The agent panel on the ristretto theme">
-          <span class="shot-name">ristretto</span>
-        </button></li>
-        <li><button class="shot" type="button" data-full="shots/rose-pine.jpg" data-theme="rose pine">
-          <img src="shots/rose-pine-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
-               alt="The agent panel on the rose pine theme">
-          <span class="shot-name">rose pine</span>
-        </button></li>
-        <li><button class="shot" type="button" data-full="shots/solitude.jpg" data-theme="solitude">
-          <img src="shots/solitude-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
-               alt="The agent panel on the solitude theme">
-          <span class="shot-name">solitude</span>
-        </button></li>
-        <li><button class="shot" type="button" data-full="shots/tokyo-night.jpg" data-theme="tokyo night">
-          <img src="shots/tokyo-night-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
-               alt="The agent panel on the tokyo night theme">
-          <span class="shot-name">tokyo night</span>
         </button></li>
         <li><button class="shot" type="button" data-full="shots/vantablack.jpg" data-theme="vantablack">
           <img src="shots/vantablack-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
@@ -1055,10 +1062,6 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
           <span class="shot-name">white</span>
         </button></li>
     </ul>
-
-    <p>amon takes its colours from the theme rather than bringing its own. There is
-       nothing to restyle when you switch, and a theme amon has never seen fits it
-       the same way.</p>
   </section>
 </main>
 
