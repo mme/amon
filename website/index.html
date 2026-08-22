@@ -469,6 +469,59 @@
     .snippet{padding-top:48px}
     .snippet-copy{top:10px; left:12px; right:auto}
   }
+
+  /* ---- the theme gallery ------------------------------------------- */
+  /* Grey until you point at one. Every shot is the same desktop, the same
+     panel and the same four agents, so colour is the only thing that differs
+     between them — which makes it the one thing worth spending on hover. */
+  .shots{list-style:none; margin:0; padding:0; display:grid; gap:10px;
+         grid-template-columns:repeat(auto-fill, minmax(230px, 1fr))}
+  .shot{display:block; width:100%; padding:0; border:0; background:none;
+        position:relative; cursor:pointer; border-radius:6px; overflow:hidden;
+        outline-offset:2px}
+  .shot img{display:block; width:100%; height:auto;
+            filter:grayscale(1) contrast(.96); opacity:.72;
+            transition:filter 220ms ease, opacity 220ms ease}
+  .shot:hover img,.shot:focus-visible img{filter:none; opacity:1}
+  .shot:focus-visible{outline:2px solid var(--accent)}
+  /* The name rides in, so the grid reads as pictures until you go looking. */
+  .shot-name{position:absolute; left:0; right:0; bottom:0; padding:14px 10px 7px;
+             font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+             color:var(--ink); text-align:left;
+             background:linear-gradient(transparent, rgba(0,0,0,.72));
+             opacity:0; transition:opacity 220ms ease}
+  .shot:hover .shot-name,.shot:focus-visible .shot-name{opacity:1}
+
+  /* The gallery. A <dialog>, so Escape, the backdrop and the focus trap are
+     the browser's job rather than mine. */
+  .lightbox{border:0; padding:0; background:none; max-width:none; max-height:none;
+            width:100%; height:100%; overflow:hidden}
+  .lightbox::backdrop{background:rgba(0,0,0,.88)}
+  /* Flex with `min-height:0` on the image, not a grid: in a grid row the image
+     would not shrink below its own height and pushed the caption off the
+     screen. */
+  /* The frame carries the ground rather than ::backdrop alone: the page showed
+     through underneath it, and a gallery you can read the page through is a
+     gallery that has not opened. */
+  .lightbox-frame{position:absolute; inset:0; display:flex; flex-direction:column;
+                  padding:clamp(12px, 4vw, 48px); gap:14px;
+                  background:rgba(0,0,0,.92)}
+  .lightbox img{flex:1; min-height:0; width:100%; object-fit:contain;
+                display:block; border-radius:8px}
+  .lightbox-bar{flex:none; display:flex; align-items:center; justify-content:center; gap:1rem;
+                color:var(--muted); font-size:12px; letter-spacing:.08em;
+                text-transform:uppercase}
+  .lightbox-bar b{color:var(--ink); font-weight:inherit; min-width:12ch; text-align:center}
+  .lightbox button{background:none; border:0; color:var(--muted); font:inherit;
+                   font-size:18px; line-height:1; padding:.3rem .5rem; cursor:pointer;
+                   border-radius:4px}
+  .lightbox button:hover{color:var(--ink)}
+  .lightbox button:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .lightbox-close{position:absolute; top:10px; right:14px; font-size:22px}
+
+  @media (prefers-reduced-motion: reduce){
+    .shot img,.shot-name{transition:none}
+  }
 </style>
 </head>
 <body>
@@ -879,7 +932,147 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
        configure: <span class="lift">amon setup</span> just makes it all work
        automatically.</p>
   </section>
+
+  <section class="plate">
+    <header>
+      <h2>It wears whatever theme you do</h2>
+    </header>
+
+    <!--
+      Every Omarchy theme, the same desktop and the same four agents in each, so
+      the only thing that changes between them is the colour — which is the
+      whole claim. Grey until pointed at, for the same reason.
+    -->
+    <ul class="shots">
+        <li><button class="shot" type="button" data-full="shots/catppuccin.jpg" data-theme="catppuccin">
+          <img src="shots/catppuccin-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the catppuccin theme">
+          <span class="shot-name">catppuccin</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/catppuccin-latte.jpg" data-theme="catppuccin latte">
+          <img src="shots/catppuccin-latte-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the catppuccin latte theme">
+          <span class="shot-name">catppuccin latte</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/ethereal.jpg" data-theme="ethereal">
+          <img src="shots/ethereal-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the ethereal theme">
+          <span class="shot-name">ethereal</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/everforest.jpg" data-theme="everforest">
+          <img src="shots/everforest-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the everforest theme">
+          <span class="shot-name">everforest</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/flexoki-light.jpg" data-theme="flexoki light">
+          <img src="shots/flexoki-light-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the flexoki light theme">
+          <span class="shot-name">flexoki light</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/gruvbox.jpg" data-theme="gruvbox">
+          <img src="shots/gruvbox-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the gruvbox theme">
+          <span class="shot-name">gruvbox</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/hackerman.jpg" data-theme="hackerman">
+          <img src="shots/hackerman-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the hackerman theme">
+          <span class="shot-name">hackerman</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/kanagawa.jpg" data-theme="kanagawa">
+          <img src="shots/kanagawa-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the kanagawa theme">
+          <span class="shot-name">kanagawa</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/last-horizon.jpg" data-theme="last horizon">
+          <img src="shots/last-horizon-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the last horizon theme">
+          <span class="shot-name">last horizon</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/lumon.jpg" data-theme="lumon">
+          <img src="shots/lumon-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the lumon theme">
+          <span class="shot-name">lumon</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/lupine.jpg" data-theme="lupine">
+          <img src="shots/lupine-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the lupine theme">
+          <span class="shot-name">lupine</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/matte-black.jpg" data-theme="matte black">
+          <img src="shots/matte-black-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the matte black theme">
+          <span class="shot-name">matte black</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/miasma.jpg" data-theme="miasma">
+          <img src="shots/miasma-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the miasma theme">
+          <span class="shot-name">miasma</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/nord.jpg" data-theme="nord">
+          <img src="shots/nord-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the nord theme">
+          <span class="shot-name">nord</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/osaka-jade.jpg" data-theme="osaka jade">
+          <img src="shots/osaka-jade-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the osaka jade theme">
+          <span class="shot-name">osaka jade</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/retro-82.jpg" data-theme="retro 82">
+          <img src="shots/retro-82-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the retro 82 theme">
+          <span class="shot-name">retro 82</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/ristretto.jpg" data-theme="ristretto">
+          <img src="shots/ristretto-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the ristretto theme">
+          <span class="shot-name">ristretto</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/rose-pine.jpg" data-theme="rose pine">
+          <img src="shots/rose-pine-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the rose pine theme">
+          <span class="shot-name">rose pine</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/solitude.jpg" data-theme="solitude">
+          <img src="shots/solitude-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the solitude theme">
+          <span class="shot-name">solitude</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/tokyo-night.jpg" data-theme="tokyo night">
+          <img src="shots/tokyo-night-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the tokyo night theme">
+          <span class="shot-name">tokyo night</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/vantablack.jpg" data-theme="vantablack">
+          <img src="shots/vantablack-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the vantablack theme">
+          <span class="shot-name">vantablack</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/white.jpg" data-theme="white">
+          <img src="shots/white-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the white theme">
+          <span class="shot-name">white</span>
+        </button></li>
+    </ul>
+
+    <p>amon takes its colours from the theme rather than bringing its own. There is
+       nothing to restyle when you switch, and a theme amon has never seen fits it
+       the same way.</p>
+  </section>
 </main>
+
+<dialog class="lightbox" id="gallery" aria-label="Theme screenshots">
+  <div class="lightbox-frame">
+    <img id="gallery-image" alt="">
+    <div class="lightbox-bar">
+      <button type="button" id="gallery-prev" aria-label="Previous theme">&#8249;</button>
+      <b id="gallery-name"></b>
+      <button type="button" id="gallery-next" aria-label="Next theme">&#8250;</button>
+    </div>
+  </div>
+  <button type="button" class="lightbox-close" id="gallery-close" aria-label="Close">&times;</button>
+</dialog>
 
 <script>
   // Braille spinner, drawn rather than typed: the widget shows U+2800-block
@@ -1676,6 +1869,51 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
         status.textContent = 'Copy blocked: ' + commands;
       });
     });
+  })();
+
+  // ---- the theme gallery -------------------------------------------------
+  // A native <dialog>, so Escape, the focus trap and the backdrop come from the
+  // browser. Only the full-size image is loaded here, and only once one is
+  // opened: the grid carries thumbnails, which is what keeps the page light.
+  (function(){
+    var dialog = document.getElementById('gallery');
+    if (!dialog || !dialog.showModal) return;
+
+    var shots = [].slice.call(document.querySelectorAll('.shot')),
+        image = document.getElementById('gallery-image'),
+        name  = document.getElementById('gallery-name'),
+        at    = 0;
+
+    function show(index){
+      at = (index + shots.length) % shots.length;
+      var shot = shots[at];
+      image.src = shot.getAttribute('data-full');
+      image.alt = shot.querySelector('img').alt;
+      name.textContent = shot.getAttribute('data-theme');
+    }
+
+    shots.forEach(function(shot, index){
+      shot.addEventListener('click', function(){
+        show(index);
+        dialog.showModal();
+      });
+    });
+
+    document.getElementById('gallery-prev').addEventListener('click', function(){ show(at - 1); });
+    document.getElementById('gallery-next').addEventListener('click', function(){ show(at + 1); });
+    document.getElementById('gallery-close').addEventListener('click', function(){ dialog.close(); });
+
+    dialog.addEventListener('keydown', function(event){
+      if (event.key === 'ArrowRight') { show(at + 1); event.preventDefault(); }
+      if (event.key === 'ArrowLeft')  { show(at - 1); event.preventDefault(); }
+    });
+    // Clicking the backdrop, which is the dialog itself everywhere the frame
+    // is not.
+    dialog.addEventListener('click', function(event){
+      if (event.target === dialog) dialog.close();
+    });
+    // The image is heavy and the next visit should not show the last one.
+    dialog.addEventListener('close', function(){ image.removeAttribute('src'); });
   })();
 
 </script>
