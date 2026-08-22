@@ -4,6 +4,7 @@
 //! sockets, so tests cannot see each other's agents.
 
 use std::io::{BufRead, BufReader, Read, Write};
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -194,7 +195,57 @@ impl Drop for Sandbox {
             let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
             let _ = BufReader::new(stream).read_line(&mut sink);
         }
+        // And then make sure. Asking only reaches a daemon that is listening,
+        // and one a wrapper spawned moments ago may not have bound its socket
+        // yet — it never hears the request, and the instant this directory goes
+        // it can never be reached again. ADR-0002 has the daemon linger
+        // forever and never exit on its own, which is right for a real one and
+        // is exactly why a missed one here survives the rest of the session.
+        self.stop_stray_daemons();
         let _ = std::fs::remove_dir_all(&self.runtime);
+    }
+}
+
+impl Sandbox {
+    /// Signals any daemon still running against this sandbox's runtime
+    /// directory.
+    ///
+    /// Identified by that directory rather than by anything about the process:
+    /// it carries this test's process id and a counter, so it can only ever
+    /// match a daemon this sandbox started — never another test's, and never
+    /// the developer's own.
+    fn stop_stray_daemons(&self) {
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            return;
+        };
+        let ours = self.runtime.as_os_str().as_bytes();
+        for entry in entries.flatten() {
+            let Ok(pid) = entry.file_name().to_string_lossy().parse::<i32>() else {
+                continue;
+            };
+            let Ok(cmdline) = std::fs::read(entry.path().join("cmdline")) else {
+                continue;
+            };
+            let mut argv = cmdline.split(|byte| *byte == 0);
+            let program = argv.next().unwrap_or_default();
+            let subcommand = argv.next().unwrap_or_default();
+            if !program.ends_with(b"amon") || subcommand != b"daemon".as_slice() {
+                continue;
+            }
+            let Ok(environ) = std::fs::read(entry.path().join("environ")) else {
+                continue;
+            };
+            let is_ours = environ.split(|byte| *byte == 0).any(|entry| {
+                entry
+                    .strip_prefix(b"XDG_RUNTIME_DIR=".as_slice())
+                    .is_some_and(|value| value == ours)
+            });
+            if is_ours {
+                // SIGTERM: the daemon installs no handler, so this is the same
+                // ending `daemon.shutdown` would have given it.
+                unsafe { libc::kill(pid, libc::SIGTERM) };
+            }
+        }
     }
 }
 

@@ -2032,3 +2032,71 @@ fn a_quiet_agent_comes_back_after_the_daemon_dies() {
     let _ = child.kill();
     let _ = child.wait();
 }
+
+/// A sandbox leaves no daemon behind, even when it cannot ask one to go.
+///
+/// The polite `daemon.shutdown` only reaches a daemon that is listening. A
+/// daemon a wrapper spawned moments earlier may not have bound its socket when
+/// the test ends — it never hears the request, and once the sandbox's runtime
+/// directory is gone nothing can ever reach it again. ADR-0002 has the daemon
+/// linger forever rather than exit on its own, so a missed one runs until the
+/// developer notices and kills it by hand. Three were found doing exactly that.
+///
+/// Unreachability is simulated by unlinking the socket, which is the same
+/// position Drop is in when it cannot connect.
+#[test]
+fn a_sandbox_leaves_no_daemon_running() {
+    let socket;
+    let pid;
+    {
+        let sandbox = Sandbox::new();
+        // Any command that talks to the daemon starts one.
+        sandbox.run(&["status"]);
+        socket = sandbox.daemon_socket();
+        pid = daemon_pid_for(sandbox.runtime_dir()).expect("a daemon to have been started");
+
+        // Now it cannot be asked, only found.
+        std::fs::remove_file(&socket).expect("unlink the socket");
+    }
+
+    // Drop has run. Give the signal a moment to land.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::path::Path::new(&format!("/proc/{pid}")).exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "daemon {pid} outlived its sandbox"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+}
+
+/// The pid of the daemon serving `runtime`, if one is running.
+fn daemon_pid_for(runtime: &std::path::Path) -> Option<i32> {
+    use std::os::unix::ffi::OsStrExt;
+    let wanted = runtime.as_os_str().as_bytes();
+    for entry in std::fs::read_dir("/proc").ok()?.flatten() {
+        let Ok(pid) = entry.file_name().to_string_lossy().parse::<i32>() else {
+            continue;
+        };
+        let Ok(cmdline) = std::fs::read(entry.path().join("cmdline")) else {
+            continue;
+        };
+        let mut argv = cmdline.split(|byte| *byte == 0);
+        if !argv.next().unwrap_or_default().ends_with(b"amon")
+            || argv.next().unwrap_or_default() != b"daemon".as_slice()
+        {
+            continue;
+        }
+        let Ok(environ) = std::fs::read(entry.path().join("environ")) else {
+            continue;
+        };
+        if environ.split(|byte| *byte == 0).any(|entry| {
+            entry
+                .strip_prefix(b"XDG_RUNTIME_DIR=".as_slice())
+                .is_some_and(|value| value == wanted)
+        }) {
+            return Some(pid);
+        }
+    }
+    None
+}

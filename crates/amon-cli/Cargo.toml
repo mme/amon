@@ -12,6 +12,7 @@ name = "amon"
 path = "src/main.rs"
 
 [dev-dependencies]
+libc = { workspace = true }
 portable-pty = { workspace = true }
 serde_json = { workspace = true }
 
