@@ -1,0 +1,16 @@
+[package]
+name = "amon-integration"
+description = "Per-agent hook installation, vendored from herdr"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+amon-protocol = { workspace = true }
+portable-pty = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+tracing = "0.1"
