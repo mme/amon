@@ -1,0 +1,16 @@
+[package]
+name = "amon-daemon"
+description = "The amon daemon: live registry of wrapped agents"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+amon-detect = { workspace = true }
+amon-protocol = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
