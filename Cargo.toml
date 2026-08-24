@@ -1,0 +1,54 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/amon-protocol",
+    "crates/amon-term",
+    "crates/amon-detect",
+    "crates/amon-integration",
+    "crates/amon-daemon",
+    "crates/amon-wrapper",
+    "crates/amon-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "Apache-2.0"
+repository = "https://github.com/mme/amon"
+homepage = "https://amon.sh"
+
+[workspace.dependencies]
+amon-protocol = { path = "crates/amon-protocol" }
+amon-term = { path = "crates/amon-term" }
+amon-detect = { path = "crates/amon-detect" }
+amon-integration = { path = "crates/amon-integration" }
+amon-daemon = { path = "crates/amon-daemon" }
+amon-wrapper = { path = "crates/amon-wrapper" }
+
+clap = { version = "4.5", features = ["derive"] }
+libc = "0.2"
+portable-pty = "0.9"
+regex = "1"
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+# `fmt` only: the daemon's logging is a plain line per event on stderr.
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
+# Pinned to match herdr: the vendored manifest updater uses toml::to_string_pretty,
+# which 0.9 removed. Bumping this is a re-vendoring decision, not a routine one.
+toml = "0.8"
+
+# Detection and terminal emulation are regex/parser heavy: unoptimized builds of
+# these leaves make the shadow terminal noticeably slow in dev without costing
+# meaningful rebuild time, since they change only when re-vendored.
+[profile.dev.package.amon-term]
+opt-level = 2
+[profile.dev.package.amon-detect]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

@@ -1,0 +1,155 @@
+# amon
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/amon-logo-dark.svg">
+    <img src="docs/amon-logo-light.svg" alt="" width="140">
+  </picture>
+</p>
+
+Know what every coding agent you are running is doing. amon runs your agents
+untouched in your own terminal, shows you when they are working, idle, or
+waiting on you — and puts every one of them a keystroke away.
+
+Built for [Omarchy](https://omarchy.org).
+
+```sh
+yay -S amon-bin && amon setup      # or build from source — see below
+```
+
+## Agents as first-class citizens on your desktop
+
+Omarchy is the perfect environment for agents: a workspace holds everything a
+project needs — agent terminals, a browser, the logs — tiled or
+side-scrolling, set up the way you want. amon adds the missing piece: it shows
+you what your agents are doing, which one needs your attention, and lets you
+jump straight to it.
+
+Start agents in the terminal as usual. The bar shows each workspace's most
+urgent agent state on that workspace's own indicator, and `Super+number` lands
+on the agent that needs you rather than on whatever was focused there last —
+blocked first, then finished-but-unseen, then working, never an agent at rest.
+
+`Super+A` opens the agent panel from wherever you are, over whatever you are
+doing: every agent, grouped by the workspace it is on, with what it is doing
+and how long it has been at it. Pick one and Enter puts you in front of it.
+
+There is nothing to configure. `amon setup` makes it all work automatically —
+agent hooks, aliases, the bar widget, the panel, the keybindings — and
+`amon doctor` reports what is wired up and what is not.
+
+```sh
+amon claude          # wrap any agent — output passes through untouched
+amon codex --resume
+amon status          # what's blocked, working, or idle right now?
+amon focus 3         # go to workspace 3, landing on the agent that needs you
+amon setup           # agent hooks, aliases, the desktop integration
+amon doctor          # integration, daemon, widget, and alias health
+```
+
+```
+$ amon status
+claude   blocked    4m  3  ~/Projects/amon.sh
+codex    working   12s  1  ~/Projects/scriptcast
+claude   idle       3m  1  ~/Work/api
+```
+
+## Screenshot
+
+![amon on Omarchy, tokyo-night theme](docs/tokyo-night.jpg)
+
+## How it works
+
+`amon` runs an agent in a PTY and passes its output through unchanged, keeping
+a copy for a headless *shadow terminal* it uses to detect whether the agent is
+working, idle, or blocked waiting for you. It reports that to a per-user daemon
+(started on demand) which keeps a live registry of every wrapped agent and
+pushes events to subscribers over a unix socket.
+
+On Hyprland each agent also carries the window it is running in and that
+window's workspace, so "which one is blocked" comes with "and it is over
+there" — which is what the bar, the panel, and `amon focus` turn into
+somewhere to go. Subscribers get two more facts the terminal itself reports:
+whether the agent's view has focus, and whether it has had focus since the
+agent last changed state, which is what tells an agent that finished unnoticed
+from one you watched finish.
+
+The agent cannot tell amon is there: amon answers no terminal queries, injects
+nothing into its stream, and keeps the shadow terminal the same size as your
+real one. (Amon does ask the terminal itself to report focus, and takes those
+reports back out of the agent's input — [ADR-0007](./docs/adr/0007-wrapper-enables-terminal-focus-reporting.md)
+covers what that costs and why.) If the daemon is missing, wedged, or killed,
+the agent keeps running — observability never interrupts your session.
+
+## Subscribing
+
+The daemon speaks newline-delimited JSON over `$XDG_RUNTIME_DIR/amon/amond.sock`.
+Any language can watch state changes live:
+
+```sh
+{ echo '{"id":"1","method":"hello","params":{"role":"subscriber","protocol":1,"version":"cli"}}'
+  echo '{"id":"2","method":"subscribe"}'
+  cat
+} | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/amon/amond.sock
+```
+
+The wire format is documented in [docs/protocol.schema.json](./docs/protocol.schema.json),
+generated from the Rust types and checked by a test.
+
+## Building
+
+Needs a Rust toolchain, plus **Zig 0.15.2** — the shadow terminal is Ghostty's
+emulator, which builds from Zig source. With [mise](https://mise.jdx.dev) both
+are pinned in `.mise.toml`:
+
+```sh
+mise install
+just build
+just test        # cargo-nextest; the vendored tests need a process per test
+```
+
+## Installing
+
+One file is the whole install — the daemon and the wrapper are subcommands of
+the same binary, so there is no service to enable and nothing else to place:
+
+```sh
+just install     # release build into ~/.local/bin (override with AMON_PREFIX)
+amon setup       # agent hooks, aliases, and the desktop integration
+amon doctor      # what is wired up and what is not
+```
+
+`~/.local/bin` because Omarchy already has it on `PATH` — its own agent
+launchers live there. `amon setup` with no argument opens a screen; `amon setup
+--all` takes every agent it detects plus the desktop integration, and a named
+target is always an agent (`amon setup claude`). Open a new shell afterwards
+for the aliases.
+
+`just uninstall` reverses it, integrations first so nothing is left pointing at
+a binary that is gone.
+
+## Credits
+
+- [Omarchy](https://omarchy.org) — the desktop this is built for; the bar
+  widget is a four-line fork of its own workspaces widget, and the panel is
+  built from its shell's components.
+- [herdr](https://github.com/ogulcancelik/herdr) by Ogulcan Celik
+  (Apache-2.0) — agent state detection and its manifests, the terminal state
+  machine, and the per-agent hook installer are all derived from it, and
+  detection manifests refresh from herdr's public catalog. An excellent agent
+  multiplexer worth using in its own right.
+- [libghostty-vt](https://github.com/ghostty-org/ghostty) (MIT) — terminal
+  emulation, Ghostty's VT library.
+
+Vendored code is never hand-edited: `just revendor` re-derives it from a pinned
+herdr commit. See [NOTICE](./NOTICE) and [ADR-0005](./docs/adr/0005-vendored-code-is-never-hand-edited.md).
+
+## Design
+
+[CONTEXT.md](./CONTEXT.md) defines the project's language.
+[docs/adr/](./docs/adr/) records the decisions that are hard to reverse — what
+is vendored and why, the daemon's lifecycle, and where hooks connect.
+
+## License
+
+Apache-2.0. See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).

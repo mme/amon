@@ -1,0 +1,8 @@
+# Linking dominates amon's incremental rebuilds — the workspace is small but the
+# vendored terminal and detect crates are large. If you have mold installed,
+# uncomment this for noticeably faster edit-build cycles. Left off by default so
+# a clone builds on a machine without it.
+#
+# [target.x86_64-unknown-linux-gnu]
+# linker = "clang"
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]
