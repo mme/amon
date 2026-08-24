@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "sh.amon.workspaces",
+  "name": "Workspaces (amon)",
+  "version": "1.6.0",
+  "author": "amon",
+  "description": "Workspace indicators that show the most urgent agent state on each workspace in place of its number",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Workspaces.qml"
+  },
+  "barWidget": {
+    "displayName": "Workspaces (amon)",
+    "description": "Workspace numbers with amon agent state",
+    "category": "Compositor",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.workspaces"
+  }
+}
