@@ -1,0 +1,50 @@
+# Publishes website/ to GitHub Pages.
+#
+# Only from main, and only when something under website/ changed. The site
+# lives on a branch until it is merged, and a workflow that fired there would
+# put half-finished copy on a live domain — so this does nothing at all until
+# the merge, which is the point of adding it beforehand.
+#
+# There is no build step because there is nothing to build: the site is one
+# HTML file, two SVGs and two fonts, with no absolute paths and no requests off
+# the page. Uploading the directory as it stands is the whole of it.
+name: website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/website.yml"
+  # So a deploy can be re-run without an empty commit — a stuck or half-finished
+  # deploy is otherwise only fixable by pushing something.
+  workflow_dispatch:
+
+# GitHub Pages hands out one deployment at a time. `cancel-in-progress: false`
+# because a cancelled deploy can leave the site mid-swap, and the cost of
+# waiting is a minute.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+# Least that works: read the tree, write Pages, and mint the OIDC token
+# deploy-pages exchanges for permission to publish. No write access to contents.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website
+      - id: deploy
+        uses: actions/deploy-pages@v4

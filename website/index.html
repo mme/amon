@@ -1,0 +1,2162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>amon — know what every coding agent is doing</title>
+<meta name="description" content="Run coding agents and hear back from them. amon wraps any agent, reads its state, and puts it on your bar.">
+<style>
+  @font-face{font-family:"Duo";src:url(fonts/iawriter-duospace-regular.woff2) format("woff2");font-weight:400;font-style:normal;font-display:swap}
+  @font-face{font-family:"Duo";src:url(fonts/iawriter-duospace-bold.woff2) format("woff2");font-weight:700;font-style:normal;font-display:swap}
+
+  /* Dark first — the mark's own ground. Light is the same page inverted.
+     Three states: bare :root is dark, the media query covers the un-stamped
+     "system" setting, and [data-theme] lets the toggle win either direction. */
+  :root{
+    --ground:#0F0C0E; --raised:#171417; --sunk:#0B080A;
+    --rule:#2B262A; --rule-soft:#1E1A1E;
+    --ink:#EAE6E4; --muted:#948C90;
+    --accent:#7D74F0;
+    /* which switch icon shows: offer the mode you would move to */
+    --sun:block; --moon:none;
+  }
+  /* Light mode is switched off for now — not merely hidden. Leaving the media
+     query in place would have the page turn light for anyone whose system asks
+     for it, which is exactly the thing being switched off. The palette is kept
+     below the fold of this rule so it can come back in one edit. */
+
+  *{box-sizing:border-box}
+  html{color-scheme:dark light}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:"Duo",ui-monospace,"SF Mono",Menlo,monospace;
+    font-size:15px; line-height:1.65; -webkit-font-smoothing:antialiased;
+  }
+  main{max-width:820px; margin:0 auto;
+       padding:calc(clamp(2rem,6vw,5rem) + 20px) clamp(1rem,4vw,2rem) 6rem;
+       display:flex; flex-direction:column; gap:clamp(3rem,7vw,5rem)}
+  .eyebrow{font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--muted)}
+
+  /* ---- theme toggle ------------------------------------------------ */
+  .themer{position:fixed; top:1rem; right:1rem; z-index:10;
+          display:grid; place-items:center; width:34px; height:34px; padding:0;
+          background:var(--ground); border:0; border-radius:2px;
+          color:var(--muted); cursor:pointer}
+  /* `display:grid` above outranks the `hidden` attribute's own display:none, so
+     the attribute did nothing on its own. Hidden rather than deleted: light mode
+     is off for now, and this is the one line that brings the switch back. */
+  .themer[hidden]{display:none}
+  .themer:hover{color:var(--ink)}
+  .themer:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .themer svg{width:17px; height:17px; display:block}
+  .themer .sun{display:var(--sun)}
+  .themer .moon{display:var(--moon)}
+
+  /* ---- masthead ---------------------------------------------------- */
+  .masthead{display:flex; flex-direction:column; align-items:center; gap:1.75rem; text-align:center}
+  /* The viewBox carries 40 units of empty headroom so the antenna's rings have
+     somewhere to expand into — the ball sat flush with the old top edge. That
+     space is pulled back out with a negative margin in the same proportion
+     (40/214.75), so the mark lands exactly where it did before.
+     Only the top constrains them: the rings stroke in currentColor, the same
+     colour as the head, so the part that reaches it is swallowed by it and
+     reads as the head occluding the wave. */
+  /* And 56 units of empty runway either side in x, so the conveyor's capsules have
+     somewhere to slide in from and out to. Widening x alone leaves the scale
+     untouched — rendered size is width / viewBox-width and both grow by the same
+     factor — so --art stays the artwork's own width, the mark draws exactly as it
+     did, and the 40/214.75 headroom compensation above still holds. The element is
+     simply wider than the mark inside it. */
+  .masthead .lockup{--art:min(210px,42vw);
+                    width:calc(var(--art) * 326.75 / 214.75); height:auto; color:var(--ink);
+                    margin-top:calc(var(--art) * -0.1863)}
+  /* a circle's fill-box centre is its own (cx,cy), which is the ball's centre */
+  .wave,#amon-ball,#amon-head{transform-box:fill-box; transform-origin:50% 50%}
+  /* while it is watching the cursor the eyes are driven directly, so they get
+     a short transition instead of an animation to take the jitter off */
+  .watching{transition:transform 90ms ease-out}
+  /* Each ear pulses from the edge that faces the head, so it grows outward
+     instead of swelling around its own middle. fill-box keeps the origin
+     relative to the ear itself, independent of the viewBox's offset. */
+  #amon-ear-l,#amon-ear-r{transform-box:fill-box}
+  #amon-ear-l{transform-origin:100% 50%}
+  #amon-ear-r{transform-origin:0 50%}
+  /* symbols flatten about their own centres, never about the reel */
+  .eye,.squash{transform-box:fill-box; transform-origin:50% 50%}
+  /* The conveyor's own row, dormant until it runs. One class swaps the mark
+     over: the four real elements step aside and the row takes their places,
+     which it can do invisibly because it lands on exactly their geometry. */
+  #amon-row-ink rect,#amon-row-gnd rect{transform-box:fill-box; transform-origin:50% 50%}
+  #amon-row-ink,#amon-row-gnd{display:none}
+  .conveying #amon-row-ink,.conveying #amon-row-gnd{display:block}
+  .conveying #amon-ear-l,.conveying #amon-ear-r,
+  .conveying #amon-eye-l,.conveying #amon-eye-r{display:none}
+  /* 58ch, not 54: two characters of slack is what lets "one keystroke away."
+     close on the third line instead of spilling a word onto the fourth. Any
+     width from 56ch to 60ch renders the same three lines, so the measure is
+     not balanced on a knife edge. text-wrap:pretty does nothing at this size
+     but keeps "away." off a line of its own once the paragraph gets narrow. */
+  .masthead p{margin:.75rem 0 0; max-width:58ch; color:var(--muted); font-size:14px;
+              text-wrap:pretty}
+  /* The Omarchy line closes the paragraph, so it gets a line to itself at every
+     width — a block, rather than a wrap that only happens to fall in the right
+     place. The lifted "amon" at the start stays inline. */
+  .masthead p .lift:last-child{display:block}
+  /* raises a phrase out of the muted body text to full ink. Never broken
+     across lines: the phrases are commands and chords, and a flag split at
+     its own hyphens reads as two words. */
+  .lift{color:var(--ink); white-space:nowrap}
+  /* a text link in body copy: ink like a lift, told apart by its underline
+     rather than by a colour the palette does not have */
+  .plate p a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
+  .plate p a:hover{text-decoration:none}
+  /* the command line reference: each command as an outlined code tag, its
+     description in muted body text beneath it */
+  .cliref{display:flex; flex-direction:column; gap:1.5rem; margin:0}
+  .cli-cmd{display:inline-block; color:var(--ink);
+           border:1px solid color-mix(in srgb, var(--muted) 40%, transparent);
+           background:color-mix(in srgb, var(--ink) 5%, transparent);
+           border-radius:6px; padding:.18em .55em}
+  .cliref p{margin:.55rem 0 0; color:var(--muted); max-width:60ch}
+  /* TOML section headers between the settings, set as they appear in the file */
+  .cli-sect{color:var(--ink); margin-top:.4rem}
+  .cli-sect:first-child{margin-top:0}
+  /* each command is its own anchor, so an entry can be linked to directly.
+     Rendered exactly as the bare tag - the pointer is the only tell. */
+  .cli-anchor{color:inherit; text-decoration:none; cursor:pointer; scroll-margin-top:2rem}
+  /* section headings share the same contract: linkable, visually unchanged */
+  .h-anchor{color:inherit; text-decoration:none; cursor:pointer; scroll-margin-top:2rem}
+  /* ---- footer ------------------------------------------------------- */
+  .foot{display:flex; flex-direction:column; align-items:center; gap:1.1rem;
+        border-top:1px solid var(--rule); margin-top:3.5rem;
+        padding:2.75rem 1rem 3.25rem; text-align:center}
+  .foot-mark{width:54px; height:auto; color:var(--ink)}
+  .foot-tag{margin:0; color:var(--muted)}
+  .foot-fine{margin:0; color:var(--muted); font-size:12px}
+  .foot-fine a{color:inherit; text-decoration:underline; text-underline-offset:3px}
+  .foot-fine a:hover{text-decoration:none}
+  /* the blink: lids over the eye holes, shut for a tenth of a long while */
+  .lid{opacity:0}
+  @keyframes foot-blink{0%,93.5%{opacity:0} 94.5%,97.5%{opacity:1} 98.5%,100%{opacity:0}}
+  .foot-mark .lid{animation:foot-blink 7s infinite}
+  @media (prefers-reduced-motion: reduce){ .foot-mark .lid{animation:none} }
+  /* The two names, set as names, in the one section that is about the pair of
+     them. Only the body copy: the heading below sets them as an equation and
+     wants its own weight.
+     Transformed rather than typed in capitals, so the text stays "Omarchy" and
+     "amon" for anything that copies it or reads it out. */
+  .pairing header p .lift{text-transform:uppercase}
+  /* A hair more air under this heading than the others get. Set as capitals,
+     OMARCHY sits tight against the line above it in a way the lowercase
+     openings elsewhere do not — 5px on top of the header's own gap, which is
+     enough to see and not enough to read as a new rhythm. */
+  .pairing header p:first-of-type{margin-top:5px}
+  /* Three actions, ranked: bare icons for the two that ask little, and one
+     solid block for install — the page's only inverted element. */
+  .actions{display:flex; align-items:center; justify-content:center;
+           gap:1.15rem; flex-wrap:wrap}
+  .glyphs{display:flex; align-items:center; gap:.15rem}
+
+  .glyph{display:grid; place-items:center; width:34px; height:34px; border-radius:3px;
+         color:var(--muted)}
+  .glyph svg{width:19px; height:19px; display:block}
+  .glyph:hover{color:var(--ink)}
+  .glyph:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+  /* Hover grows the button, not its contents: --grow adds padding on every side
+     and an equal negative margin takes it back off the layout box, so the block
+     swells around fixed-size text and the row it sits in never moves. */
+  .cta{--grow:0px;
+       display:inline-flex; align-items:center; gap:.5rem;
+       padding:calc(.35rem + var(--grow)) calc(.5rem + var(--grow))
+               calc(.35rem + var(--grow)) calc(.45rem + var(--grow));
+       margin:calc(0px - var(--grow));
+       background:var(--ink); color:var(--ground); border:0; border-radius:6px;
+       font:inherit; cursor:pointer;
+       transition:padding 130ms ease-out, margin 130ms ease-out}
+  .cta:hover{--grow:6px}
+  .cta:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .cta .mark{width:19px; height:19px; display:block; flex:none}
+  /* Omarchy's mark is the one glyph kept in its own file (omarchy-logo.svg).
+     Masked rather than <img>ed: an image is its own document and could not see
+     the theme, while a mask reads only alpha and lets currentColor do the rest.
+     Unscoped, because the schematic bar draws the same mark at the same size the
+     real bar does — one asset, two places, each taking its own colour. */
+  .mark-omarchy{background:currentColor;
+                -webkit-mask:url(omarchy-logo.svg) center/contain no-repeat;
+                        mask:url(omarchy-logo.svg) center/contain no-repeat}
+  .cta .mark-check{display:none}
+  .cta.copied .mark-omarchy{display:none}
+  .cta.copied .mark-check{display:block}
+
+  /* "Install" and "Copied" sit in the same grid cell, so the cell is as wide as
+     the longer of them and the row does not twitch when they swap. Tied to the
+     same .copied class as the check, so the word and the mark change together. */
+  .cta .label{display:grid; justify-items:start; font-size:13px; letter-spacing:-.01em}
+  .cta .label > span{grid-area:1/1}
+  .cta .label-copied{visibility:hidden}
+  .cta.copied .label-install{visibility:hidden}
+  .cta.copied .label-copied{visibility:visible}
+
+  /* the same "you can press this" signal without the movement */
+  @media (prefers-reduced-motion: reduce){
+    .cta{transition:none}
+    .cta:hover{--grow:0px; opacity:.9}
+  }
+
+  /* the command as inline code: a tint of the button's own text colour, so it
+     holds in both themes without naming a colour of its own */
+  .cta code{font-family:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+            font-size:13px; letter-spacing:-.01em; white-space:nowrap;
+            padding:.15em .4em; border-radius:3px;
+            background:rgba(128,128,128,.16);
+            background:color-mix(in srgb, var(--ground) 10%, transparent)}
+  .sr{position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%)}
+
+  /* ---- plate ------------------------------------------------------- */
+  .plate{display:flex; flex-direction:column; gap:1.25rem}
+  .plate > header{display:flex; flex-direction:column; gap:.4rem; border-top:1px solid var(--rule); padding-top:1rem}
+  /* Only the first plate gets a rule: it divides the masthead from the argument.
+     Between plates the space does the work, and a second rule would read as a
+     repeating frame rather than as a break. */
+  .plate + .plate > header{border-top:0; padding-top:0}
+  .plate h2{margin:0; font-size:1.25rem; font-weight:700; letter-spacing:-.01em}
+  /* Body copy sits either in the header or, when it reads as a note on the
+     illustration above it, directly in the plate. The direct-child selector
+     matters: a bare `.plate p` would also catch the explainer's line inside the
+     figure and put a measure back on it, which is what made it wrap. */
+  .plate header p,.plate > p{margin:0; color:var(--muted); font-size:13.5px; max-width:62ch}
+  .plate header p + p{margin-top:.35rem}   /* on top of the header's own gap */
+  /* A note under an illustration is the same size and colour as the explainer's
+     own line, so it needs a clear beat or the two read as one block. One extra
+     step of the plate's own rhythm — 1.25rem on top of the 1.25rem gap, so 40px
+     — which is double the spacing inside the plate and still comfortably under
+     the 48px minimum that separates one section from the next. */
+  .plate > figure + p{margin-top:1.25rem}
+
+  /* ---- the top bar, schematic -------------------------------------- */
+  /* A diagram of the bar, not a picture of one. It has no ground and no edge of
+     its own — only marks, in the page's own ink — because the point being made
+     is what sits where, and a panel drawn around it would be one more thing to
+     read. Drawn well above life size for the same reason: legibility beats
+     fidelity here, so nothing is pixel-matched to the real bar.
+
+     The layout is the one thing kept exact: three grid columns with the middle
+     sized to its content, so the clock holds the centre line whatever the two
+     sides carry — which is how the widget itself behaves, and what makes room
+     for the left side to grow later. An outline and no ground: the rule says
+     where the bar is, the page shows through it. */
+  .topbar{margin:0; display:flex; flex-direction:column}
+  .bar{display:grid; grid-template-columns:1fr auto 1fr; align-items:center;
+       height:52px; padding:0 14px; border-radius:3px;
+       border:1px solid var(--rule)}
+  .bar-left{display:flex; align-items:center; gap:5px}
+  .bar-right{display:flex; align-items:center; justify-content:flex-end; gap:5px}
+  .bar-mid{display:flex; align-items:center; gap:.7rem; white-space:nowrap}
+  /* The clock, the weather and the tray are context, not subject — dimmed a
+     step below the muted body so the workspace indicators carry the diagram. */
+  .bar-mid,.bar-right{opacity:.55}
+
+  .bar .logo{width:22px; height:22px; display:block; flex:none;
+             color:var(--ink); margin-right:8px;
+             transition:color 340ms ease, opacity 340ms ease}
+  /* The step about a quiet agent makes its point with brightness alone, so
+     everything that is not the lit workspace steps back — the Omarchy mark
+     included, which is otherwise the brightest thing on the bar and would be
+     competing with the very difference the step is asking you to notice. */
+  .bar.is-dim .logo{color:var(--muted); opacity:.55}
+
+  /* one workspace: a fixed box with the glyph centred, so the row keeps its
+     width whether the slot shows a digit or a marker */
+  /* A real button, stripped back to the glyph: hoverable, focusable and
+     clickable, so the diagram can be read by hand as well as watched. */
+  .ws{display:grid; place-items:center; width:32px; height:32px; border-radius:4px;
+      color:var(--ink); font-size:17px; line-height:1;
+      font-variant-numeric:tabular-nums;
+      background:none; border:0; padding:0; font-family:inherit; cursor:pointer;
+      transition:color 220ms ease}
+  .ws:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
+  /* Every face a slot can wear is in the slot, stacked in one grid cell, and
+     data-state picks which is lit. Swapping state is then a crossfade rather
+     than a rebuild — and because they share the cell, nothing reflows and the
+     row keeps its width whichever face is showing. */
+  .ws-face{grid-area:1/1; display:block; transition:opacity 340ms ease; opacity:0}
+  /* Three states wear the digit and differ only in what is done to it.
+     "idle" is a slot the step is not talking about: muted, out of the way.
+     "active" is an agent at rest: full ink, underlined. "bare" is the slot
+     the step *is* talking about when there is no agent on it — full ink,
+     because the aimed slot holds ink in every other step too, and nothing
+     else, because nothing else is the state. */
+  .ws[data-state="idle"]    .ws-idle,
+  .ws[data-state="active"]  .ws-idle,
+  .ws[data-state="bare"]    .ws-idle,
+  .ws[data-state="working"] .ws-working,
+  .ws[data-state="done"]    .ws-done,
+  .ws[data-state="blocked"] .ws-blocked,
+  .ws[data-state="focused"] .ws-focused{opacity:1}
+  /* icon faces are sized; the digit is not. Given a box it would sit at that
+     box's left edge, and the slot centres the box rather than the glyph — which
+     put every number 4.4px left of where the pointer aims. */
+  .ws-done,.ws-blocked{width:19px; height:19px}
+  /* the spinner lights two of the cell's four rows, so its ink sits in the
+     middle of a box that is mostly empty — it needs the extra size for those
+     dots to carry beside a digit */
+  .ws-working{width:24px; height:24px}
+  /* the focus marker fills only 54% of its viewBox, so at the glyph size the
+     others use it reads as a dot — sized up until the square is square */
+  .ws-focused{width:25px; height:25px}
+  .ws[data-state="idle"]{color:var(--muted)}
+  /* An agent that has come to rest keeps its number and is underlined: it is
+     here and it wants nothing. The widget tried weight first and it could not
+     be seen — a lone digit has nothing beside it to be heavier than — so the
+     cue adds a mark instead of thickening one. Drawn in descender space, so
+     the digit does not move and the row keeps its rhythm. */
+  .ws[data-state="active"] .ws-idle{text-decoration:underline;
+                                    text-underline-offset:3px;
+                                    text-decoration-thickness:1.5px}
+
+  /* a quarter smaller than the workspace side, on top of being dimmed: the
+     clock and the tray are the bar's furniture, and the diagram is about the
+     numbers */
+  .bar .clock{font-size:12.6px; color:var(--muted);
+              font-variant-numeric:tabular-nums}
+  .bar .tray{display:block; width:15.75px; height:15.75px; color:var(--muted)}
+
+  /* The explainer, step one. It points at whichever workspace data-explains
+     names; both the stem and the paragraph ride a single --point-x, which is
+     measured off that slot rather than written down here, so moving to the next
+     workspace is a change of attribute and nothing else. Both transition, so
+     when it does move it walks along the bar instead of jumping. */
+  .explain{position:relative; padding-top:24px}
+  .explain-stem{position:absolute; top:0; left:calc(var(--point-x, 0px) - .5px);
+                width:1px; height:17px; background:var(--muted);
+                transition:left 520ms cubic-bezier(.4,0,.2,1)}
+
+  /* Position and content are separated, which is what lets the two crossfade.
+     The wrapper carries the offset and travels; the two lines inside it share
+     one grid cell and swap by opacity, so the outgoing and incoming copy are
+     alive at the same moment instead of one waiting for the other to finish.
+
+     The wrapper carries the offset and travels; the line inside it is retyped.
+     One axis, and only ever one: the caption slides right, nothing turns. */
+  .explain-copy{position:relative; margin-left:var(--point-x, 0px);
+                transition:margin-left 520ms cubic-bezier(.4,0,.2,1)}
+  /* no measure cap: a step is one short line and is meant to stay one line, so
+     the copy is written to fit rather than wrapped to a column */
+  .explain-line{margin:0; font-size:13.5px; color:var(--muted); min-height:1.65em;
+                transition:opacity 200ms ease}
+  .explain.is-fading .explain-line{opacity:0}
+  /* No caret. A block cursor at this size outweighed the workspace indicator
+     the line is about, and the typing already reads as typing without one. */
+  /* kbd for the keys, so a screen reader and a stylesheet both know what they
+     are — but drawn as plain lifted text, since a boxed key at this size would
+     outweigh the indicator the line is about */
+  /* only the state is lifted. The key rides in brackets, which set it apart
+     without a second piece of ink competing for the same glance. */
+  /* ink, not weight — b and kbd both carry a UA default the page does not want,
+     and .lift lifts a phrase by colour alone everywhere else */
+  .explain b{color:var(--ink); font-weight:inherit}
+  .explain kbd{font:inherit}
+  @media (prefers-reduced-motion: reduce){
+    .explain-stem,.explain-copy,.explain-line{transition:none}
+  }
+
+
+  /* ---- the agent panel -------------------------------------------------
+     A replica rather than a diagram: the same columns in the same order, so
+     someone who reads this and then installs amon recognises what opens.
+     Nothing here animates on its own — the panel is a thing you look at and
+     read, not a thing that performs, and the top bar above already carries
+     this page's one moving figure. */
+  .panel{margin:0; display:flex; flex-direction:column}
+  .panel-card{border:1px solid var(--rule); border-radius:10px; background:var(--raised);
+              padding:14px; overflow:hidden}
+
+  .panel-head{display:flex; align-items:center; gap:12px}
+  .panel-mark{width:27px; height:26px; flex:none; color:var(--ink); display:block}
+  .panel-name{display:flex; flex-direction:column; gap:1px; min-width:0}
+  .panel-name b{font-size:14px; font-weight:700; color:var(--ink)}
+  .panel-counts{font-size:10.5px; letter-spacing:.1em; color:var(--muted); white-space:nowrap}
+
+  .panel-rule{height:1px; background:var(--rule-soft); margin:12px 0 10px}
+
+  .panel-group{font-size:10.5px; letter-spacing:.1em; color:var(--muted);
+               padding:6px 0 2px}
+
+  /* One grid shared by every row, so the columns line up down the list the way
+     they do in the real panel. */
+  .panel-row{display:grid; grid-template-columns:18px 5.5rem minmax(0,1fr) 7.5rem 5.5rem 2.5rem;
+             align-items:center; gap:0 10px; border-radius:6px}
+  .panel-row.is-cursor{background:color-mix(in oklab, var(--ink) 7%, transparent)}
+
+  /* Every hover target is a button: the figure is read by pointer, by tab and
+     by screen reader, and one element cannot serve all three unless it is
+     genuinely a control. */
+  .panel-cell{padding:7px 0; font-size:12.5px; color:var(--muted); min-width:0}
+
+  /* The cursor is a class, not `:hover`, and the script below moves it. A pure
+     hover rule cannot hold a highlight while the pointer crosses the gaps and
+     the workspace headings between rows, so the cursor snapped back to the
+     resting row every time it passed over one. */
+  .panel-cell.is-glyph{display:flex; align-items:center; justify-content:center;
+              padding-left:0; padding-right:0}
+  /* The glyphs are drawn, not typed: the panel shows Nerd Font and braille
+     codepoints, and a web font carries neither reliably. The same marks the bar
+     figure above uses, out of the same sprite. */
+  .panel-glyph{width:14px; height:14px; display:block; color:inherit}
+
+  /* The working spinner turns. Not the page performing at you — this is what
+     the glyph does in the panel, and a still one says the wrong thing about an
+     agent that is mid-task.
+     Two dots going round: top, right, bottom, left. Each of the four positions
+     is lit for two of the four frames, so every dot runs the same half-on cycle
+     and only its phase differs. 200ms a frame, the panel's own default. */
+  @keyframes panel-dot{ 0%,49.9%{opacity:1} 50%,100%{opacity:.16} }
+  .panel-dot{animation:panel-dot 800ms steps(1,end) infinite}
+  .panel-dot.tr{animation-delay:0ms}
+  .panel-dot.tl{animation-delay:-200ms}
+  .panel-dot.bl{animation-delay:-400ms}
+  .panel-dot.br{animation-delay:-600ms}
+  @media (prefers-reduced-motion: reduce){
+    .panel-dot{animation:none}
+    .panel-dot.bl,.panel-dot.br{opacity:.16}
+  }
+  .panel-cell.is-who{display:grid; grid-column:2 / 4;
+                     grid-template-columns:5.5rem minmax(0,1fr); gap:0 10px; align-items:center}
+  .panel-cell.is-who b{color:var(--ink); font-weight:700}
+  /* No right-to-left trick to elide from the head of the path the way the real
+     panel does: it reverses the leading "~/" and prints "Projects/amon.sh/~".
+     These paths are written to fit instead. */
+  .panel-cell.is-who span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .panel-cell.is-age{text-align:right}
+  .panel-cell.is-branch,.panel-cell.is-state{overflow:hidden; text-overflow:ellipsis;
+                          white-space:nowrap}
+
+
+  /* Narrow: the branch is the first thing to go, because on a phone the panel
+     is being recognised rather than read. */
+  @media (max-width:640px){
+    /* The branch goes first, and the state keeps its full width: "needs input"
+       is the one word on the row worth crossing the page for, and a path that
+       loses its tail is still recognisable where a truncated state is not. */
+    .panel-row{grid-template-columns:18px 4.2rem minmax(0,1fr) 6.4rem 2.4rem}
+    .panel-cell.is-branch{display:none}
+    .panel-cell.is-who{grid-template-columns:4.2rem minmax(0,1fr)}
+  }
+
+  /* ---- the install block ------------------------------------------- */
+  /* Two commands, in the order you run them. A ground of its own, because
+     unlike everything else on this page these are lines you are meant to take
+     away rather than read. */
+  .snippet{margin:0; position:relative;
+           border:1px solid var(--rule); border-radius:10px; background:var(--sunk);
+           padding:16px 18px}
+  /* Scrolls on its own rather than pushing the page sideways on a phone. */
+  .snippet pre{margin:0; overflow-x:auto}
+  .snippet code{display:block; white-space:pre; color:var(--muted);
+                font-family:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+                font-size:13px; letter-spacing:-.01em;
+                /* A terminal's own leading, near enough. At 2 the transcript
+                   read as a list of separate lines rather than as a session. */
+                line-height:1.65;
+                color:var(--ink)}
+  /* A transcript, so the parts are told apart the way a terminal tells them
+     apart — but in one ink. What you typed and the marks amon draws are the
+     page's full ink; what came back is a step down. amon shows the checked
+     boxes in its accent colour and the page does not follow it: nothing else
+     here is coloured, and one hue in one box would be the only hue on the
+     page. */
+  .snippet .t-p{color:var(--muted)}                 /* the prompt */
+  .snippet .t-in{color:var(--ink)}                  /* what you typed */
+  .snippet .t-o{color:var(--muted)}                 /* what it printed */
+  .snippet .t-x{color:var(--ink)}                   /* the picker's [x] */
+  .snippet .t-c{color:var(--ink)}                   /* the picker's cursor */
+  .snippet .t-ok{color:var(--ink)}
+
+  /* The same block the hero's Install is: the page's one inverted element,
+     twice. Two buttons that hand over the same command should not look like two
+     different offers. */
+  .snippet-copy{position:absolute; top:12px; right:12px;
+                display:inline-flex; align-items:center; gap:.45rem;
+                padding:.35rem .6rem; border-radius:6px;
+                border:0; background:var(--ink); color:var(--ground);
+                font:inherit; font-size:12.5px; letter-spacing:-.01em;
+                cursor:pointer; transition:opacity 130ms ease}
+  .snippet-copy:hover{opacity:.88}
+  .snippet-copy:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  /* The hero's mark, not a clipboard of my own: at this size a drawn clipboard
+     is two rounded rectangles overlapping, and the back sheet's corner reads as
+     a notch in the button. The two buttons say the same word and hand over the
+     same command, so they carry the same mark and swap it for the same check. */
+  .snippet-copy .mark{width:15px; height:15px; display:block; flex:none}
+  .snippet-copy .mark-check{display:none}
+  .snippet-copy.is-copied .mark-omarchy{display:none}
+  .snippet-copy.is-copied .mark-check{display:block}
+  /* The two words share a cell, so the button keeps its width when it swaps and
+     the corner does not twitch. Same trick as the CTA's Install/Copied. */
+  .snippet-copy .label{display:grid}
+  .snippet-copy .label span{grid-area:1/1}
+  .snippet-copy .label-copied,.snippet-copy.is-copied .label-copy{visibility:hidden}
+  .snippet-copy.is-copied .label-copied{visibility:visible}
+
+  /* On a narrow screen the button would sit on top of the first command, so it
+     goes above them instead. */
+  @media (max-width:520px){
+    .snippet{padding-top:48px}
+    .snippet-copy{top:10px; left:12px; right:auto}
+  }
+
+  /* ---- the theme gallery ------------------------------------------- */
+  /* Grey until you point at one. Every shot is the same desktop, the same
+     panel and the same four agents, so colour is the only thing that differs
+     between them — which makes it the one thing worth spending on hover. */
+  /* One row, pushed sideways. Snapping so a flick lands on a shot rather than
+     between two, and the scrollbar left visible: a strip with no bar is a strip
+     nobody knows continues. */
+  .shots{list-style:none; margin:0; padding:0 0 12px; display:flex; gap:10px;
+         overflow-x:auto; scroll-snap-type:x mandatory; overscroll-behavior-x:contain;
+         scrollbar-color:var(--rule) transparent; scrollbar-width:thin}
+  .shots > li{flex:0 0 min(330px, 74vw); scroll-snap-align:start}
+  .shot{display:block; width:100%; padding:0; border:0; background:none;
+        position:relative; cursor:pointer; border-radius:6px; overflow:hidden;
+        outline-offset:2px}
+  .shot img{display:block; width:100%; height:auto;
+            filter:grayscale(1) contrast(.96); opacity:.72;
+            transition:filter 220ms ease, opacity 220ms ease}
+  .shot:hover img,.shot:focus-visible img{filter:none; opacity:1}
+  .shot:focus-visible{outline:2px solid var(--accent)}
+  /* The name rides in, so the grid reads as pictures until you go looking. */
+  .shot-name{position:absolute; left:0; right:0; bottom:0; padding:14px 10px 7px;
+             font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+             color:var(--ink); text-align:left;
+             background:linear-gradient(transparent, rgba(0,0,0,.72));
+             opacity:0; transition:opacity 220ms ease}
+  .shot:hover .shot-name,.shot:focus-visible .shot-name{opacity:1}
+
+  /* The gallery. A <dialog>, so Escape, the backdrop and the focus trap are
+     the browser's job rather than mine. */
+  .lightbox{border:0; padding:0; background:none; max-width:none; max-height:none;
+            width:100%; height:100%; overflow:hidden}
+  .lightbox::backdrop{background:rgba(0,0,0,.88)}
+  /* Flex with `min-height:0` on the image, not a grid: in a grid row the image
+     would not shrink below its own height and pushed the caption off the
+     screen. */
+  /* The frame carries the ground rather than ::backdrop alone: the page showed
+     through underneath it, and a gallery you can read the page through is a
+     gallery that has not opened. */
+  .lightbox-frame{position:absolute; inset:0; display:flex; flex-direction:column;
+                  padding:clamp(12px, 4vw, 48px); gap:14px;
+                  background:rgba(0,0,0,.92)}
+  .lightbox img{flex:1; min-height:0; width:100%; object-fit:contain;
+                display:block; border-radius:8px}
+  .lightbox-bar{flex:none; display:flex; align-items:center; justify-content:center; gap:1rem;
+                color:var(--muted); font-size:12px; letter-spacing:.08em;
+                text-transform:uppercase}
+  .lightbox-bar b{color:var(--ink); font-weight:inherit; min-width:12ch; text-align:center}
+  .lightbox button{background:none; border:0; color:var(--muted); font:inherit;
+                   font-size:18px; line-height:1; padding:.3rem .5rem; cursor:pointer;
+                   border-radius:4px}
+  .lightbox button:hover{color:var(--ink)}
+  .lightbox button:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .lightbox-close{position:absolute; top:10px; right:14px; font-size:22px}
+
+  @media (prefers-reduced-motion: reduce){
+    .shot img,.shot-name{transition:none}
+  }
+</style>
+</head>
+<body>
+
+<button class="themer" id="themer" type="button" hidden aria-label="Switch to light mode">
+  <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+       stroke-linecap="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="4.4"/>
+    <path d="M12 1.6v2.2M12 20.2v2.2M4.65 4.65l1.56 1.56M17.79 17.79l1.56 1.56M1.6 12h2.2M20.2 12h2.2M4.65 19.35l1.56-1.56M17.79 6.21l1.56-1.56"/>
+  </svg>
+  <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M20.6 14.2A8.9 8.9 0 1 1 9.8 3.4a7 7 0 0 0 10.8 10.8Z"/>
+  </svg>
+</button>
+
+<!-- geometry defined once; every instance is a <use> of these -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+
+  <!-- Bar glyphs. The real widget draws these from a Nerd Font's private use
+       area (blocked U+F02D7, done U+F05E0, focus U+F14FB), which would be tofu
+       on the web — so they are redrawn here.
+       Those two code points are Material's *filled* help-circle and
+       check-circle: a solid disc with the mark knocked out of it, not a ring
+       with a mark inside. Drawn through a mask so the knockout stays a stroke
+       — the alternative is hand-converting a checkmark to an outline path —
+       and so the hole is real transparency rather than the page colour painted
+       back over, which would break the moment a plate changed its ground.
+       The disc takes the radius the stroked ring's outer edge had, so the
+       silhouette is the size it always was; only the ink inside it changed. -->
+  <mask id="mk-blocked" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+    <circle cx="12" cy="12" r="10.2" fill="#fff"/>
+    <path fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round"
+          d="M 9.1 9.3 A 2.95 2.95 0 1 1 12 13.1 L 12 14.4"/>
+    <circle cx="12" cy="17.2" r="1.3" fill="#000"/>
+  </mask>
+  <g id="gl-blocked">
+    <rect width="24" height="24" fill="currentColor" mask="url(#mk-blocked)"/>
+  </g>
+  <mask id="mk-done" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+    <circle cx="12" cy="12" r="10.2" fill="#fff"/>
+    <path fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round"
+          stroke-linejoin="round" d="M 7.6 12.3 L 10.7 15.4 L 16.4 8.9"/>
+  </mask>
+  <g id="gl-done">
+    <rect width="24" height="24" fill="currentColor" mask="url(#mk-done)"/>
+  </g>
+  <!-- focus marker: the filled rounded square the widget shows for "you are here" -->
+  <g id="gl-focus">
+    <rect x="5.5" y="5.5" width="13" height="13" rx="4.2" fill="currentColor"/>
+  </g>
+  <!-- menu button -->
+  <g id="gl-menu">
+    <circle cx="12" cy="12" r="5.4" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  </g>
+  <!-- the bar's centre pair: today's weather, and one of the right-hand tray
+       items. Schematic stand-ins, drawn at the same weight as the rest. -->
+  <g id="gl-sun">
+    <circle cx="12" cy="12" r="4.1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+          d="M12 2.9v2.4M12 18.7v2.4M2.9 12h2.4M18.7 12h2.4
+             M5.6 5.6l1.7 1.7M16.7 16.7l1.7 1.7M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7"/>
+  </g>
+  <g id="gl-screen">
+    <rect x="2.9" y="4.6" width="18.2" height="12.6" rx="2" fill="none"
+          stroke="currentColor" stroke-width="1.8"/>
+    <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+          d="M9 20.4h6"/>
+  </g>
+
+  <!-- GitHub's mark (Octicons, MIT) -->
+  <path id="gl-github" fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.66-.21-2.2.82-.6-.17-1.23-.25-1.87-.25s-1.27.09-1.87.25C4.7 3.09 4.04 3.3 4.04 3.3c-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/>
+
+  <!-- X's mark -->
+  <path id="gl-x" fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+
+
+  <!-- sized to fill its box the way the Omarchy mark fills its own, so the
+       swap on copy does not read as a jump in size -->
+  <g id="gl-copied">
+    <path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"
+          stroke-linejoin="round" d="M2.5 12.6 L9 19 L21.5 5"/>
+  </g>
+</defs></svg>
+
+<main>
+  <header class="masthead">
+    <!--
+      Drawn here rather than <use>d out of <defs>: a <use> clones its target
+      into a shadow tree, and an animation running on the original does not
+      reach the clone. The eyes get away with it because a mask is referenced
+      at render time, but the ears would never move. One instance on the page,
+      so the indirection bought nothing anyway.
+    -->
+    <svg class="lockup" viewBox="-33.25 -24 326.75 312.25" role="img" aria-label="amon">
+      <defs>
+        <clipPath id="amon-head-clip"><path d="M 205.5 133 C 205.5 163.75 205.56 180.06 194.64 189.81 C 182.77 200.41 159.67 199.5 131 199.5 C 102.33 199.5 79.23 200.41 67.36 189.81 C 56.44 180.06 56.5 163.75 56.5 133 C 56.5 102.25 56.44 85.94 67.36 76.19 C 79.23 65.59 102.33 66.5 131 66.5 C 159.67 66.5 182.77 65.59 194.64 76.19 C 205.56 85.94 205.5 102.25 205.5 133 Z"/></clipPath>
+      </defs>
+      <path id="amon-head" fill="currentColor" d="M 205.5 133 C 205.5 163.75 205.56 180.06 194.64 189.81 C 182.77 200.41 159.67 199.5 131 199.5 C 102.33 199.5 79.23 200.41 67.36 189.81 C 56.44 180.06 56.5 163.75 56.5 133 C 56.5 102.25 56.44 85.94 67.36 76.19 C 79.23 65.59 102.33 66.5 131 66.5 C 159.67 66.5 182.77 65.59 194.64 76.19 C 205.56 85.94 205.5 102.25 205.5 133 Z"/>
+      <!--
+        The eyes are painted onto the head in the page's own colour, not cut out
+        of it. As knockouts they could never reach the rim: a hole touching the
+        silhouette bites a notch out of it, and holding one back inside the face
+        reads as an invisible mask. Painted on and clipped to the head's exact
+        outline, an eye keeps its full height the whole way and simply stops at
+        the edge, while the head's own fill is never disturbed.
+        (website/amon-logo.svg keeps real holes — that one has to work anywhere.)
+      -->
+      <!--
+        Each reel is wrapped twice: an outer translate parks the origin on the
+        eye's resting centre so the blink scales about the symbol on show,
+        whichever one that is. The slot is the copy the reel lands on, and it is
+        the one that gets swapped for a suit.
+
+        A reel, not a swap: six eyes spaced 160 apart ride each group, so
+        driving the group down by a whole number of 160s brings the next one
+        exactly into place. The spacing is deliberate — between two eyes it
+        leaves a 139.5 gap, wider than the 132.6 of head they cross, so two are
+        never in view at once however fast it spins. A suit is taller and eats
+        into that margin — at SUIT_SCALE 1.5 it leaves 134 against the same
+        132.6, so the rule still holds, but only by 1.4. Scale the suits up much
+        further and a symbol will start showing above its neighbour mid-spin.
+      -->
+      <g clip-path="url(#amon-head-clip)" fill="var(--ground)">
+      <g id="amon-eye-l">
+          <path class="eye" d="M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z"/>
+          <g transform="translate(0 -160)"><path d="M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z"/></g>
+          <g transform="translate(0 -320)"><path d="M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z"/></g>
+          <g class="slot" transform="translate(0 -480)"><path d="M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z"/></g>
+          <g transform="translate(0 -640)"><path d="M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z"/></g>
+          <g transform="translate(0 -800)"><path d="M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z"/></g>
+      </g>
+      <g id="amon-eye-r">
+          <path class="eye" d="M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/>
+          <g transform="translate(0 -160)"><path d="M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/></g>
+          <g transform="translate(0 -320)"><path d="M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/></g>
+          <g transform="translate(0 -480)"><path d="M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/></g>
+          <g transform="translate(0 -640)"><path d="M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/></g>
+          <g class="slot" transform="translate(0 -800)"><path d="M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/></g>
+      </g>
+      </g>
+
+      <!-- separate paths so each ear can pulse from its own inner edge -->
+      <path id="amon-ear-l" fill="currentColor" d="M 33.75 120.5 A 7.25 7.25 0 0 1 48.25 120.5 L 48.25 145.5 A 7.25 7.25 0 0 1 33.75 145.5 Z"/>
+      <path id="amon-ear-r" fill="currentColor" d="M 213.75 120.5 A 7.25 7.25 0 0 1 228.25 120.5 L 228.25 145.5 A 7.25 7.25 0 0 1 213.75 145.5 Z"/>
+      <!--
+        The conveyor's row. Every capsule exists twice at identical coordinates:
+        once here in the ink, once in the layer below in the page's own ground,
+        clipped to the head. Ink laid over the ink head is invisible, so one
+        capsule crossing the rim is ear on the outside and eye on the inside with
+        no colour animating anywhere — the outline splits it. The rects are
+        generated, since their count follows STEP.
+      -->
+      <g id="amon-row-ink" fill="currentColor"></g>
+      <g id="amon-row-gnd" clip-path="url(#amon-head-clip)" fill="var(--ground)"></g>
+      <!-- rings the antenna throws off; invisible until a beacon runs -->
+      <circle class="wave" cx="131" cy="29" r="13" fill="none" stroke="currentColor"
+              stroke-width="7" vector-effect="non-scaling-stroke" opacity="0"/>
+      <circle class="wave" cx="131" cy="29" r="13" fill="none" stroke="currentColor"
+              stroke-width="7" vector-effect="non-scaling-stroke" opacity="0"/>
+      <circle id="amon-ball" fill="currentColor" cx="131" cy="29" r="13"/>
+      <path fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" d="M 131 42 L 131 56"/>
+      <g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="44.5" cy="266.5" r="18.25"/>
+        <path d="M 62.75 249 L 62.75 284"/>
+        <path d="M 79 249 L 79 284"/>
+        <path d="M 79 263.25 A 14.75 14.75 0 0 1 108.5 263.25 L 108.5 284"/>
+        <path d="M 108.5 263.25 A 14.75 14.75 0 0 1 138 263.25 L 138 284"/>
+        <circle cx="170" cy="266.5" r="18.25"/>
+        <path d="M 203 249 L 203 284"/>
+        <path d="M 203 264 A 15.5 15.5 0 0 1 234 264 L 234 284"/>
+      </g>
+    </svg>
+    <div>
+      <div class="eyebrow">Agent Monitor</div>
+      <p><span class="lift">amon</span> lets you know when your agents are working, idle,
+         or need your attention. It runs them untouched in your own terminal.
+         Any agent, one keystroke away.
+         <span class="lift">Built for Omarchy Linux.</span></p>
+    </div>
+    <div class="actions">
+      <div class="glyphs">
+        <a class="glyph" href="https://github.com/mme/amon" rel="noopener"
+           aria-label="amon on GitHub" title="GitHub">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><use href="#gl-github"/></svg>
+        </a>
+        <a class="glyph" href="https://x.com/mme_xyz" rel="noopener"
+           aria-label="Follow @mme_xyz on X" title="Follow on X">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-x"/></svg>
+        </a>
+      </div>
+      <button class="cta" id="install" type="button"
+              title="Copy the install command">
+        <span class="mark mark-omarchy" aria-hidden="true"></span>
+        <svg class="mark mark-check" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-copied"/></svg>
+        <span class="label"><span class="label-install">Install</span><span class="label-copied">Copied</span></span>
+        <code>yay -S amon-bin</code>
+      </button>
+      <span class="sr" role="status" id="install-status"></span>
+    </div>
+  </header>
+
+  <section class="plate pairing">
+    <header>
+      <h2><a class="h-anchor" id="agent-native-os" href="#agent-native-os">omarchy + amon = the agent-native OS</a></h2>
+      <p><span class="lift">Omarchy</span> is the perfect environment for using agents. A workspace holds everything
+         a project needs: agent terminals, a browser, the logs — tiled or side-scrolling,
+         set up the way you want.</p>
+      <p><span class="lift">amon</span> adds the missing piece: it shows you what your agents
+         are doing, which one needs your attention — and lets you quickly jump between them.</p>
+    </header>
+  </section>
+
+  <section class="plate">
+    <header>
+      <h2><a class="h-anchor" id="first-class-citizens" href="#first-class-citizens">agents as first-class citizens on your desktop</a></h2>
+    </header>
+
+    <!--
+      The bar, schematic. Every slot that will later have something to say
+      carries a data attribute rather than a class, so behaviour can be hung on
+      it without touching the styling: data-ws is the workspace number and
+      data-state is what the indicator is showing.
+    -->
+    <figure class="topbar">
+      <!-- Not role="img" any more: the workspaces are real buttons, so the bar
+           holds controls rather than being one picture. The figcaption below
+           carries the description, and it changes with the step. -->
+      <div class="bar">
+        <div class="bar-left">
+          <span class="logo mark-omarchy" aria-hidden="true"></span>
+          <button class="ws" type="button" data-ws="1" data-state="working"
+                  aria-label="Workspace 1">
+            <span class="ws-face ws-idle">1</span>
+            <svg class="ws-face ws-working" viewBox="0 0 24 24" aria-hidden="true"><g class="spinner"></g></svg>
+            <svg class="ws-face ws-done" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg>
+            <svg class="ws-face ws-blocked" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg>
+          </button>
+          <button class="ws" type="button" data-ws="2" data-state="idle"
+                  aria-label="Workspace 2">
+            <span class="ws-face ws-idle">2</span>
+            <svg class="ws-face ws-working" viewBox="0 0 24 24" aria-hidden="true"><g class="spinner"></g></svg>
+            <svg class="ws-face ws-done" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg>
+            <svg class="ws-face ws-blocked" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg>
+          </button>
+          <button class="ws" type="button" data-ws="3" data-state="idle"
+                  aria-label="Workspace 3">
+            <span class="ws-face ws-idle">3</span>
+            <svg class="ws-face ws-working" viewBox="0 0 24 24" aria-hidden="true"><g class="spinner"></g></svg>
+            <svg class="ws-face ws-done" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg>
+            <svg class="ws-face ws-blocked" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg>
+          </button>
+          <button class="ws" type="button" data-ws="4" data-state="idle"
+                  aria-label="Workspace 4">
+            <span class="ws-face ws-idle">4</span>
+            <svg class="ws-face ws-working" viewBox="0 0 24 24" aria-hidden="true"><g class="spinner"></g></svg>
+            <svg class="ws-face ws-done" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg>
+            <svg class="ws-face ws-blocked" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg>
+          </button>
+          <button class="ws" type="button" data-ws="5" data-state="idle"
+                  aria-label="Workspace 5">
+            <span class="ws-face ws-idle">5</span>
+            <svg class="ws-face ws-working" viewBox="0 0 24 24" aria-hidden="true"><g class="spinner"></g></svg>
+            <svg class="ws-face ws-done" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg>
+            <svg class="ws-face ws-blocked" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg>
+          </button>
+        </div>
+
+        <div class="bar-mid">
+          <span class="clock">Tuesday 22:49</span>
+          <svg class="tray" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-sun"/></svg>
+        </div>
+
+        <div class="bar-right">
+          <svg class="tray" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-screen"/></svg>
+        </div>
+      </div>
+
+      <!-- Step one. data-explains is the whole interface: set it to another
+           workspace number and the stem and the copy walk over to it. -->
+      <figcaption class="explain" data-explains="1">
+        <span class="explain-stem" aria-hidden="true"></span>
+        <!-- The visible line is retyped a character at a time, so it is hidden
+             from assistive tech and the settled sentence is carried alongside
+             it instead — nobody should have to listen to a typewriter. -->
+        <div class="explain-copy">
+          <p class="explain-line" aria-hidden="true"></p>
+          <span class="sr explain-said"></span>
+        </div>
+      </figcaption>
+    </figure>
+
+    <p>Start your agents in the terminal as usual. <span class="lift">amon</span> shows their
+       live state in the top bar. <span class="lift">Super+number</span> now lands you on the
+       right agent when switching workspaces.</p>
+  </section>
+
+  <section class="plate">
+    <header>
+      <h2><a class="h-anchor" id="agent-panel" href="#agent-panel">Super+A to every agent in one place</a></h2>
+    </header>
+
+    <!--
+      The agent panel, replicated. A picture and not a control: nothing here is
+      clickable, because nothing here does anything — the cursor follows the
+      pointer the way it does in the real panel, and that is the whole of the
+      interaction. The one thing that moves is the spinner, which moves there
+      too.
+    -->
+    <figure class="panel">
+      <div class="panel-card">
+        <div class="panel-head">
+          <!--
+            The mark alone, not amon-logo.svg: that file carries the wordmark
+            under the head, and the panel sets the name in its own type right
+            beside this. Same paths, viewBoxed to the mark's own bounds so no
+            coordinate had to be moved to crop it.
+          -->
+          <svg class="panel-mark" viewBox="33.75 16 194.5 183.5" aria-hidden="true">
+            <path fill="currentColor" fill-rule="evenodd" d="M 205.5 133 C 205.5 163.75 205.56 180.06 194.64 189.81 C 182.77 200.41 159.67 199.5 131 199.5 C 102.33 199.5 79.23 200.41 67.36 189.81 C 56.44 180.06 56.5 163.75 56.5 133 C 56.5 102.25 56.44 85.94 67.36 76.19 C 79.23 65.59 102.33 66.5 131 66.5 C 159.67 66.5 182.77 65.59 194.64 76.19 C 205.56 85.94 205.5 102.25 205.5 133 Z M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/>
+            <path fill="currentColor" d="M 33.75 120.5 A 7.25 7.25 0 0 1 48.25 120.5 L 48.25 145.5 A 7.25 7.25 0 0 1 33.75 145.5 Z M 213.75 120.5 A 7.25 7.25 0 0 1 228.25 120.5 L 228.25 145.5 A 7.25 7.25 0 0 1 213.75 145.5 Z"/>
+            <circle fill="currentColor" cx="131" cy="29" r="13"/>
+            <path d="M 131 42 L 131 56" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
+          </svg>
+          <span class="panel-name">
+            <b>amon</b>
+            <span class="panel-counts">1 NEEDS INPUT &middot; 1 DONE &middot; 1 RUNNING &middot; 1 IDLE</span>
+          </span>
+        </div>
+
+        <div class="panel-rule" aria-hidden="true"></div>
+
+          <div class="panel-group" style="grid-column:1/-1">WORKSPACE 1</div>
+          <div class="panel-row is-cursor">
+            <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle class="panel-dot tl" cx="8.7" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot tr" cx="15.3" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot bl" cx="8.7" cy="14.55" r="2.35" fill="currentColor"/><circle class="panel-dot br" cx="15.3" cy="14.55" r="2.35" fill="currentColor"/></svg></span>
+            <span class="panel-cell is-who"><b>claude</b><span>~/Projects/amon.sh</span></span>
+            <span class="panel-cell is-branch">main</span>
+            <span class="panel-cell is-state">running</span>
+            <span class="panel-cell is-age">4m</span>
+          </div>
+          <div class="panel-row">
+            <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg></span>
+            <span class="panel-cell is-who"><b>codex</b><span>~/Projects/amon.sh</span></span>
+            <span class="panel-cell is-branch">fix/detect-flake</span>
+            <span class="panel-cell is-state">done</span>
+            <span class="panel-cell is-age">2m</span>
+          </div>
+          <div class="panel-group" style="grid-column:1/-1">WORKSPACE 3</div>
+          <div class="panel-row">
+            <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg></span>
+            <span class="panel-cell is-who"><b>pi</b><span>~/work/atlas</span></span>
+            <span class="panel-cell is-branch">atlas-api</span>
+            <span class="panel-cell is-state">needs input</span>
+            <span class="panel-cell is-age">6m</span>
+          </div>
+          <div class="panel-group" style="grid-column:1/-1">WORKSPACE 4</div>
+          <div class="panel-row">
+            <span class="panel-cell is-glyph"></span>
+            <span class="panel-cell is-who"><b>opencode</b><span>~/.cache/worktrees/site</span></span>
+            <span class="panel-cell is-branch">website</span>
+            <span class="panel-cell is-state">idle</span>
+            <span class="panel-cell is-age">41m</span>
+          </div>
+      </div>
+
+    </figure>
+
+    <p>The agent panel is the central piece — <span class="lift">Super+A</span> from wherever
+       you are, over whatever you are doing. It is where you come back to: every agent,
+       grouped by the workspace it is on, with what it is doing and how long it has been
+       at it. Pick one and <span class="lift">Enter</span> immediately puts you in front
+       of it.</p>
+  </section>
+
+  <section class="plate">
+    <header>
+      <h2><a class="h-anchor" id="cli" href="#cli">full command line interface</a></h2>
+    </header>
+
+    <!--
+      The same four agents as the panel above, answered in the terminal — and
+      sorted the way everything in amon sorts: blocked first, then finished-
+      but-unseen (which the CLI prints as idle; only its place in the order
+      gives it away), then working. The trailing focus command is typed and
+      not yet run, the way the panel's cursor rests on a row.
+    -->
+    <figure class="snippet">
+      <pre><code><span class="t-p">~ &#10095;</span> <span class="t-in">amon status</span>
+<span class="t-o">pi        blocked    6m  3  atlas-api         ~/work/atlas
+codex     idle       2m  1  fix/detect-flake  ~/Projects/amon.sh
+claude    working    4m  1  main              ~/Projects/amon.sh
+opencode  idle      41m  4  website           ~/.cache/worktrees/site</span>
+<span class="t-p">~ &#10095;</span> <span class="t-in">amon focus 3</span></code></pre>
+    </figure>
+
+    <p>Everything the desktop shows is one command away — add
+       <span class="lift">--json</span> and it's scriptable.
+       <a href="https://github.com/mme/amon#readme">Reference</a>.</p>
+  </section>
+
+  <section class="plate">
+    <header>
+      <h2><a class="h-anchor" id="install" href="#install">Installed and ready in 30 seconds</a></h2>
+    </header>
+
+    <!--
+      One box, both commands, one button: they are run one after the other, and
+      a button each would make the reader choose between two things that are not
+      alternatives.
+    -->
+    <figure class="snippet">
+      <pre><code><span class="t-p">~ &#10095;</span> <span class="t-in">yay -S amon-bin</span>
+<span class="t-o">(1/1) installing amon-bin                       [######################] 100%</span>
+<span class="t-p">~ &#10095;</span> <span class="t-in">amon setup</span>
+Set up amon <span class="t-o">— space toggles, enter applies</span>
+
+<span class="t-c">&#9656;</span> <span class="t-x">[x]</span> pi        <span class="t-o">detected</span>
+  <span class="t-x">[x]</span> claude    <span class="t-o">detected</span>
+  <span class="t-x">[x]</span> codex     <span class="t-o">detected</span>
+  <span class="t-x">[x]</span> opencode  <span class="t-o">detected</span>
+
+<span class="t-ok">✓</span> amon installed.</code></pre>
+      <button class="snippet-copy" type="button" id="copy-install"
+              title="Copy the install command"
+              data-copy="yay -S amon-bin &amp;&amp; amon setup &amp;&amp; source ~/.bashrc">
+        <span class="mark mark-omarchy" aria-hidden="true"></span>
+        <svg class="mark mark-check" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-copied"/></svg>
+        <span class="label"><span class="label-copy">Install</span><span class="label-copied">Copied</span></span>
+      </button>
+      <span class="sr" role="status" id="copy-install-status"></span>
+    </figure>
+
+    <p>amon is made to run seamlessly on your Omarchy setup. There is nothing to
+       configure: <span class="lift">amon setup</span> just makes it all work
+       automatically.</p>
+  </section>
+
+  <section class="plate">
+    <header>
+      <h2><a class="h-anchor" id="screenshots" href="#screenshots">screenshots</a></h2>
+    </header>
+
+    <!--
+      Every Omarchy theme, in roughly the order people reach for them. The same
+      desktop, the same panel and the same four agents in each, so the only
+      thing that differs is the colour — which is why the strip is grey until
+      pointed at, and why it scrolls rather than wrapping: a row you push
+      through reads as one set of variations, where a grid reads as a catalogue.
+    -->
+    <ul class="shots">
+        <li><button class="shot" type="button" data-full="shots/tokyo-night.jpg" data-theme="tokyo night">
+          <img src="shots/tokyo-night-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the tokyo night theme">
+          <span class="shot-name">tokyo night</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/catppuccin.jpg" data-theme="catppuccin">
+          <img src="shots/catppuccin-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the catppuccin theme">
+          <span class="shot-name">catppuccin</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/gruvbox.jpg" data-theme="gruvbox">
+          <img src="shots/gruvbox-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the gruvbox theme">
+          <span class="shot-name">gruvbox</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/nord.jpg" data-theme="nord">
+          <img src="shots/nord-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the nord theme">
+          <span class="shot-name">nord</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/rose-pine.jpg" data-theme="rose pine">
+          <img src="shots/rose-pine-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the rose pine theme">
+          <span class="shot-name">rose pine</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/everforest.jpg" data-theme="everforest">
+          <img src="shots/everforest-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the everforest theme">
+          <span class="shot-name">everforest</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/kanagawa.jpg" data-theme="kanagawa">
+          <img src="shots/kanagawa-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the kanagawa theme">
+          <span class="shot-name">kanagawa</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/matte-black.jpg" data-theme="matte black">
+          <img src="shots/matte-black-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the matte black theme">
+          <span class="shot-name">matte black</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/catppuccin-latte.jpg" data-theme="catppuccin latte">
+          <img src="shots/catppuccin-latte-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the catppuccin latte theme">
+          <span class="shot-name">catppuccin latte</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/osaka-jade.jpg" data-theme="osaka jade">
+          <img src="shots/osaka-jade-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the osaka jade theme">
+          <span class="shot-name">osaka jade</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/ristretto.jpg" data-theme="ristretto">
+          <img src="shots/ristretto-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the ristretto theme">
+          <span class="shot-name">ristretto</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/miasma.jpg" data-theme="miasma">
+          <img src="shots/miasma-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the miasma theme">
+          <span class="shot-name">miasma</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/solitude.jpg" data-theme="solitude">
+          <img src="shots/solitude-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the solitude theme">
+          <span class="shot-name">solitude</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/last-horizon.jpg" data-theme="last horizon">
+          <img src="shots/last-horizon-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the last horizon theme">
+          <span class="shot-name">last horizon</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/lumon.jpg" data-theme="lumon">
+          <img src="shots/lumon-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the lumon theme">
+          <span class="shot-name">lumon</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/hackerman.jpg" data-theme="hackerman">
+          <img src="shots/hackerman-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the hackerman theme">
+          <span class="shot-name">hackerman</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/flexoki-light.jpg" data-theme="flexoki light">
+          <img src="shots/flexoki-light-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the flexoki light theme">
+          <span class="shot-name">flexoki light</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/lupine.jpg" data-theme="lupine">
+          <img src="shots/lupine-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the lupine theme">
+          <span class="shot-name">lupine</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/ethereal.jpg" data-theme="ethereal">
+          <img src="shots/ethereal-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the ethereal theme">
+          <span class="shot-name">ethereal</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/retro-82.jpg" data-theme="retro 82">
+          <img src="shots/retro-82-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the retro 82 theme">
+          <span class="shot-name">retro 82</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/vantablack.jpg" data-theme="vantablack">
+          <img src="shots/vantablack-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the vantablack theme">
+          <span class="shot-name">vantablack</span>
+        </button></li>
+        <li><button class="shot" type="button" data-full="shots/white.jpg" data-theme="white">
+          <img src="shots/white-thumb.jpg" width="620" height="349" loading="lazy" decoding="async"
+               alt="The agent panel on the white theme">
+          <span class="shot-name">white</span>
+        </button></li>
+    </ul>
+  </section>
+
+  <section class="plate">
+    <header>
+      <h2><a class="h-anchor" id="command-line-reference" href="#command-line-reference">command line reference</a></h2>
+    </header>
+
+    <!--
+      Plain reference, deliberately unmarketed: the command as you type it,
+      and what the help text says it does. The page is set in a duospace face
+      throughout, so the commands need no separate mono treatment — the grid
+      and the ink/muted split do all the work.
+    -->
+    <div class="cliref">
+      <div>
+        <a class="cli-anchor" id="cli-setup" href="#cli-setup"><code class="cli-cmd">amon setup [target] [--all] [--no-alias]</code></a>
+        <p>Set up integrations. Without arguments, an interactive screen;
+           with a target, one agent (<span class="lift">amon setup
+           claude</span>); <span class="lift">--all</span> takes every
+           detected agent plus the desktop integration without a screen.
+           <span class="lift">--no-alias</span> skips aliasing the agent's
+           name — on the non-interactive forms only, the screen always
+           aliases.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="cli-status" href="#cli-status"><code class="cli-cmd">amon status [--json]</code></a>
+        <p>What every connected agent is doing, most urgent first.
+           <span class="lift">--json</span> prints the entries
+           machine-readable instead of as a table.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="cli-focus" href="#cli-focus"><code class="cli-cmd">amon focus &lt;workspace&gt;</code></a>
+        <p>Go to a workspace by number, landing on the agent that needs your
+           attention rather than on whatever was focused there last. A plain
+           workspace switch when no agent wants anything.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="cli-doctor" href="#cli-doctor"><code class="cli-cmd">amon doctor</code></a>
+        <p>Integration, daemon, widget, and alias health in one report.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="cli-help" href="#cli-help"><code class="cli-cmd">amon --help | --version</code></a>
+        <p>Help for amon or any subcommand (<span class="lift">amon setup
+           --help</span>), and the version. Flags before an agent's name are
+           amon's own; unknown ones are an error rather than something an
+           agent might see.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="cli-agent" href="#cli-agent"><code class="cli-cmd">amon &lt;agent&gt; [args&hellip;]</code></a>
+        <p>Run an agent under amon. Any first word that is not a subcommand
+           below names an agent, and every argument after it is passed to the
+           agent verbatim — flags included, nothing interpreted.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="cli-remove" href="#cli-remove"><code class="cli-cmd">amon remove [target] [--all]</code></a>
+        <p>Remove integrations — one target, or everything after one
+           confirmation. <span class="lift">--all</span> skips the
+           confirmation, for scripts.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="cli-daemon" href="#cli-daemon"><code class="cli-cmd">amon daemon</code></a>
+        <p>Run the daemon in the foreground. Rarely needed — any amon
+           command starts it on demand.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="cli-hook" href="#cli-hook"><code class="cli-cmd">amon hook report-agent | report-agent-session</code></a>
+        <p>Relays an installed hook's report — the agent's state, or which
+           session it is in — to its wrapper. Used by the hook scripts
+           <span class="lift">amon setup</span> installs, not by hand.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="plate">
+    <header>
+      <h2><a class="h-anchor" id="settings" href="#settings">settings</a></h2>
+    </header>
+
+    <p>Everything configurable lives in one file,
+       <span class="lift">~/.config/amon/config.toml</span> —
+       <span class="lift">amon setup</span> writes it once, fully commented and
+       fully commented-out, and never touches it again. Every setting is
+       optional; each chip below shows its default. The daemon watches the
+       file, so changes apply live under a running bar — nothing restarts. A
+       file that fails to parse keeps the last good configuration
+       (<span class="lift">amon doctor</span> reports it), and a missing file
+       simply means the defaults.</p>
+
+    <div class="cliref">
+      <div class="cli-sect">[bar]</div>
+      <div>
+        <a class="cli-anchor" id="set-frame-ms" href="#set-frame-ms"><code class="cli-cmd">frame_ms = 200</code></a>
+        <p>How long one spinner frame is shown, in milliseconds. Four frames
+           at 200ms is one turn every 800ms.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-state-beats" href="#set-state-beats"><code class="cli-cmd">state_beats = 5</code></a>
+        <p>The focused workspace takes turns between its agent's state and
+           the marker that says you are here. Beats spent on the state; a
+           beat is half a spinner turn, so the rhythm follows the spinner's
+           speed.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-marker-beats" href="#set-marker-beats"><code class="cli-cmd">marker_beats = 3</code></a>
+        <p>Beats spent on the focus marker in that same turn-taking.</p>
+      </div>
+      <div class="cli-sect">[bar.glyphs]</div>
+      <div>
+        <a class="cli-anchor" id="set-glyph-working" href="#set-glyph-working"><code class="cli-cmd">working = ["&#x2812;", "&#x2830;", "&#x2824;", "&#x2806;"]</code></a>
+        <p>The animation frames for a working agent, in order, any length —
+           one frame is a static glyph. Plain characters, here and below:
+           a glyph setting chooses which character, never how it is drawn.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-glyph-blocked" href="#set-glyph-blocked"><code class="cli-cmd">blocked = "&#xF02D7;"</code></a>
+        <p>The glyph for an agent that needs input.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-glyph-done" href="#set-glyph-done"><code class="cli-cmd">done = "&#xF05E0;"</code></a>
+        <p>The glyph for an agent that finished while you were not looking.
+           An agent at rest has no glyph — its workspace keeps the number,
+           underlined.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-glyph-focused" href="#set-glyph-focused"><code class="cli-cmd">focused = "&#xF14FB;"</code></a>
+        <p>The marker for the workspace you are on.</p>
+      </div>
+      <div class="cli-sect">[sound]</div>
+      <div>
+        <a class="cli-anchor" id="set-sound-enabled" href="#set-sound-enabled"><code class="cli-cmd">enabled = true</code></a>
+        <p>A short sound when an agent starts waiting for you, and when one
+           finishes unwatched. Nothing plays for an agent you are looking
+           at. Set to false to silence both.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-sound-done" href="#set-sound-done"><code class="cli-cmd">done = "&hellip;/finished.mp3"</code></a>
+        <p>Your own sound for the finished-unwatched case, instead of the
+           bundled one. A relative path resolves from the config file's own
+           directory.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-sound-blocked" href="#set-sound-blocked"><code class="cli-cmd">blocked = "&hellip;/attention.mp3"</code></a>
+        <p>Your own sound for the needs-input case, same rules.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!--
+  The footer: the mark once more, at rest except for a blink every few
+  seconds — the eyes are knocked-out holes, so a blink is two ink capsules
+  briefly covering them. The line under it is the masthead's own tagline,
+  and the fine print is anchors and facts, nothing warmer.
+-->
+<footer class="foot">
+  <svg class="foot-mark" viewBox="33.75 16 194.5 183.5" role="img" aria-label="amon">
+    <path fill="currentColor" fill-rule="evenodd" d="M 205.5 133 C 205.5 163.75 205.56 180.06 194.64 189.81 C 182.77 200.41 159.67 199.5 131 199.5 C 102.33 199.5 79.23 200.41 67.36 189.81 C 56.44 180.06 56.5 163.75 56.5 133 C 56.5 102.25 56.44 85.94 67.36 76.19 C 79.23 65.59 102.33 66.5 131 66.5 C 159.67 66.5 182.77 65.59 194.64 76.19 C 205.56 85.94 205.5 102.25 205.5 133 Z M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/>
+    <rect class="lid" fill="currentColor" x="96.5" y="114.75" width="16" height="36.5" rx="8"/>
+    <rect class="lid" fill="currentColor" x="149.5" y="114.75" width="16" height="36.5" rx="8"/>
+    <path fill="currentColor" d="M 33.75 120.5 A 7.25 7.25 0 0 1 48.25 120.5 L 48.25 145.5 A 7.25 7.25 0 0 1 33.75 145.5 Z M 213.75 120.5 A 7.25 7.25 0 0 1 228.25 120.5 L 228.25 145.5 A 7.25 7.25 0 0 1 213.75 145.5 Z"/>
+    <circle fill="currentColor" cx="131" cy="29" r="13"/>
+    <path d="M 131 42 L 131 56" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
+  </svg>
+  <p class="foot-tag">Any agent, one keystroke away.</p>
+  <div class="glyphs">
+    <a class="glyph" href="https://github.com/mme/amon" rel="noopener"
+       aria-label="amon on GitHub" title="GitHub">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><use href="#gl-github"/></svg>
+    </a>
+    <a class="glyph" href="https://x.com/mme_xyz" rel="noopener"
+       aria-label="Follow @mme_xyz on X" title="Follow on X">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-x"/></svg>
+    </a>
+  </div>
+  <p class="foot-fine"><a href="#command-line-reference">reference</a> &middot;
+     <a href="#settings">settings</a> &middot; Apache-2.0 &middot;
+     built for <a href="https://omarchy.org" rel="noopener">Omarchy</a></p>
+</footer>
+
+<dialog class="lightbox" id="gallery" aria-label="Theme screenshots">
+  <div class="lightbox-frame">
+    <img id="gallery-image" alt="">
+    <div class="lightbox-bar">
+      <button type="button" id="gallery-prev" aria-label="Previous theme">&#8249;</button>
+      <b id="gallery-name"></b>
+      <button type="button" id="gallery-next" aria-label="Next theme">&#8250;</button>
+    </div>
+  </div>
+  <button type="button" class="lightbox-close" id="gallery-close" aria-label="Close">&times;</button>
+</dialog>
+
+<script>
+  // Braille spinner, drawn rather than typed: the widget shows U+2800-block
+  // characters, which a web font may not carry.
+  //
+  // A cell is two columns by four rows, and the four frames light only the
+  // middle two — a two-dot bar going round: top, right, bottom, left. Which
+  // rows is the whole of it. herdr's own ten frames light dots 1-6 only, so
+  // their ink fills the top three quarters of the cell and the spinner rides
+  // visibly high against the digits beside it; the middle two rows are centred
+  // by construction and half the height.
+  (function(){
+    var FRAMES = [0x2812, 0x2830, 0x2824, 0x2806];
+    var COLS = [8.7, 15.3], ROWS = [4.35, 9.45, 14.55, 19.65], R = 2.35;
+
+    // Where a lit dot goes. Bits 0-2 are the left column's first three rows,
+    // 3-5 the right column's, 6-7 the fourth row of each — which is exactly
+    // why a six-dot reading of the cell cannot say "the middle two rows".
+    function place(bit){
+      return bit < 6 ? [bit > 2 ? 1 : 0, bit % 3] : [bit - 6, 3];
+    }
+    function paint(group, code){
+      group.textContent = '';
+      var bits = code - 0x2800;
+      for (var bit = 0; bit < 8; bit++) {
+        if (!(bits >> bit & 1)) continue;
+        var at = place(bit);
+        var c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+        c.setAttribute('cx', COLS[at[0]]);
+        c.setAttribute('cy', ROWS[at[1]]);
+        c.setAttribute('r', R);
+        c.setAttribute('fill', 'currentColor');
+        group.appendChild(c);
+      }
+    }
+
+    // One timer drives every spinner on the page, so they step together exactly
+    // as the real bar does. 200ms because the cadence follows the revolution,
+    // not the frame: four frames at 200ms turn once every 800ms, which is what
+    // herdr's ten at 80ms do.
+    var spun = [].slice.call(document.querySelectorAll('.spinner')), frame = 0;
+    if (!spun.length) return;
+    spun.forEach(function(g){ paint(g, FRAMES[frame]); });
+
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setInterval(function(){
+        frame = (frame + 1) % FRAMES.length;
+        spun.forEach(function(g){ paint(g, FRAMES[frame]); });
+      }, 200);
+    }
+  })();
+
+  // The bar's clock is the real one, in the visitor's own locale — a schematic
+  // can simplify, but a wrong time is the one detail anybody can catch. h23
+  // rather than hour12:false, which yields "24:00" at midnight in some locales.
+  (function(){
+    var clock = document.querySelector('.topbar .clock');
+    if (!clock) return;
+    function tick(){
+      var now = new Date();
+      clock.textContent =
+        now.toLocaleDateString(undefined, { weekday: 'long' }) + ' ' +
+        now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit',
+                                            hourCycle: 'h23' });
+      // wake on the minute itself rather than drifting a little later each time
+      setTimeout(tick, 60000 - (now.getSeconds() * 1000 + now.getMilliseconds()) + 40);
+    }
+    tick();
+  })();
+
+  // The explainer aims itself. It reads which workspace it is about off
+  // data-explains, measures that slot, and hands the offset to the CSS as
+  // --point-x — so the stem and the copy line up with the indicator whatever
+  // the bar's width, and moving to the next step is one attribute away. An
+  // observer watches the attribute, which is why nothing here is exported.
+  (function(){
+    var bar = document.querySelector('.topbar .bar'),
+        explain = document.querySelector('.topbar .explain');
+    if (!bar || !explain) return;
+
+    function aim(){
+      var slot = bar.querySelector('.ws[data-ws="' + explain.dataset.explains + '"]');
+      if (!slot) return;
+      var s = slot.getBoundingClientRect(), b = bar.getBoundingClientRect();
+      explain.style.setProperty('--point-x', (s.left + s.width / 2 - b.left) + 'px');
+    }
+
+    aim();
+    new MutationObserver(aim).observe(explain, { attributeFilter: ['data-explains'] });
+    addEventListener('resize', aim);
+    // web fonts land after first paint and the slots are type-sized, so the
+    // first measurement can be of the fallback face
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(aim);
+  })();
+
+  // The explainer's cycle. Each step owns the whole picture — which workspaces
+  // are in which state, where the pointer sits, and what the line says — so the
+  // bar and the copy can never disagree about which step is showing. A step
+  // lights exactly one workspace and leaves the rest as plain numbers: the line
+  // below names one state, so the bar should have one state to find.
+  //
+  // One move, three beats: the copy fades out, the pointer walks to the next
+  // workspace while the copy is invisible (so nothing is read mid-flight), and
+  // the new line fades up once the pointer has arrived. The slot's own glyph
+  // crossfades under it, timed to land before the pointer does.
+  (function(){
+    var bar = document.querySelector('.topbar .bar'),
+        explain = document.querySelector('.topbar .explain'),
+        line = explain && explain.querySelector('.explain-line'),
+        said = explain && explain.querySelector('.explain-said');
+    if (!bar || !explain || !line || !said) return;
+
+    // A step's copy is a list of runs, not a string of HTML, because the line
+    // is built one character at a time and the emphasis has to survive being
+    // half-typed. Each run is [text] or [text, tag].
+    var STEPS = [
+      // One state on screen at a time: the step's own workspace wears its
+      // state, every other slot is just its number. The reader is asked to
+      // look at one thing, and no step leans on remembering another — which
+      // is why four no longer holds a standing agent. Being lit in every step
+      // made it the exception that taught the rule.
+      // The state is what gets lifted; the errand rides in brackets after it,
+      // set off by the brackets rather than by ink so the emphasis in each line
+      // lands in one place only.
+      { ws: 1, states: { 1: 'working' },
+        parts: [['Your agent is '], ['working', 'b'], ['. [Watch with '],
+                ['Super+1', 'kbd'], [']']] },
+      { ws: 2, states: { 2: 'done' },
+        parts: [['Your agent is '], ['done', 'b'], ['. [Review with '],
+                ['Super+2', 'kbd'], [']']] },
+      { ws: 3, states: { 3: 'blocked' },
+        parts: [['Your agent is '], ['waiting for response', 'b'], ['. [Answer with '],
+                ['Super+3', 'kbd'], [']']] },
+      // The last two have no glyph to point at, so the bar dims and the aimed
+      // slot is the only thing left holding ink. Four wears the underline an
+      // agent at rest gets; five wears nothing, which is the whole of it.
+      { ws: 4, states: { 4: 'active' }, dim: true,
+        parts: [['Your agent is '], ['idle', 'b'], ['. [Check in with '],
+                ['Super+4', 'kbd'], [']']] },
+      // The bracket is the same slot throughout — what to know about this state.
+      // For the first four that is the key; here there is nothing to press, so
+      // it names the appearance instead, which is the only cue this state has.
+      // It answers the step before it rather than the slot beside it: four wore
+      // the underline an agent at rest gets, five does not, and that is the
+      // whole difference between "an agent is here, wanting nothing" and
+      // "nothing is here". The contrast used to be spatial — four sat lit in
+      // every step — which made one slot behave unlike the other four.
+      { ws: 5, states: { 5: 'bare' }, dim: true,
+        parts: [['There is '], ['no agent', 'b'],
+                [' on this workspace. [No underline]']] }
+    ];
+    // Long enough to read the line twice and still look at the bar.
+    var DWELL = 7000, FADE = 200, TYPE = 22, at = 0, run = 0;
+
+    function plain(parts){
+      return parts.map(function(p){ return p[0]; }).join('');
+    }
+    // draw the first n characters, keeping every run's tag
+    function draw(parts, n){
+      line.textContent = '';
+      for (var i = 0, left = n; i < parts.length && left > 0; i++) {
+        var seg = parts[i][0], tag = parts[i][1], take = Math.min(left, seg.length);
+        var node = tag ? document.createElement(tag) : document.createTextNode('');
+        if (tag) node.textContent = seg.slice(0, take); else node.data = seg.slice(0, take);
+        line.appendChild(node);
+        left -= take;
+      }
+    }
+    function settle(step){
+      [].forEach.call(bar.querySelectorAll('.ws'), function(w){
+        w.dataset.state = step.states[w.dataset.ws] || 'idle';
+      });
+      bar.classList.toggle('is-dim', !!step.dim);
+      explain.dataset.explains = step.ws;   // the aim observer follows this
+      said.textContent = plain(step.parts);
+    }
+
+    // The old line leaves by fading, not by being unpicked a character at a
+    // time — backspacing made the reader watch the same sentence twice. Only
+    // the arriving line is typed, and the caption travels while it is empty, so
+    // the caret shows up at the new workspace and writes from there.
+    function show(step, typed){
+      var to = plain(step.parts).length, mine = ++run;
+
+      if (!typed) { settle(step); draw(step.parts, to); return; }
+
+      explain.classList.add('is-fading');
+      setTimeout(function(){
+        if (mine !== run) return;
+        settle(step);
+        draw(step.parts, 0);
+        explain.classList.remove('is-fading');
+        explain.classList.add('is-typing');
+        (function type(m){
+          if (mine !== run) return;
+          if (m > to) { explain.classList.remove('is-typing'); return; }
+          draw(step.parts, m);
+          setTimeout(function(){ type(m + 1); }, TYPE);
+        })(1);
+      }, FADE);
+    }
+
+    at = 0;
+    show(STEPS[0], false);
+
+    // A carousel that advances itself is the thing the preference is asking us
+    // not to do, so under reduce the cycle never starts — but the bar is still
+    // fully explorable by hand, which is the better half of the deal.
+    var motionOK = !matchMedia('(prefers-reduced-motion: reduce)').matches,
+        timer = null;
+
+    function stop(){ if (timer) { clearInterval(timer); timer = null; } }
+    function start(){
+      stop();
+      if (motionOK) timer = setInterval(function(){
+        at = (at + 1) % STEPS.length;
+        show(STEPS[at], true);
+      }, DWELL);
+    }
+
+    // Hand control over to the pointer. Hovering or focusing a workspace parks
+    // the cycle and jumps the explainer to that one; leaving the bar hands it
+    // back. Instant rather than typed, because someone reading by hand is
+    // asking a question and should not have to wait for an answer to be typed
+    // out — the stem and the copy still glide, since that is CSS on --point-x.
+    function grab(ws){
+      var i = -1;
+      for (var j = 0; j < STEPS.length; j++) if (String(STEPS[j].ws) === String(ws)) i = j;
+      stop();
+      if (i < 0 || i === at) return;
+      at = i;
+      show(STEPS[at], false);
+    }
+
+    [].forEach.call(bar.querySelectorAll('.ws'), function(w){
+      w.addEventListener('pointerenter', function(){ grab(w.dataset.ws); });
+      w.addEventListener('focus', function(){ grab(w.dataset.ws); });
+      w.addEventListener('click', function(){ grab(w.dataset.ws); });
+    });
+    // on the bar, not on each slot: sliding from one number to the next would
+    // otherwise release and re-grab, restarting the timer mid-gesture
+    bar.addEventListener('pointerleave', start);
+    bar.addEventListener('focusout', function(e){
+      if (!bar.contains(e.relatedTarget)) start();
+    });
+
+    start();
+  })();
+
+  // Theme toggle. The page follows the OS until you say otherwise.
+  // The mark glances. Left first, then alternating, so a glance always reads
+  // as one of a pair rather than a twitch. The gap is random but floored by a
+  // cooldown, so two never land on top of each other — and it only ever moves
+  // the eyes, never the head.
+  (function(){
+    var L = document.getElementById('amon-eye-l'),
+        R = document.getElementById('amon-eye-r');
+    if (!L || !R || !L.animate) return;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    var SHIFT = 18,         // user units, so ~18px at the masthead's size
+        LEAD = .88,         // the eye it looks toward travels less...
+        TRAIL = 1.12,       // ...and the far one swings further round
+        COOLDOWN = 2000,    // never sooner than this after the last one
+        SPREAD = 4000,      // plus up to this much, at random
+        dir = -1;           // negative x is left; the first glance looks left
+
+    // The two never move as one rigid pair. A head turning left foreshortens on
+    // the left, so its near eye covers less ground than the far one and the gap
+    // between them squeezes. Same idea here, without turning the head.
+    //
+    // Easing goes on the keyframes, not on the timing: an `easing` in the
+    // options remaps the whole timeline, which drags the offsets away from the
+    // moments they name. Per-keyframe, each leg gets its own curve — the value
+    // set on a keyframe governs the interval that starts there.
+    function move(el, dx){
+      el.animate([
+        { transform: 'translateX(0)',                             easing: 'ease-in-out' },
+        { transform: 'translateX(' + dx + 'px)', offset: .22,     easing: 'linear'      },
+        { transform: 'translateX(' + dx + 'px)', offset: .72,     easing: 'ease-in-out' },
+        { transform: 'translateX(0)' }
+      ], { duration: 1600 });   // ~350ms across, 800ms looking, ~450ms back
+    }
+
+    function glance(){
+      var near = dir < 0 ? L : R,
+          far  = dir < 0 ? R : L;
+      move(near, SHIFT * dir * LEAD);
+      move(far,  SHIFT * dir * TRAIL);
+      dir = -dir;
+      return 1600;
+    }
+
+    // Two quick pulses, close together. Each ear scales from its inner edge
+    // (set in CSS), so the pair reads as flicking outward from the head rather
+    // than inflating in place.
+    var earL = document.getElementById('amon-ear-l'),
+        earR = document.getElementById('amon-ear-r'),
+        SWELL = 1.17;
+
+    function pulse(){
+      [earL, earR].forEach(function(ear){
+        if (!ear) return;
+        ear.animate([
+          { transform: 'scale(1)',            offset: 0,   easing: 'ease-out' },
+          { transform: 'scale(' + SWELL + ')', offset: .19, easing: 'ease-in'  },
+          { transform: 'scale(1)',            offset: .38, easing: 'linear'   },
+          { transform: 'scale(1)',            offset: .50, easing: 'ease-out' },
+          { transform: 'scale(' + SWELL + ')', offset: .69, easing: 'ease-in'  },
+          { transform: 'scale(1)',            offset: .88 },
+          { transform: 'scale(1)',            offset: 1 }
+        ], { duration: 780 });
+      });
+      return 780;
+    }
+
+    // Slot machine. Both reels spin the same way, as real ones do, and each
+    // runs a whole number of symbol-spacings so a fresh eye lands dead centre.
+    // The right is nudged off the line by a beat and given further to go, so
+    // they neither start nor stop together — reels falling out of step is most
+    // of what makes it read as a slot machine rather than a swap.
+    var SPACING = 160;
+
+    function reel(group, turns, dur, delay){
+      var D = SPACING * turns, PULL = 12;
+      return group.animate([
+        // Winds back first, slowly, so you catch it loading up before anything
+        // happens — the pull is only 12, small enough that no second symbol can
+        // creep into view while it hangs there.
+        { transform: 'translateY(0)',                   offset: 0,   easing: 'cubic-bezier(.25,.6,.4,1)' },
+        { transform: 'translateY(' + (-PULL) + 'px)',   offset: .17, easing: 'cubic-bezier(.7,0,.9,.35)' },
+        // ...lets go, and is running flat out by here
+        { transform: 'translateY(' + (D * .10) + 'px)', offset: .34, easing: 'linear' },
+        // ...then brakes hard into the detent, a touch past it...
+        { transform: 'translateY(' + (D * .74) + 'px)', offset: .70, easing: 'cubic-bezier(.2,.55,.3,1)' },
+        { transform: 'translateY(' + (D + 5) + 'px)',   offset: .94, easing: 'ease-out' },
+        // ...and snaps back onto it
+        { transform: 'translateY(' + D + 'px)',         offset: 1 }
+      ], { duration: dur, delay: delay || 0, fill: 'forwards' });
+    }
+
+    // Suits, drawn rather than typed — the same reason the bar glyphs are:
+    // ♠♥♦♣ in a font is a gamble on what the visitor has installed. Each is
+    // centred on (0,0) at about the eye's footprint and dealt at SUIT_SCALE, so
+    // the drawing stays readable and only one number decides how big they land.
+    var SUITS = [
+      // spade
+      '<path d="M 0 -10.5 C 4.5 -5.5 10 -2.5 10 2 C 10 5.5 7.5 7.5 4.8 7.5 C 2.8 7.5 1.2 6.6 .2 5.2' +
+        ' C .9 8 2.2 9.6 3.6 10.5 L -3.6 10.5 C -2.2 9.6 -.9 8 -.2 5.2 C -1.2 6.6 -2.8 7.5 -4.8 7.5' +
+        ' C -7.5 7.5 -10 5.5 -10 2 C -10 -2.5 -4.5 -5.5 0 -10.5 Z"/>',
+      // heart
+      '<path d="M 0 10.5 C -3 7 -10 2.5 -10 -3 C -10 -7.5 -6.5 -10.5 -3 -10.5 C -1.2 -10.5 -.3 -9.4 0 -8.4' +
+        ' C .3 -9.4 1.2 -10.5 3 -10.5 C 6.5 -10.5 10 -7.5 10 -3 C 10 2.5 3 7 0 10.5 Z"/>',
+      // diamond
+      '<path d="M 0 -11 C 2.5 -6 5.5 -2.5 8.5 0 C 5.5 2.5 2.5 6 0 11 C -2.5 6 -5.5 2.5 -8.5 0' +
+        ' C -5.5 -2.5 -2.5 -6 0 -11 Z"/>',
+      // club
+      '<circle cx="0" cy="-5.2" r="5"/><circle cx="-6" cy="3" r="5"/><circle cx="6" cy="3" r="5"/>' +
+        '<path d="M -3.6 10.5 C -2 8.5 -.8 5.5 -.5 2 L .5 2 C .8 5.5 2 8.5 3.6 10.5 Z"/>'
+    ];
+
+    var EYE_D = {
+      l: 'M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z',
+      r: 'M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z'
+    };
+    var CENTRE = { l: 104.5, r: 157.5 }, SUIT_SCALE = 1.5;
+
+    function setSlot(side, html){
+      var slot = document.querySelector('#amon-eye-' + side + ' .slot');
+      if (slot) slot.innerHTML = html;
+    }
+    function dealSuit(side){
+      // three nested groups on purpose: the outer puts the origin on the
+      // symbol's centre, the middle is the only one animated, the inner carries
+      // the size. Animating an element that already has a transform attribute
+      // would clobber it, so the squash gets a group of its own.
+      setSlot(side, '<g transform="translate(' + CENTRE[side] + ' 133)"><g class="squash">' +
+                    '<g transform="scale(' + SUIT_SCALE + ')">' +
+                    SUITS[Math.floor(Math.random() * SUITS.length)] + '</g></g></g>');
+    }
+    function restoreEye(side){ setSlot(side, '<path d="' + EYE_D[side] + '"/>'); }
+
+    // The two run at different speeds on purpose — the right covers five turns
+    // where the left covers three, and not proportionally slower for it, so it
+    // is plainly the quicker reel. It also sets off a third of a second late
+    // and locks well after: nothing about the pair is ever in step.
+    //
+    // Each reel lands on a suit, holds it long enough to be read, and then both
+    // blink — and the blink is what does the tidying. While the eyes are shut
+    // the reels are cancelled (snapping back to their resting symbol) and the
+    // suits are swapped out, so the swap is never seen, only its result.
+    var HOLD = 1100, SQUASH = 170;
+
+    function reels(){
+      dealSuit('l'); dealSuit('r');
+      var a = reel(L, 3, 1400),        // ~0.61 units/ms while rolling
+          b = reel(R, 5, 1800, 320);   // ~0.79 units/ms, and away 320ms later
+      var landed = 320 + 1800;
+
+      setTimeout(function(){
+        // the suits flatten to a line about their own centres...
+        ['l','r'].forEach(function(side){
+          var sq = document.querySelector('#amon-eye-' + side + ' .slot .squash');
+          if (sq) sq.animate([{ transform: 'scaleY(1)' }, { transform: 'scaleY(0)' }],
+                             { duration: SQUASH, easing: 'ease-in', fill: 'forwards' });
+        });
+        // ...and while nothing is showing, the reels are put back and the suits
+        // swapped out, so the eyes rise from the same flat line the suits left
+        setTimeout(function(){
+          a.cancel(); b.cancel();
+          restoreEye('l'); restoreEye('r');
+          ['l','r'].forEach(function(side){
+            var eye = document.querySelector('#amon-eye-' + side + ' > .eye');
+            if (eye) eye.animate([{ transform: 'scaleY(0)' }, { transform: 'scaleY(1)' }],
+                                 { duration: SQUASH, easing: 'ease-out' });
+          });
+        }, SQUASH);
+      }, landed + HOLD);
+
+      return landed + HOLD + SQUASH * 2;
+    }
+
+    // The antenna transmits: two rings leave the ball, expand and fade, one
+    // behind the other. Two rather than three, and further apart — at full
+    // opacity a third crowds the other two and the burst reads as a target
+    // rather than as something travelling. The circles are drawn at the ball's own radius and scaled up
+    // rather than having their r animated, which keeps it to a transform — and
+    // non-scaling-stroke stops the ring fattening as it grows, so it reads as
+    // a wavefront thinning out rather than a swelling blob.
+    var waves = document.querySelectorAll('.wave'),
+        WAVE = 900, WAVE_GAP = 320, REACH = 2.56;
+
+    function beacon(){
+      // the ball kicks once as the first ring leaves it — a beacon that throws
+      // off waves while sitting perfectly still reads as detached from them
+      var ball = document.getElementById('amon-ball');
+      if (ball) ball.animate([
+        { transform: 'scale(1)',    offset: 0,  easing: 'ease-out' },
+        { transform: 'scale(1.18)', offset: .35, easing: 'ease-in' },
+        { transform: 'scale(1)',    offset: 1 }
+      ], { duration: 420 });
+
+      waves.forEach(function(ring, i){
+        // Solid for most of the journey, then gone. Fading the whole way makes
+        // a ring read as a gradient rather than as a wavefront — it is at full
+        // strength from 8% to 72% and only lets go over the last quarter.
+        ring.animate([
+          { transform: 'scale(1)',    opacity: 0, offset: 0 },
+          { transform: 'scale(1.08)', opacity: 1, offset: .08 },
+          { transform: 'scale(' + (1 + (REACH - 1) * .72) + ')', opacity: 1, offset: .72 },
+          { transform: 'scale(' + REACH + ')', opacity: 0, offset: 1 }
+        ], { duration: WAVE, delay: i * WAVE_GAP, easing: 'cubic-bezier(.15,.6,.35,1)' });
+      });
+      return WAVE + WAVE_GAP * (waves.length - 1);
+    }
+
+    // The head turns half a circle and nothing else moves — not the ears, not
+    // the antenna, not the eyes riding on it. Same shape as the reel: winds
+    // back slowly enough to be seen loading, lets go, runs, then brakes past
+    // the mark and settles onto it.
+    //
+    // A half turn lands looking identical: the squircle is symmetric about both
+    // axes, and its Bezier fit was mirrored from one quadrant, so it is exactly
+    // so. The animation therefore needs no fill — when it ends and the
+    // transform drops away, the head is already where it appears to be. It also
+    // halves the diagonals, and the diagonals are where the head's corners
+    // reach 99.9 and briefly swallow the ears at 97.25.
+    function spin(){
+      var head = document.getElementById('amon-head'), TURN = 180;
+      if (!head) return 0;
+      head.animate([
+        { transform: 'rotate(0deg)',        offset: 0,   easing: 'cubic-bezier(.25,.6,.4,1)' },
+        { transform: 'rotate(-14deg)',      offset: .17, easing: 'cubic-bezier(.7,0,.9,.35)' },
+        { transform: 'rotate(' + (TURN * .10) + 'deg)', offset: .34, easing: 'linear' },
+        { transform: 'rotate(' + (TURN * .74) + 'deg)', offset: .70, easing: 'cubic-bezier(.2,.55,.3,1)' },
+        { transform: 'rotate(' + (TURN + 8) + 'deg)',   offset: .94, easing: 'ease-out' },
+        { transform: 'rotate(' + TURN + 'deg)',         offset: 1 }
+      // 750, not 1500: the turn halved, so the duration has to halve with it or
+      // the head sweeps at half the speed. The cruise leg covers .64 of the
+      // turn in .36 of the run either way — 0.43 degrees/ms, unchanged.
+      ], { duration: 750 });
+      return 750;
+    }
+
+    // ---- the conveyor ----------------------------------------------------
+    //
+    // Left ear, both eyes, right ear are four capsules on one axis — they all
+    // sit at cy 133 — so the row can shift along it. Whatever crosses the head's
+    // rim changes colour on the way through, and that costs nothing: each
+    // capsule is drawn twice, ink and ground, and the clip does the rest.
+    //
+    // The slots are unevenly spaced (63.5, 53, 63.5), so a shift always has the
+    // row moving at two speeds, and the further it travels the less that shows:
+    // one slot is 63.5 against 53, a 17% spread; two is 127 against 116.5, 8%;
+    // three is 190.5 against 180, under 6%. At three the left ear also crosses
+    // the whole face — ear, eye, eye, ear in one run — and comes out the far side
+    // as the right ear, which is the trip that shows the idea off.
+    var SLOT = [41, 104.5, 157.5, 221],   // ear, eye, eye, ear
+        PITCH = 63.5,                     // spacing assumed for the slots beyond
+        ROW_CY = 133,
+        EAR_W = 14.5, EAR_H = 39.5,
+        EYE_W = 16, EYE_H = 36.5,
+        VIEW_L = -33.25, VIEW_R = 293.5,  // the lockup's viewBox in x, runway included
+        EDGE_PAD = 3,                     // clearance kept from the edge that clips
+        FADE = 12,                        // and how far the fade itself runs
+        GROW_MIN = .12,                   // how small a capsule is when it appears
+        STEP = 3,
+        ROLL = 1500;
+
+    function slotX(k){
+      if (k >= 0 && k <= 3) return SLOT[k];
+      return k < 0 ? SLOT[0] + k * PITCH : SLOT[3] + (k - 3) * PITCH;
+    }
+    function slotW(k){ return (k <= 0 || k >= 3) ? EAR_W : EYE_W; }
+    function slotH(k){ return (k <= 0 || k >= 3) ? EAR_H : EYE_H; }
+    function unit(v){ return v < 0 ? 0 : v > 1 ? 1 : v; }
+
+    // The row: STEP capsules waiting off the left edge, then the four on show.
+    // Each is built at its starting slot and carries where it has to end up.
+    var row = (function(){
+      var NS = 'http://www.w3.org/2000/svg',
+          into = [document.getElementById('amon-row-ink'),
+                  document.getElementById('amon-row-gnd')],
+          out = [], s, e, els, i, r;
+      if (!into[0] || !into[1]) return out;
+      for (s = -STEP; s <= 3; s++) {
+        e = s + STEP;
+        els = [];
+        for (i = 0; i < 2; i++) {
+          r = document.createElementNS(NS, 'rect');
+          r.setAttribute('x', slotX(s) - slotW(s) / 2);
+          r.setAttribute('y', ROW_CY - slotH(s) / 2);
+          r.setAttribute('width', slotW(s));
+          r.setAttribute('height', slotH(s));
+          r.setAttribute('rx', slotW(s) / 2);     // rx = half the width: a capsule
+          into[i].appendChild(r);
+          els.push(r);
+        }
+        out.push({ els: els, x0: slotX(s), x1: slotX(e),
+                   sx: slotW(e) / slotW(s),       // an ear is 10% narrower than an
+                   sy: slotH(e) / slotH(s),       // eye and 8% taller, so it morphs
+                   half: slotW(s) / 2,
+                   fadeIn: s < 0, fadeOut: e > 3 });
+      }
+      return out;
+    })();
+
+    // Opacity follows x, not progress, and both fades happen out in the runway,
+    // hard against the edge rather than beside the artwork: in over cx -23 to -11,
+    // out over 271 to 283. A capsule is solid for the whole of its visible
+    // approach — some 50 units before it lands, 50 more after it leaves home — and
+    // it is already gone before the edge could clip it.
+    //
+    // Fading beside the artwork was the mistake: with 11 units of space left of the
+    // resting ear, an arriving capsule had to materialise on top of where it
+    // stopped, so it read as appearing rather than as arriving.
+    //
+    // Both windows are also far clear of the head, so a capsule is never
+    // part-transparent over it, where the ink and ground layers would show through
+    // each other.
+    //
+    // Size follows x as well, and over a far longer run than the fade: a capsule
+    // appears at GROW_MIN and reaches full size exactly as it arrives at the
+    // ear's slot, some 64 units later, where the fade is done inside 12. So it
+    // is solid long before it is big, which is what makes it read as coming from
+    // somewhere rather than being switched on nearby. Leaving is the same in
+    // reverse, measured from the far ear.
+    //
+    // Centred because the row's rects set transform-box: fill-box — without it
+    // scaling would drag each capsule toward the viewBox origin.
+    function place(it, t){
+      var cx = it.x0 + (it.x1 - it.x0) * t, op = 1, grow = 1, a, b;
+      if (it.fadeIn)  { a = VIEW_L + it.half + EDGE_PAD; b = a + FADE;
+                        op = unit((cx - a) / (b - a));
+                        grow = GROW_MIN + (1 - GROW_MIN) *
+                               unit((cx - a) / (SLOT[0] - a)); }
+      if (it.fadeOut) { b = VIEW_R - it.half - EDGE_PAD; a = b - FADE;
+                        op = 1 - unit((cx - a) / (b - a));
+                        grow = GROW_MIN + (1 - GROW_MIN) *
+                               (1 - unit((cx - SLOT[3]) / (b - SLOT[3]))); }
+      var tf = 'translateX(' + (cx - it.x0) + 'px) scale(' +
+               ((1 + (it.sx - 1) * t) * grow) + ',' +
+               ((1 + (it.sy - 1) * t) * grow) + ')';
+      it.els[0].style.transform = it.els[1].style.transform = tf;
+      it.els[0].style.opacity = it.els[1].style.opacity = op;
+    }
+
+    // cubic-bezier(.45,.05,.35,1) solved by hand: this is the one gesture that
+    // drives its own frames, because its opacity depends on where a capsule has
+    // got to rather than on how long it has been going, and keyframes cannot
+    // express that without sampling the curve.
+    function smooth(x){
+      var x1 = .45, y1 = .05, x2 = .35, y2 = 1,
+          cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx,
+          cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by,
+          t = x, i, err, d;
+      for (i = 0; i < 6; i++) {
+        err = ((ax * t + bx) * t + cx) * t - x;
+        d = (3 * ax * t + 2 * bx) * t + cx;
+        if (d === 0 || Math.abs(err) < 1e-5) break;
+        t -= err / d;
+      }
+      t = unit(t);
+      return ((ay * t + by) * t + cy) * t;
+    }
+
+    function conveyor(){
+      if (!row.length || !lockup) return 0;
+      row.forEach(function(it){ place(it, 0); });
+      lockup.classList.add('conveying');
+      var t0 = performance.now();
+      requestAnimationFrame(function frame(now){
+        var g = (now - t0) / ROLL;
+        if (g > 1) g = 1;
+        var p = smooth(g);
+        row.forEach(function(it){ place(it, p); });
+        if (g < 1) { requestAnimationFrame(frame); return; }
+        // Every capsule has landed on a slot the real elements already occupy,
+        // so handing back to them draws the identical picture and the swap is
+        // invisible. Re-homing the row afterwards happens out of sight.
+        lockup.classList.remove('conveying');
+        row.forEach(function(it){ place(it, 0); });
+      });
+      return ROLL;
+    }
+
+    // Watching the cursor. Come within WATCH_PAD of the install button and the
+    // mark stops whatever it was doing and follows the pointer instead — the
+    // idling is what a mark does when nobody is paying attention, so it should
+    // stop the moment somebody is.
+    var lockup = document.querySelector('.masthead .lockup'),
+        cta = document.getElementById('install'),
+        WATCH_PAD = 20,      // px, measured from the button's edge, not its centre
+        REACH_X = 16,        // how far an eye travels at full stretch
+        REACH_Y = 13,        // still less than REACH_X, but the button sits below
+                             // the mark, so this is the direction it mostly looks
+        watching = false;
+
+    // distance from a point to a rectangle, zero anywhere inside it
+    function gapTo(x, y, r){
+      var dx = Math.max(r.left - x, 0, x - r.right),
+          dy = Math.max(r.top - y, 0, y - r.bottom);
+      return Math.hypot(dx, dy);
+    }
+
+    function eyes(){ return ['l','r'].map(function(side){
+      return document.getElementById('amon-eye-' + side); }); }
+
+    // Each eye aims at the cursor from where it actually sits, so the two toe
+    // in slightly on anything close — one shared direction would have them
+    // staring parallel like a printed pair.
+    function lookAt(x, y){
+      ['l','r'].forEach(function(side){
+        var g = document.getElementById('amon-eye-' + side),
+            box = g.querySelector('.eye').getBoundingClientRect(),
+            dx = x - (box.left + box.width / 2),
+            dy = y - (box.top + box.height / 2),
+            d = Math.hypot(dx, dy) || 1;
+        g.style.transform = 'translate(' + (dx / d * REACH_X) + 'px,' +
+                                           (dy / d * REACH_Y) + 'px)';
+      });
+    }
+
+    function startWatching(){
+      watching = true;
+      // drop whatever the mark was mid-way through, including a reel holding a
+      // suit — cancelling puts every group back where it rests
+      lockup.getAnimations({ subtree: true }).forEach(function(a){ a.cancel(); });
+      eyes().forEach(function(g){ g.classList.add('watching'); });
+    }
+
+    function stopWatching(){
+      watching = false;
+      eyes().forEach(function(g){
+        g.style.transform = 'translate(0,0)';           // ride the transition home
+        setTimeout(function(){
+          g.classList.remove('watching');
+          g.style.transform = '';                      // then hand control back
+        }, 120);
+      });
+    }
+
+    addEventListener('mousemove', function(e){
+      if (!cta) return;
+      var near = gapTo(e.clientX, e.clientY, cta.getBoundingClientRect()) < WATCH_PAD;
+      if (near && !watching) startWatching();
+      else if (!near && watching) stopWatching();
+      if (near) lookAt(e.clientX, e.clientY);
+    }, { passive: true });
+
+    // Pick a gesture at random. Repeats are allowed — the cooldown already
+    // keeps them apart, and forbidding them makes the sequence predictable.
+    // Each returns how long it occupies the mark, and the next wait is added on
+    // top: the reel runs some 3.5s all told, well past the 2s floor, and a
+    // glance landing in the middle of it would fight it for the same elements.
+    var gestures = [glance, pulse, reels, beacon, spin, conveyor];
+    function fire(){
+      if (watching) { schedule(0); return; }   // it has an audience; hold still
+      var busy = gestures[Math.floor(Math.random() * gestures.length)]() || 0;
+      schedule(busy);
+    }
+    function schedule(busy){
+      setTimeout(fire, (busy || 0) + COOLDOWN + Math.random() * SPREAD);
+    }
+    schedule(0);
+  })();
+
+  // The CTA is a command, not a link: clicking copies it. The Omarchy mark
+  // becomes a check for a moment, so the command itself never disappears.
+  //
+  // It shows `yay -S amon-bin` and copies the whole line — install, set up, and
+  // source the shell — because that is what the install block hands over and two
+  // buttons offering different commands would be worse than either. The command
+  // has one home, on that button, and this reads it: written down twice it would
+  // be right twice until the day one of them changed.
+  (function(){
+    var btn = document.getElementById('install'),
+        status = document.getElementById('install-status'),
+        source = document.getElementById('copy-install'),
+        cmd = (source && source.getAttribute('data-copy'))
+              || btn.querySelector('code').textContent.trim(),
+        timer;
+    btn.addEventListener('click', function(){
+      navigator.clipboard.writeText(cmd).then(function(){
+        btn.classList.add('copied');
+        status.textContent = 'Copied ' + cmd;
+        clearTimeout(timer);
+        timer = setTimeout(function(){
+          btn.classList.remove('copied');
+          status.textContent = '';
+        }, 1600);
+      }).catch(function(){
+        // clipboard refused — say so rather than pretending it worked
+        status.textContent = 'Copy blocked. Select the command and press Ctrl+C.';
+      });
+    });
+  })();
+
+  // The theme toggle is off for now: the page is dark, whatever the system
+  // asks for. Its button is still in the markup, hidden, so bringing it back is
+  // one attribute and this block.
+  // ---- the agent panel ---------------------------------------------------
+  // The cursor follows the pointer, as it does in the real panel: hovering a
+  // row makes it the selected one, and it stays selected while the pointer is
+  // anywhere in the panel — over a gap, over a workspace heading — because a
+  // highlight that snaps back to the top whenever you cross a divider is a
+  // highlight you cannot aim.
+  //
+  // The resting row comes back when the pointer leaves, so the figure is the
+  // same picture whenever nobody is touching it.
+  (function(){
+    var card = document.querySelector('.panel-card');
+    if (!card) return;
+
+    var resting = card.querySelector('.panel-row.is-cursor'),
+        current = resting;
+
+    function put(row){
+      if (!row || row === current) return;
+      if (current) current.classList.remove('is-cursor');
+      row.classList.add('is-cursor');
+      current = row;
+    }
+
+    card.addEventListener('pointermove', function(event){
+      put(event.target.closest('.panel-row'));
+    });
+    card.addEventListener('pointerleave', function(){ put(resting); });
+  })();
+
+  // The install block. What is shown is a transcript — two commands and what
+  // they print — and what is copied is the single line that does both and
+  // sources the shell afterwards, so the aliases work in the terminal you are
+  // already in. They are deliberately not the same text, which is why the
+  // command is on the button rather than read back out of the picture.
+  (function(){
+    var button = document.getElementById('copy-install');
+    if (!button) return;
+    var commands = button.getAttribute('data-copy'),
+        status = document.getElementById('copy-install-status'),
+        timer;
+
+    button.addEventListener('click', function(){
+      navigator.clipboard.writeText(commands).then(function(){
+        button.classList.add('is-copied');
+        status.textContent = 'Copied ' + commands;
+        clearTimeout(timer);
+        timer = setTimeout(function(){
+          button.classList.remove('is-copied');
+          status.textContent = '';
+        }, 1600);
+      }).catch(function(){
+        // Clipboard refused — say so rather than showing a check that lied.
+        status.textContent = 'Copy blocked: ' + commands;
+      });
+    });
+  })();
+
+  // ---- the theme gallery -------------------------------------------------
+  // A native <dialog>, so Escape, the focus trap and the backdrop come from the
+  // browser. Only the full-size image is loaded here, and only once one is
+  // opened: the grid carries thumbnails, which is what keeps the page light.
+  (function(){
+    var dialog = document.getElementById('gallery');
+    if (!dialog || !dialog.showModal) return;
+
+    var shots = [].slice.call(document.querySelectorAll('.shot')),
+        image = document.getElementById('gallery-image'),
+        name  = document.getElementById('gallery-name'),
+        at    = 0;
+
+    function show(index){
+      at = (index + shots.length) % shots.length;
+      var shot = shots[at];
+      image.src = shot.getAttribute('data-full');
+      image.alt = shot.querySelector('img').alt;
+      name.textContent = shot.getAttribute('data-theme');
+    }
+
+    shots.forEach(function(shot, index){
+      shot.addEventListener('click', function(){
+        show(index);
+        dialog.showModal();
+      });
+    });
+
+    document.getElementById('gallery-prev').addEventListener('click', function(){ show(at - 1); });
+    document.getElementById('gallery-next').addEventListener('click', function(){ show(at + 1); });
+    document.getElementById('gallery-close').addEventListener('click', function(){ dialog.close(); });
+
+    dialog.addEventListener('keydown', function(event){
+      if (event.key === 'ArrowRight') { show(at + 1); event.preventDefault(); }
+      if (event.key === 'ArrowLeft')  { show(at - 1); event.preventDefault(); }
+    });
+    // Clicking the backdrop, which is the dialog itself everywhere the frame
+    // is not.
+    dialog.addEventListener('click', function(event){
+      if (event.target === dialog) dialog.close();
+    });
+    // The image is heavy and the next visit should not show the last one.
+    dialog.addEventListener('close', function(){ image.removeAttribute('src'); });
+  })();
+
+</script>
+</body>
+</html>
