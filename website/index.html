@@ -377,6 +377,9 @@
   .panel-name{display:flex; flex-direction:column; gap:1px; min-width:0}
   .panel-name b{font-size:14px; font-weight:700; color:var(--ink)}
   .panel-counts{font-size:10.5px; letter-spacing:.1em; color:var(--muted); white-space:nowrap}
+  /* On a phone the counts line is wider than the header can be; a second
+     line beats a clipped word. */
+  @media (max-width:420px){ .panel-counts{white-space:normal} }
 
   .panel-rule{height:1px; background:var(--rule-soft); margin:12px 0 10px}
 
