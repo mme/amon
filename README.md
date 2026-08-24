@@ -7,11 +7,11 @@
   </picture>
 </p>
 
-Know what every coding agent you are running is doing. amon runs your agents
-untouched in your own terminal, shows you when they are working, idle, or
-waiting on you — and puts every one of them a keystroke away.
+amon lets you know when your agents are working, idle, or need your
+attention. It runs them untouched in your own terminal. Any agent, one
+keystroke away.
 
-Built for [Omarchy](https://omarchy.org).
+Built for [Omarchy Linux](https://omarchy.org).
 
 ```sh
 yay -S amon-bin && amon setup      # or build from source — see below
