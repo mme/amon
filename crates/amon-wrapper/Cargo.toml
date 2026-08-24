@@ -1,0 +1,17 @@
+[package]
+name = "amon-wrapper"
+description = "Runs a coding agent behind a PTY and reports its state"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+amon-detect = { workspace = true }
+amon-protocol = { workspace = true }
+amon-term = { workspace = true }
+libc = { workspace = true }
+libghostty-vt = "0.2.1"
+portable-pty = { workspace = true }
+serde_json = { workspace = true }
