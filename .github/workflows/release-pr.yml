@@ -1,0 +1,176 @@
+# The half of a release that asks permission: bump the one workspace version,
+# draft the notes, open a PR. Nothing is built and nothing is published —
+# merging the PR is what publishes (publish.yml watches for it), so cancelling
+# a release is closing a PR.
+#
+# Modeled on ag-ui's `release / create-pr`, minus everything a one-binary
+# workspace does not need: there is no scope to choose and no stacking branch,
+# because there is exactly one version to bump and it lives on one line of the
+# root Cargo.toml.
+
+name: release / create-pr
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump level"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+concurrency:
+  group: release-create-pr
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  create-release-pr:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # The notes read history back to the last tag.
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+
+      - name: Compute the bump
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          OLD=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          IFS=. read -r MAJOR MINOR PATCH <<<"$OLD"
+          case "$BUMP" in
+            major) NEW="$((MAJOR + 1)).0.0" ;;
+            minor) NEW="$MAJOR.$((MINOR + 1)).0" ;;
+            patch) NEW="$MAJOR.$MINOR.$((PATCH + 1))" ;;
+          esac
+          echo "old=$OLD" >> "$GITHUB_OUTPUT"
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse to overwrite an open release PR
+        env:
+          NEW: ${{ steps.version.outputs.new }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The PR body invites editing CHANGELOG.md on the branch, so the
+          # branch may carry review work this workflow knows nothing about —
+          # and the push below is a force push. Refusing while a PR is open
+          # makes the destructive path impossible to take by accident:
+          # closing the PR is how you ask for a rebuild.
+          OPEN=$(gh pr list --head "release/v$NEW" --state open --json number --jq length)
+          if [ "$OPEN" != "0" ]; then
+            echo "::error::A release PR for v$NEW is already open. Edit it, or close it to rebuild from main."
+            exit 1
+          fi
+
+      - name: Bump the workspace version
+        env:
+          OLD: ${{ steps.version.outputs.old }}
+          NEW: ${{ steps.version.outputs.new }}
+        run: |
+          # Anchored: the workspace declares its version exactly once at the
+          # start of a line, and every crate inherits it. A test in
+          # crates/amon-cli/tests/release.rs pins that shape, so the field
+          # cannot quietly move out from under this substitution.
+          sed -i "s/^version = \"$OLD\"/version = \"$NEW\"/" Cargo.toml
+          # The lock file records the workspace members' own versions.
+          cargo update --workspace --quiet
+
+      - name: List what changed since the last release
+        id: history
+        run: |
+          LAST=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+          RANGE=""
+          [ -n "$LAST" ] && RANGE="$LAST..HEAD"
+          git log $RANGE --no-merges --format='- %s' > /tmp/commits.md
+          echo "last=${LAST:-the beginning}" >> "$GITHUB_OUTPUT"
+
+      - name: Draft the release notes
+        # Claude reads the same history and writes the changelog section a
+        # human would: grouped, addressed to users, internal noise dropped.
+        # Runs on the maintainer's subscription (`claude setup-token` →
+        # CLAUDE_CODE_OAUTH_TOKEN secret), and is allowed to fail — the step
+        # below ships the raw commit list instead, because a release must
+        # never block on its narrator.
+        continue-on-error: true
+        uses: anthropics/claude-code-action@c81e3bc69d1b18badbb63ba39581218f02421678 # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: '--allowedTools "Read,Edit,Bash(git log:*),Bash(cat:*)"'
+          prompt: |
+            Insert a release-notes section for amon v${{ steps.version.outputs.new }}
+            into CHANGELOG.md, directly below the `<!-- next -->` marker line, shaped
+            exactly like this (blank lines included):
+
+            ## v${{ steps.version.outputs.new }}
+
+            <the notes>
+
+            Write the notes from the commits since ${{ steps.history.outputs.last }} —
+            their subjects are listed in /tmp/commits.md, and `git log` has the full
+            messages when a subject alone is not enough. Address users of amon, not
+            its developers: group related changes, lead with what changed for them,
+            and drop anything purely internal (tests, CI, refactors) unless it changes
+            behavior. Plain markdown bullets; no heading other than the version
+            heading; no preamble and no sign-off.
+
+      - name: Fall back to the commit list
+        env:
+          NEW: ${{ steps.version.outputs.new }}
+        run: |
+          # Only when the draft above did not land: the changelog must carry
+          # the section either way, because the PR body and the eventual
+          # GitHub Release are both read out of it.
+          if grep -q "^## v$NEW\$" CHANGELOG.md; then
+            exit 0
+          fi
+          awk -v new="$NEW" '
+            { print }
+            /<!-- next -->/ && !done {
+              print ""
+              print "## v" new
+              print ""
+              while ((getline line < "/tmp/commits.md") > 0) print line
+              done = 1
+            }
+          ' CHANGELOG.md > /tmp/changelog.md
+          mv /tmp/changelog.md CHANGELOG.md
+
+      - name: Open the release PR
+        env:
+          NEW: ${{ steps.version.outputs.new }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "release/v$NEW"
+          git add Cargo.toml Cargo.lock CHANGELOG.md
+          git commit -m "Release v$NEW"
+          # Force, so re-running the workflow rebuilds the branch from main
+          # rather than failing on its own leftovers.
+          git push -f origin "release/v$NEW"
+
+          # The PR body is the section just written — what merges is what
+          # ships, and editing CHANGELOG.md on the branch edits both.
+          awk "/^## v$NEW\$/{found=1; next} /^## /{found=0} found" CHANGELOG.md > /tmp/section.md
+          {
+            echo "Merging publishes **v$NEW**: the tag, a GitHub Release carrying the notes below, the binary tarball, and \`amon-bin\` on the AUR."
+            echo
+            echo "To change the notes, edit CHANGELOG.md on this branch. To cancel, close this PR — nothing has been published."
+            echo
+            cat /tmp/section.md
+          } > /tmp/body.md
+          gh pr create --base main --head "release/v$NEW" \
+            --title "Release v$NEW" --body-file /tmp/body.md \
+            || gh pr edit "release/v$NEW" --title "Release v$NEW" --body-file /tmp/body.md
