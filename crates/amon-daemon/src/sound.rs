@@ -23,26 +23,20 @@ use amon_protocol::{AgentState, SoundConfig};
 static DONE: &[u8] = include_bytes!("../assets/sounds/done.mp3");
 static BLOCKED: &[u8] = include_bytes!("../assets/sounds/request.mp3");
 
-/// The players worth trying, most likely first. Linux only: amon's platform is
-/// Omarchy, and herdr's macOS and Windows branches would be code carried for
-/// nobody. Anywhere else reads as "no player" and stays quiet.
-const PLAYERS: [&str; 5] = ["paplay", "pw-play", "ffplay", "mpg123", "mpv"];
+/// The one player: pw-play, PipeWire's own, pinned by Omarchy's base
+/// packages. herdr's fallback chain (paplay, ffplay, mpg123, mpv) was
+/// carried for machines amon does not target; a machine without pw-play
+/// reads as "no player" and stays quiet, the same stance as everywhere else.
+const PLAYER: &str = "pw-play";
 
-/// Extra arguments a player needs to be usable as a notification: not to take
-/// over the terminal, and to exit when the file ends.
-fn arguments(player: &str, file: &str) -> Vec<String> {
-    match player {
-        "ffplay" => vec![
-            "-nodisp".into(),
-            "-autoexit".into(),
-            "-loglevel".into(),
-            "quiet".into(),
-            file.into(),
-        ],
-        "mpv" => vec!["--no-video".into(), "--really-quiet".into(), file.into()],
-        "mpg123" => vec!["-q".into(), file.into()],
-        _ => vec![file.into()],
-    }
+/// The stream declares itself a notification. That is what lets the ducking
+/// drop-in (`amon setup --duck`) route it onto the Notification bus, above
+/// the music; without the drop-in the tag is inert. A test holds this role
+/// to the one the drop-in ranks.
+const ROLE: &str = r#"{ media.role = "Notification" }"#;
+
+fn arguments(file: &str) -> Vec<String> {
+    vec!["-P".into(), ROLE.into(), file.into()]
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -162,17 +156,14 @@ pub fn play(sound: Sound, config: &SoundConfig) {
         let Some(file) = resolve(sound, chosen) else {
             return;
         };
-        for player in PLAYERS {
-            let spawned = Command::new(player)
-                .args(arguments(player, &file))
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn();
-            if let Ok(mut child) = spawned {
-                let _ = child.wait();
-                return;
-            }
+        let spawned = Command::new(PLAYER)
+            .args(arguments(&file))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+        if let Ok(mut child) = spawned {
+            let _ = child.wait();
         }
     });
 }
@@ -425,6 +416,16 @@ mod tests {
         assert_eq!(before, after, "a second play writes nothing");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn playback_declares_the_notification_role() {
+        // The tag is what the ducking drop-in routes by; losing it would not
+        // fail anything visibly — the sound would simply stop ducking music.
+        let args = arguments("chime.mp3");
+        assert_eq!(args[0], "-P");
+        assert!(args[1].contains("media.role"), "{args:?}");
+        assert_eq!(args.last().map(String::as_str), Some("chime.mp3"));
     }
 
     #[test]

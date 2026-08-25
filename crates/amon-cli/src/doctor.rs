@@ -8,7 +8,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 
-use amon_integration::{alias, desktop, shims, DesktopTarget, InstallState};
+use amon_integration::{alias, desktop, ducking, shims, DesktopTarget, InstallState};
 use amon_protocol::{Hello, HelloResult, Method, Request, Response, Role, PROTOCOL_VERSION};
 
 pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -86,6 +86,26 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
         }
     } else {
         print_line("cli", "not found (no bar to integrate with)", "");
+    }
+
+    println!();
+    println!("audio:");
+    if ducking::available() {
+        match ducking::status() {
+            InstallState::Current => {
+                print_line("ducking", "installed (music dips under notifications)", "")
+            }
+            InstallState::Outdated => print_line(
+                "ducking",
+                "installed but stale (amon setup --duck refreshes it)",
+                "",
+            ),
+            InstallState::NotInstalled => {
+                print_line("ducking", "not installed (amon setup --duck)", "")
+            }
+        }
+    } else {
+        print_line("ducking", "no wireplumber on PATH — nothing to duck", "");
     }
 
     println!();
