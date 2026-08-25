@@ -14,7 +14,7 @@ keystroke away.
 Built for [Omarchy Linux](https://omarchy.org).
 
 ```sh
-yay -S amon-bin && amon setup      # or build from source - see below
+curl -fsSL amon.sh/install | sh && amon setup      # or build from source - see below
 ```
 
 ## Agents as first-class citizens on your desktop
@@ -110,23 +110,32 @@ just test        # cargo-nextest; the vendored tests need a process per test
 
 ## Installing
 
-One file is the whole install - the daemon and the wrapper are subcommands of
-the same binary, so there is no service to enable and nothing else to place:
+One command, no root. One file is the whole install - the daemon and the
+wrapper are subcommands of the same binary, so there is no service to enable
+and nothing else to place:
 
 ```sh
-just install     # release build into ~/.local/bin (override with AMON_PREFIX)
+curl -fsSL amon.sh/install | sh
 amon setup       # agent hooks, aliases, and the desktop integration
 amon doctor      # what is wired up and what is not
 ```
 
-`~/.local/bin` because Omarchy already has it on `PATH` - its own agent
-launchers live there. `amon setup` with no argument opens a screen; `amon setup
---all` takes every agent it detects plus the desktop integration, and a named
-target is always an agent (`amon setup claude`). Open a new shell afterwards
-for the aliases.
+The installer puts the latest release binary in `~/.local/bin` - on `PATH` in
+stock Omarchy - and the license files in `~/.local/share/amon`. It verifies
+the tarball against its published sha256 before installing. Pin a version
+with `AMON_VERSION=v0.1.0`, change the directory with `AMON_PREFIX`.
 
-`just uninstall` reverses it, integrations first so nothing is left pointing at
-a binary that is gone.
+`amon setup` with no argument opens a screen; `amon setup --all` takes every
+agent it detects plus the desktop integration, and a named target is always
+an agent (`amon setup claude`). Open a new shell afterwards for the aliases.
+
+Updating is running the installer again - it replaces the binary safely even
+while agents are wrapped. Uninstalling is `amon remove --all`, then deleting
+`~/.local/bin/amon` and `~/.local/share/amon`.
+
+Building from source instead: `just install` does the same install from this
+repository (see Building above), and `just uninstall` reverses it,
+integrations first so nothing is left pointing at a binary that is gone.
 
 ## Command line reference
 
