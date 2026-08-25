@@ -185,6 +185,19 @@ Item {
       root.shell.hide((root.manifest && root.manifest.id) || "sh.amon.panel")
   }
 
+  // Super+W's question, asked through the shell's `call` IPC by the bind amon
+  // installs (#39): stock Hyprland closes the focused *toplevel*, which with
+  // the modal open is the window underneath it. "dismissed" means the pane
+  // took the keypress; any other answer — including the shell's own "unknown"
+  // when the plugin is not loaded — lets the bind fall through to the close
+  // the key always meant. The popped-out window is a real toplevel, `opened`
+  // is false while it stands, so it keeps the stock close.
+  function dismissIfOpen() {
+    if (!root.opened) return "closed"
+    root.dismiss()
+    return "dismissed"
+  }
+
   // Going to the agent a row names. The daemon hands out the compositor's own
   // token for the window; it is passed back untouched rather than parsed, which
   // is the whole contract on that field. Absent off a supported compositor, so

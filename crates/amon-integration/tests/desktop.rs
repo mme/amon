@@ -854,3 +854,28 @@ fn the_players_role_is_the_one_the_ducking_dropin_ranks() {
         "and the notification bus ducks what sits below it"
     );
 }
+
+#[test]
+fn super_ws_question_and_the_panels_answer_are_one_word() {
+    // The bind matches on the literal string "dismissed"; the panel's
+    // function returns it. A drift would not fail loudly — Super+W would
+    // just go back to closing the window under the open pane (#39).
+    const BINDINGS: &str = include_str!("../src/bindings.rs");
+    const PANEL: &str = include_str!("../src/assets/omarchy/AgentPanel.qml");
+    assert!(
+        PANEL.contains("function dismissIfOpen()"),
+        "the panel answers the question"
+    );
+    assert!(
+        PANEL.contains(r#"return "dismissed""#),
+        "with the word the bind matches on"
+    );
+    assert!(
+        BINDINGS.contains("call sh.amon.panel dismissIfOpen"),
+        "the bind asks that exact method"
+    );
+    assert!(
+        BINDINGS.contains(r#"!= dismissed"#),
+        "and matches that exact word"
+    );
+}
