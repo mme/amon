@@ -1236,7 +1236,11 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
       </div>
       <div>
         <a class="cli-anchor" id="set-sound-blocked" href="#set-sound-blocked"><code class="cli-cmd">blocked = "&hellip;/attention.mp3"</code></a>
-        <p>Your own sound for the needs-input case, same rules.</p>
+        <p>Your own sound for the needs-input case, same rules. Give a
+           custom sound about 300ms of leading silence: an idle sink
+           suspends, a USB device takes a moment to wake, and a sound
+           without the pad loses its opening to the DAC powering up. The
+           bundled sounds carry it already.</p>
       </div>
       <div>
         <p>Music and other audio dip to a quarter volume while these sounds
