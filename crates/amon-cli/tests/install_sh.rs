@@ -135,8 +135,18 @@ fn run_installer(base: &str, extra_env: &[(&str, &str)]) -> Run {
         .unwrap();
     let mut stdout = String::new();
     let mut stderr = String::new();
-    child.stdout.take().unwrap().read_to_string(&mut stdout).unwrap();
-    child.stderr.take().unwrap().read_to_string(&mut stderr).unwrap();
+    child
+        .stdout
+        .take()
+        .unwrap()
+        .read_to_string(&mut stdout)
+        .unwrap();
+    child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut stderr)
+        .unwrap();
     Run {
         status: child.wait().unwrap(),
         stdout,
@@ -162,9 +172,8 @@ fn installs_the_latest_release_where_omarchy_looks() {
     assert!(run.status.success(), "stderr: {}", run.stderr);
     let binary = run.home.join(".local/bin/amon");
     assert!(binary.exists(), "the binary lands in ~/.local/bin");
-    let mode = std::os::unix::fs::PermissionsExt::mode(
-        &std::fs::metadata(&binary).unwrap().permissions(),
-    );
+    let mode =
+        std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(&binary).unwrap().permissions());
     assert_eq!(mode & 0o111, 0o111, "and it is executable");
     assert!(run.home.join(".local/share/amon/LICENSE").exists());
     assert!(run.home.join(".local/share/amon/NOTICE").exists());
@@ -196,18 +205,27 @@ fn a_pinned_version_never_asks_what_is_latest() {
 fn a_wrong_checksum_installs_nothing_and_cleans_up() {
     let dir = tempdir();
     let fx = Arc::new(fixture(&dir));
-    let lying = fx.sha256_line.replacen(|c: char| c.is_ascii_hexdigit(), "0", 4);
+    let lying = fx
+        .sha256_line
+        .replacen(|c: char| c.is_ascii_hexdigit(), "0", 4);
     let (base, _) = serve(fx, lying);
 
     let run = run_installer(&base, &[]);
 
     assert!(!run.status.success(), "a bad checksum must refuse");
-    assert!(run.stderr.contains("checksum mismatch"), "stderr: {}", run.stderr);
+    assert!(
+        run.stderr.contains("checksum mismatch"),
+        "stderr: {}",
+        run.stderr
+    );
     assert!(
         !run.home.join(".local/bin/amon").exists(),
         "nothing is installed on refusal"
     );
-    assert!(scratch_is_clean(&run), "the refusal leaves no scratch behind");
+    assert!(
+        scratch_is_clean(&run),
+        "the refusal leaves no scratch behind"
+    );
 }
 
 #[test]
@@ -233,8 +251,14 @@ fn a_foreign_architecture_is_turned_away_with_directions() {
 
     assert!(!run.status.success());
     assert!(run.stderr.contains("x86_64 only"), "stderr: {}", run.stderr);
-    assert!(run.stderr.contains("build from source"), "and points at the way that works");
-    assert!(hits.lock().unwrap().is_empty(), "nothing is downloaded first");
+    assert!(
+        run.stderr.contains("build from source"),
+        "and points at the way that works"
+    );
+    assert!(
+        hits.lock().unwrap().is_empty(),
+        "nothing is downloaded first"
+    );
 }
 
 #[test]
