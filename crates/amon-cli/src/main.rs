@@ -65,6 +65,10 @@ enum Command {
         /// (non-interactive forms only — the screen always aliases)
         #[arg(long)]
         no_alias: bool,
+        /// Refresh everything already set up after a binary upgrade —
+        /// installs nothing new, revisits no choices (the installer runs this)
+        #[arg(long, conflicts_with_all = ["target", "all", "no_alias"])]
+        upgrade: bool,
     },
     /// Remove integrations — everything after one confirmation, or one target
     Remove {
@@ -153,7 +157,14 @@ fn main() -> ExitCode {
             target,
             all,
             no_alias,
-        } => run_setup(target.as_deref(), all, no_alias),
+            upgrade,
+        } => {
+            if upgrade {
+                setup::upgrade()
+            } else {
+                run_setup(target.as_deref(), all, no_alias)
+            }
+        }
         Command::Remove { target, all } => run_remove(target.as_deref(), all),
         Command::Focus { workspace } => focus::run(workspace),
         Command::Doctor => doctor::run(VERSION),

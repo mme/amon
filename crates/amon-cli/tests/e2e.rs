@@ -965,6 +965,95 @@ fn remove_all_takes_everything_back() {
 }
 
 #[test]
+fn setup_upgrade_with_nothing_installed_points_at_setup() {
+    // `--upgrade` repairs what a previous setup put on disk. Where nothing
+    // was ever set up there is nothing to repair, and inventing a first
+    // install here would make the installer's upgrade path do what only the
+    // user's own `amon setup` may decide.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+
+    let output = sandbox.run(&["setup", "--upgrade"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("amon setup"),
+        "the way forward is named: {stdout}"
+    );
+    assert!(
+        !bashrc(&sandbox).contains("alias claude"),
+        "a detected but never-set-up agent stays untouched"
+    );
+}
+
+#[test]
+fn setup_upgrade_refreshes_installed_integrations_and_no_others() {
+    // After a binary swap the plugin QML on disk is the old build's. The
+    // upgrade rewrites what is installed — and only that: an agent the user
+    // never set up must not come out of an upgrade wrapped.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    sandbox.fake_agent("codex", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".codex");
+    let record = sandbox.runtime_path("omarchy-calls");
+    sandbox.fake_agent(
+        "omarchy",
+        &format!("#!/bin/sh\necho \"$*\" >> {}\n", path_str(&record)),
+    );
+    assert!(sandbox.run(&["setup", "claude"]).status.success());
+    stale_widget_is_installed(&sandbox);
+    std::fs::write(&record, "").expect("forget the setup run");
+
+    let output = sandbox.run(&["setup", "--upgrade"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("✓ claude — hooks installed, aliased"),
+        "what was set up is refreshed: {stdout}"
+    );
+    assert!(
+        !stdout.contains("codex"),
+        "what was never set up is not touched: {stdout}"
+    );
+    let calls = std::fs::read_to_string(&record).expect("omarchy invoked");
+    assert!(
+        calls.contains("restart shell"),
+        "the stale widget is replaced and the bar redrawn: {calls}"
+    );
+    assert!(
+        !calls.contains("plugin enable sh.amon.panel"),
+        "the panel was never installed, so the upgrade does not add it: {calls}"
+    );
+}
+
+#[test]
+fn setup_upgrade_keeps_the_no_alias_choice() {
+    // Set up with --no-alias means the user chose typing `amon claude`. An
+    // upgrade refreshes the hooks; it does not revisit that decision.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    assert!(sandbox
+        .run(&["setup", "claude", "--no-alias"])
+        .status
+        .success());
+
+    let output = sandbox.run(&["setup", "--upgrade"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("✓ claude — hooks installed"), "{stdout}");
+    assert!(
+        !bashrc(&sandbox).contains("alias claude"),
+        "--upgrade must not alias what setup was told not to"
+    );
+}
+
+#[test]
 fn remove_all_does_not_claim_unaliased_for_a_stranded_block() {
     // A bashrc that later moved behind a symlink strands the alias block
     // where amon will not write; removal must say so, not claim "unaliased".

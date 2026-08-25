@@ -22,7 +22,19 @@ struct Fixture {
 }
 
 fn fixture(dir: &Path) -> Fixture {
-    std::fs::write(dir.join("amon"), "#!/bin/sh\necho fake amon\n").unwrap();
+    // The fake amon the tarball ships: records every invocation, because the
+    // installer is expected to call the binary it just installed — setup on a
+    // first install, `setup --upgrade` after a swap.
+    std::fs::write(
+        dir.join("amon"),
+        concat!(
+            "#!/bin/sh\n",
+            "echo \"$@\" >> \"$HOME/amon-calls.log\"\n",
+            "if [ \"$1\" = \"--version\" ]; then echo \"amon 9.9.9\"; fi\n",
+            "exit 0\n",
+        ),
+    )
+    .unwrap();
     std::fs::write(dir.join("LICENSE"), "Apache-2.0\n").unwrap();
     std::fs::write(dir.join("NOTICE"), "derived from herdr\n").unwrap();
     let name = format!("amon-{TAG}-x86_64-linux.tar.gz");
@@ -109,6 +121,21 @@ struct Run {
 }
 
 fn run_installer(base: &str, extra_env: &[(&str, &str)]) -> Run {
+    run_installer_full(base, extra_env, false, &|_| {})
+}
+
+/// `tty` decides whether the script sees a terminal: `script(1)` lends it a
+/// pty, `setsid(1)` strips even the one the test runner may have. The choice
+/// must be explicit — the setup handoff branches on exactly this, and a test
+/// that inherited whatever nextest ran under would pass or fail by weather.
+/// `prepare` runs against the scratch HOME before the installer does, for
+/// planting a previously installed binary.
+fn run_installer_full(
+    base: &str,
+    extra_env: &[(&str, &str)],
+    tty: bool,
+    prepare: &dyn Fn(&Path),
+) -> Run {
     let root = std::env::temp_dir().join(format!(
         "amon-install-test-{}-{}",
         std::process::id(),
@@ -119,10 +146,21 @@ fn run_installer(base: &str, extra_env: &[(&str, &str)]) -> Run {
     let scratch = root.join("scratch");
     std::fs::create_dir_all(&home).unwrap();
     std::fs::create_dir_all(&scratch).unwrap();
+    prepare(&home);
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../install.sh");
-    let mut cmd = Command::new("sh");
-    cmd.arg(script)
-        .env("HOME", &home)
+    let mut cmd = if tty {
+        let mut with_pty = Command::new("script");
+        with_pty
+            .arg("-qec")
+            .arg(format!("sh {}", script.display()))
+            .arg("/dev/null");
+        with_pty
+    } else {
+        let mut without = Command::new("setsid");
+        without.arg("sh").arg(script);
+        without
+    };
+    cmd.env("HOME", &home)
         .env("TMPDIR", &scratch)
         .env("AMON_BASE_URL", base);
     for (k, v) in extra_env {
@@ -277,6 +315,115 @@ fn a_bin_dir_off_path_is_said_out_loud() {
         run.stdout.contains("not on PATH"),
         "the note fires when the directory is not on PATH: {}",
         run.stdout
+    );
+}
+
+/// What the installed amon was asked to do, one invocation per line.
+fn calls(run: &Run) -> String {
+    std::fs::read_to_string(run.home.join("amon-calls.log")).unwrap_or_default()
+}
+
+/// Plants a previously installed amon that answers `--version` with `version`,
+/// which is what makes the installer treat the run as an upgrade.
+fn previous_install(home: &Path, version: &str) {
+    let bin = home.join(".local/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let script = format!(
+        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"amon {version}\"; fi\nexit 0\n"
+    );
+    std::fs::write(bin.join("amon"), script).unwrap();
+    std::fs::set_permissions(bin.join("amon"), std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[test]
+fn a_fresh_install_without_a_terminal_names_the_next_step() {
+    let dir = tempdir();
+    let fx = Arc::new(fixture(&dir));
+    let sha = fx.sha256_line.clone();
+    let (base, _) = serve(fx, sha);
+
+    let run = run_installer_full(&base, &[], false, &|_| {});
+
+    assert!(run.status.success(), "stderr: {}", run.stderr);
+    assert!(
+        run.stdout.contains("next: amon setup"),
+        "with no terminal to hand over, the step is named: {}",
+        run.stdout
+    );
+    assert!(
+        !calls(&run).lines().any(|line| line == "setup"),
+        "the interactive screen cannot run without a terminal: {}",
+        calls(&run)
+    );
+}
+
+#[test]
+fn a_fresh_install_with_a_terminal_hands_off_to_setup() {
+    let dir = tempdir();
+    let fx = Arc::new(fixture(&dir));
+    let sha = fx.sha256_line.clone();
+    let (base, _) = serve(fx, sha);
+
+    let run = run_installer_full(&base, &[], true, &|_| {});
+
+    assert!(run.status.success(), "stderr: {}", run.stderr);
+    assert!(
+        calls(&run).lines().any(|line| line == "setup"),
+        "install flows straight into the setup screen: {:?}",
+        calls(&run)
+    );
+}
+
+#[test]
+fn an_upgrade_runs_setup_upgrade_and_reports_the_versions() {
+    let dir = tempdir();
+    let fx = Arc::new(fixture(&dir));
+    let sha = fx.sha256_line.clone();
+    let (base, _) = serve(fx, sha);
+
+    let run = run_installer_full(&base, &[], false, &|home| previous_install(home, "1.0.0"));
+
+    assert!(run.status.success(), "stderr: {}", run.stderr);
+    assert!(
+        run.stdout.contains("upgraded amon 1.0.0 -> 9.9.9"),
+        "stdout: {}",
+        run.stdout
+    );
+    assert!(
+        calls(&run).lines().any(|line| line == "setup --upgrade"),
+        "stale plugins and hooks are refreshed: {:?}",
+        calls(&run)
+    );
+    assert!(
+        !calls(&run).lines().any(|line| line == "setup"),
+        "an upgrade revisits no choices: {:?}",
+        calls(&run)
+    );
+}
+
+#[test]
+fn reinstalling_the_same_version_says_so_and_still_repairs() {
+    // Re-running the installer on a current install is the documented way to
+    // repair one, so it reinstalls rather than skipping — and the refresh
+    // runs too, because mismatched plugin files are exactly what needs
+    // repairing.
+    let dir = tempdir();
+    let fx = Arc::new(fixture(&dir));
+    let sha = fx.sha256_line.clone();
+    let (base, _) = serve(fx, sha);
+
+    let run = run_installer_full(&base, &[], false, &|home| previous_install(home, "9.9.9"));
+
+    assert!(run.status.success(), "stderr: {}", run.stderr);
+    assert!(
+        run.stdout.contains("reinstalled amon 9.9.9"),
+        "stdout: {}",
+        run.stdout
+    );
+    assert!(
+        calls(&run).lines().any(|line| line == "setup --upgrade"),
+        "{:?}",
+        calls(&run)
     );
 }
 
