@@ -397,10 +397,15 @@ FocusScope {
         width: parent.width
         horizontalAlignment: Text.AlignHCenter
         elide: Text.ElideRight
+        // Material Design's content-copy and check, the family every other
+        // icon in this shell comes from. The copy glyph is what says the line
+        // is clickable at all — dim text alone reads as a notice, not a
+        // control — and the check is the same answer the website's copy
+        // buttons give.
         text: updateFooter.copied
-          ? "copied"
+          ? "󰄬 copied"
           : "v" + view.agents.installedVersion + " -> v" + view.agents.latestVersion
-            + " · " + updateFooter.command
+            + " · " + updateFooter.command + " 󰆏"
         color: view.dim
         font.family: view.fontFamily
         font.pixelSize: Style.font.body
