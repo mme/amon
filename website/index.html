@@ -8,6 +8,11 @@
 <style>
   @font-face{font-family:"Duo";src:url(fonts/iawriter-duospace-regular.woff2) format("woff2");font-weight:400;font-style:normal;font-display:swap}
   @font-face{font-family:"Duo";src:url(fonts/iawriter-duospace-bold.woff2) format("woff2");font-weight:700;font-style:normal;font-display:swap}
+  /* Seven characters the text faces cannot draw: the three config icon glyphs
+     and the four spinner frames. Subset from JetBrainsMono Nerd Font (OFL) to
+     2.7KB, because an iPhone has no Nerd Font to fall back on and shows tofu.
+     unicode-range keeps it inert for everything else. */
+  @font-face{font-family:"Glyphs";src:url(fonts/amon-glyphs.woff2) format("woff2");font-display:swap;unicode-range:U+F02D7,U+F05E0,U+F14FB,U+2812,U+2830,U+2824,U+2806}
 
   /* Dark first — the mark's own ground. Light is the same page inverted.
      Three states: bare :root is dark, the media query covers the un-stamped
@@ -29,7 +34,7 @@
   html{color-scheme:dark light}
   body{
     margin:0; background:var(--ground); color:var(--ink);
-    font-family:"Duo",ui-monospace,"SF Mono",Menlo,monospace;
+    font-family:"Duo","Glyphs",ui-monospace,"SF Mono",Menlo,monospace;
     font-size:15px; line-height:1.65; -webkit-font-smoothing:antialiased;
   }
   main{max-width:820px; margin:0 auto;
@@ -346,6 +351,9 @@
   .explain-line{margin:0; font-size:13.5px; color:var(--muted); min-height:1.65em;
                 transition:opacity 200ms ease}
   .explain.is-fading .explain-line{opacity:0}
+  /* On a phone the step copy wraps — up to three lines — and without a floor
+     each step would shove the whole page below it. Reserve the worst case. */
+  @media (max-width:480px){ .explain-line{min-height:calc(1.65em * 3)} }
   /* No caret. A block cursor at this size outweighed the workspace indicator
      the line is about, and the typing already reads as typing without one. */
   /* kbd for the keys, so a screen reader and a stylesheet both know what they
@@ -968,7 +976,7 @@ opencode  idle      41m  4  website           ~/.cache/worktrees/site</span>
 
   <section class="plate">
     <header>
-      <h2><a class="h-anchor" id="install" href="#install">Installed and ready in 30 seconds</a></h2>
+      <h2><a class="h-anchor" id="installed" href="#installed">Installed and ready in 30 seconds</a></h2>
     </header>
 
     <!--
@@ -1999,12 +2007,20 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
       });
     }
 
+    // A tap synthesizes exactly one mousemove and then nothing ever moves the
+    // pointer away, so on a touch screen the mark would stare at the button
+    // forever. A couple of seconds of attention, then back to its own life.
+    var COARSE = matchMedia('(pointer: coarse)').matches, release;
     addEventListener('mousemove', function(e){
       if (!cta) return;
       var near = gapTo(e.clientX, e.clientY, cta.getBoundingClientRect()) < WATCH_PAD;
       if (near && !watching) startWatching();
       else if (!near && watching) stopWatching();
       if (near) lookAt(e.clientX, e.clientY);
+      if (COARSE && watching){
+        clearTimeout(release);
+        release = setTimeout(stopWatching, 2200);
+      }
     }, { passive: true });
 
     // Pick a gesture at random. Repeats are allowed — the cooldown already
