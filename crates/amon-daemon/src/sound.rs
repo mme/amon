@@ -77,9 +77,15 @@ pub fn crossing(was: (AgentState, Option<bool>), now: (AgentState, Option<bool>)
 /// Detection passes through intermediate states on its way to a settled one: a
 /// prompt appearing reads as idle for a moment before the rule that recognises
 /// it as a question matches. Playing immediately turns one event into two — a
-/// finish, then a request — which is what this delay exists to prevent. herdr's
-/// default is the same second, for the same reason.
-const SETTLE: Duration = Duration::from_secs(1);
+/// finish, then a request — which is what this delay exists to prevent.
+///
+/// 650 rather than herdr's full second because the bundled sounds carry 350ms
+/// of leading silence (see the README beside them): the pad is settle time
+/// relocated into the file, so the sum — crossing to first audible note —
+/// stays the second herdr tuned. The last 350ms of it are committed rather
+/// than cancelable, which detection's flaps, over inside half a second, never
+/// reach.
+const SETTLE: Duration = Duration::from_millis(650);
 
 /// One agent's pending noise, and whether it is still the current one.
 ///
