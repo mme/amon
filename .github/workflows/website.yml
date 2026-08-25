@@ -15,6 +15,7 @@ on:
     branches: [main]
     paths:
       - "website/**"
+      - "install.sh"
       - ".github/workflows/website.yml"
   # So a deploy can be re-run without an empty commit — a stuck or half-finished
   # deploy is otherwise only fixable by pushing something.
@@ -43,6 +44,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      # The installer lives once, at the repository root; the deploy carries a
+      # copy into the site so `curl -fsSL amon.sh/install | sh` serves it.
+      # Copied at publish time rather than committed twice, so the two can
+      # never disagree.
+      - run: cp install.sh website/install
       - uses: actions/upload-pages-artifact@v3
         with:
           path: website
