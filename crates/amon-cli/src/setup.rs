@@ -10,7 +10,9 @@
 
 use std::io::{self, Read, Write};
 
-use amon_integration::{alias, bindings, desktop, shims, Candidate, DesktopTarget, InstallState};
+use amon_integration::{
+    alias, bindings, desktop, ducking, shims, Candidate, DesktopTarget, InstallState,
+};
 
 /// Omarchy's own default-agent menu order (`omarchy-default-agent`'s supported
 /// list), recorded as data rather than parsed out of their script at runtime.
@@ -31,37 +33,58 @@ fn default_agent() -> Option<String> {
     (!agent.is_empty()).then(|| agent.to_string())
 }
 
-/// One row of the checklist, and every row is an agent. The bar widget has no
-/// row of its own: on a machine with the Omarchy CLI it is not a choice, it is
-/// part of what setting amon up means, the way the daemon is.
+/// One row of the checklist. Almost every row is an agent; the one exception
+/// is ducking, which gets a row because it is genuinely a choice — it
+/// reshapes how the whole desktop's audio routes, not just what amon does.
+/// The bar widget still has no row of its own: on a machine with the Omarchy
+/// CLI it is not a choice, it is part of what setting amon up means, the way
+/// the daemon is.
+enum RowKind {
+    Agent(Candidate),
+    Ducking { installed: bool },
+}
+
 struct Row {
-    agent: Candidate,
+    kind: RowKind,
     checked: bool,
 }
 
 impl Row {
     fn label(&self) -> &str {
-        self.agent.label
+        match &self.kind {
+            RowKind::Agent(agent) => agent.label,
+            RowKind::Ducking { .. } => "ducking",
+        }
     }
 
     fn state_text(&self, default: Option<&str>) -> String {
+        let agent = match &self.kind {
+            RowKind::Agent(agent) => agent,
+            RowKind::Ducking { installed } => {
+                let state = if *installed { " · installed" } else { "" };
+                return format!("music dips while a notification plays{state}");
+            }
+        };
         let mut parts = Vec::new();
-        if default == Some(self.agent.label) {
+        if default == Some(agent.label) {
             parts.push("default agent");
         }
-        match self.agent.state {
+        match agent.state {
             InstallState::NotInstalled => parts.push("detected"),
             InstallState::Current => parts.push("installed"),
             InstallState::Outdated => parts.push("outdated"),
         }
-        if !self.agent.detected {
+        if !agent.detected {
             parts.push("agent not found");
         }
         parts.join(" · ")
     }
 
     fn installed(&self) -> bool {
-        self.agent.state != InstallState::NotInstalled
+        match &self.kind {
+            RowKind::Agent(agent) => agent.state != InstallState::NotInstalled,
+            RowKind::Ducking { installed } => *installed,
+        }
     }
 }
 
@@ -84,13 +107,25 @@ fn rows() -> Vec<Row> {
         )
     });
 
-    agents
+    let mut rows: Vec<Row> = agents
         .into_iter()
         .map(|agent| Row {
             checked: true,
-            agent,
+            kind: RowKind::Agent(agent),
         })
-        .collect()
+        .collect();
+    // Last, below the agents: an audio choice reads as a different kind of
+    // thing, and the order says so. Preselected like everything else — on by
+    // default was the decision, and the row is where it is disclosed.
+    if ducking::available() {
+        rows.push(Row {
+            checked: true,
+            kind: RowKind::Ducking {
+                installed: ducking::status() != InstallState::NotInstalled,
+            },
+        });
+    }
+    rows
 }
 
 pub fn is_tty() -> bool {
@@ -116,19 +151,21 @@ pub fn interactive() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut actions = Vec::new();
     for row in &rows {
-        match (row.checked, row.installed()) {
-            (true, _) => actions.push(Action::SetupAgent {
-                target: row.agent.target,
-                label: row.agent.label,
+        match (&row.kind, row.checked, row.installed()) {
+            (RowKind::Agent(agent), true, _) => actions.push(Action::SetupAgent {
+                target: agent.target,
+                label: agent.label,
                 // Interactive setup always aliases: selecting an agent means
                 // wrapping it (ADR-0009, as amended). The screen disclosed it.
                 alias: true,
             }),
-            (false, true) => actions.push(Action::RemoveAgent {
-                target: row.agent.target,
-                label: row.agent.label,
+            (RowKind::Agent(agent), false, true) => actions.push(Action::RemoveAgent {
+                target: agent.target,
+                label: agent.label,
             }),
-            (false, false) => {}
+            (RowKind::Ducking { .. }, true, _) => actions.push(Action::SetupDucking),
+            (RowKind::Ducking { .. }, false, true) => actions.push(Action::RemoveDucking),
+            (_, false, false) => {}
         }
     }
     // Not a row, so not a question: where the Omarchy CLI is present, applying
@@ -145,7 +182,9 @@ pub fn interactive() -> Result<(), Box<dyn std::error::Error>> {
 
 /// `amon setup --all`: every Detected Agent plus the widget, no screen. Purely
 /// additive — removal is the interactive screen's or `amon remove`'s job.
-pub fn all(no_alias: bool) -> Result<(), Box<dyn std::error::Error>> {
+/// Ducking rides along by default where WirePlumber exists, the same answer
+/// the screen preselects; `--no-duck` is the opt-out.
+pub fn all(no_alias: bool, duck: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut actions: Vec<Action> = amon_integration::candidates()
         .into_iter()
         .filter(|candidate| candidate.detected)
@@ -160,11 +199,26 @@ pub fn all(no_alias: bool) -> Result<(), Box<dyn std::error::Error>> {
         actions.push(Action::SetupPanel);
         actions.push(Action::SetupBindings);
     }
+    if duck && ducking::available() {
+        actions.push(Action::SetupDucking);
+    }
     if actions.is_empty() {
         print_empty_state();
         return Ok(());
     }
     apply(&actions)
+}
+
+/// `amon setup --duck` / `--no-duck` with nothing else: just the audio piece.
+pub fn ducking_only(install: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if install {
+        if !ducking::available() {
+            return Err("wireplumber is not on PATH — there is no audio stack to duck".into());
+        }
+        apply(&[Action::SetupDucking])
+    } else {
+        apply(&[Action::RemoveDucking])
+    }
 }
 
 /// `amon remove` with no target: list what is installed, confirm once, remove
@@ -189,6 +243,9 @@ pub fn remove_everything(assume_yes: bool) -> Result<(), Box<dyn std::error::Err
     }
     if bindings::installed() {
         actions.push(Action::RemoveBindings);
+    }
+    if ducking::status() != InstallState::NotInstalled {
+        actions.push(Action::RemoveDucking);
     }
     // Last, so it sweeps up orphaned lines — aliases whose integration is
     // already gone would otherwise survive "remove everything" and keep
@@ -230,6 +287,7 @@ pub fn remove_everything(assume_yes: bool) -> Result<(), Box<dyn std::error::Err
                 Action::RemoveWidget => println!("  workspace switcher widget"),
                 Action::RemovePanel => println!("  the Super+A agent panel"),
                 Action::RemoveBindings => println!("  Super+0-9 agent bindings"),
+                Action::RemoveDucking => println!("  audio ducking (wireplumber drop-in)"),
                 _ => {}
             }
         }
@@ -285,6 +343,8 @@ enum Action {
     RemovePanel,
     SetupBindings,
     RemoveBindings,
+    SetupDucking,
+    RemoveDucking,
     /// Drops the whole bashrc block. Only `amon remove` with no target queues
     /// this, after every per-agent removal: it is what takes orphaned aliases
     /// — lines whose integration is already gone — with it.
@@ -482,6 +542,25 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                 Err(error) => {
                     failed = true;
                     println!("✗ Super+A agent panel — {error}");
+                }
+            },
+            Action::SetupDucking => match ducking::install() {
+                Ok(notes) => {
+                    // The restart blips whatever is playing; saying so is
+                    // cheaper than a user wondering what just happened.
+                    println!("✓ ducking — {}", notes.join("; "));
+                }
+                Err(error) => {
+                    failed = true;
+                    println!("✗ ducking — {error}");
+                }
+            },
+            Action::RemoveDucking => match ducking::uninstall() {
+                Ok(notes) if notes.is_empty() => println!("✓ ducking — was not installed"),
+                Ok(notes) => println!("✓ ducking — removed; {}", notes.join("; ")),
+                Err(error) => {
+                    failed = true;
+                    println!("✗ ducking — {error}");
                 }
             },
             Action::SetupBindings => match bindings::install() {
