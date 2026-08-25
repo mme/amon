@@ -6,6 +6,8 @@
 
 mod harness;
 
+use std::path::PathBuf;
+
 use harness::{agent_named, path_str, read_to_string, state_of, Client, Sandbox};
 
 /// A fake claude that announces work through the OSC title, the way the real
@@ -961,6 +963,162 @@ fn remove_all_takes_everything_back() {
     assert!(
         !bashrc(&sandbox).contains("alias claude"),
         "no alias may outlive the hooks it pointed at"
+    );
+}
+
+/// Where the ducking drop-in lands, relative to the sandbox config dir.
+const DUCKING_CONF: &str = "wireplumber/wireplumber.conf.d/50-amon-ducking.conf";
+
+/// Plants the audio stack setup looks for: a wireplumber on PATH (existence
+/// is the whole test) and a systemctl that records what it was asked.
+fn audio_stack_is_present(sandbox: &Sandbox) -> PathBuf {
+    sandbox.fake_agent("wireplumber", "#!/bin/sh\n");
+    let record = sandbox.runtime_path("systemctl-calls");
+    sandbox.fake_agent(
+        "systemctl",
+        &format!("#!/bin/sh\necho \"$*\" >> {}\n", path_str(&record)),
+    );
+    record
+}
+
+#[test]
+fn setup_all_sets_up_ducking_with_everything_else() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    let restarts = audio_stack_is_present(&sandbox);
+
+    let output = sandbox.run(&["setup", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let conf = sandbox.config_path(DUCKING_CONF);
+    assert!(conf.exists(), "the drop-in is installed");
+    assert!(
+        std::fs::read_to_string(&conf)
+            .expect("readable")
+            .contains("duck-level"),
+        "and it is amon's ducking config"
+    );
+    assert!(
+        std::fs::read_to_string(&restarts)
+            .expect("systemctl invoked")
+            .contains("--user restart wireplumber"),
+        "wireplumber is restarted so the config takes"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("✓ ducking"),
+        "{output:?}"
+    );
+}
+
+#[test]
+fn a_machine_without_wireplumber_gets_no_ducking_and_no_noise_about_it() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+
+    let output = sandbox.run(&["setup", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "no audio stack, no file"
+    );
+    assert!(
+        !String::from_utf8_lossy(&output.stdout).contains("ducking"),
+        "and nothing to explain: {output:?}"
+    );
+}
+
+#[test]
+fn no_duck_keeps_setup_all_out_of_the_audio_stack() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    let restarts = audio_stack_is_present(&sandbox);
+
+    let output = sandbox.run(&["setup", "--all", "--no-duck"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(!sandbox.config_path(DUCKING_CONF).exists());
+    assert!(
+        !std::fs::read_to_string(&restarts)
+            .unwrap_or_default()
+            .contains("wireplumber"),
+        "opting out must not touch the audio stack at all"
+    );
+}
+
+#[test]
+fn duck_alone_installs_only_the_ducking() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    audio_stack_is_present(&sandbox);
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(sandbox.config_path(DUCKING_CONF).exists());
+    assert!(
+        !bashrc(&sandbox).contains("alias claude"),
+        "--duck is about audio, not about agents"
+    );
+}
+
+#[test]
+fn no_duck_alone_takes_the_ducking_back_out() {
+    let sandbox = Sandbox::new();
+    audio_stack_is_present(&sandbox);
+    assert!(sandbox.run(&["setup", "--duck"]).status.success());
+    assert!(sandbox.config_path(DUCKING_CONF).exists());
+
+    let output = sandbox.run(&["setup", "--no-duck"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "the file is gone, the audio stack is stock again"
+    );
+}
+
+#[test]
+fn remove_all_takes_the_ducking_too() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    audio_stack_is_present(&sandbox);
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
+    assert!(sandbox.run(&["setup", "--all"]).status.success());
+
+    let output = sandbox.run(&["remove", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "remove everything means the audio stack too"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("ducking"),
+        "and it is accounted for: {output:?}"
+    );
+}
+
+#[test]
+fn the_setup_screen_offers_ducking_and_applies_it() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    audio_stack_is_present(&sandbox);
+
+    let mut session = harness::PtySession::start(&sandbox, &["setup"]);
+    session.wait_for_output(b"ducking");
+    session.send(b"\r");
+    session.wait();
+
+    assert!(
+        sandbox.config_path(DUCKING_CONF).exists(),
+        "preselected, so Enter installs it"
     );
 }
 

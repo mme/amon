@@ -33,6 +33,7 @@ pub mod alias;
 mod api_surface;
 pub mod bindings;
 pub mod desktop;
+pub mod ducking;
 mod fence;
 pub mod shims;
 

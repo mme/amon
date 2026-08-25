@@ -1106,14 +1106,17 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
     -->
     <div class="cliref">
       <div>
-        <a class="cli-anchor" id="cli-setup" href="#cli-setup"><code class="cli-cmd">amon setup [target] [--all] [--no-alias]</code></a>
+        <a class="cli-anchor" id="cli-setup" href="#cli-setup"><code class="cli-cmd">amon setup [target] [--all] [--no-alias] [--duck | --no-duck]</code></a>
         <p>Set up integrations. Without arguments, an interactive screen;
            with a target, one agent (<span class="lift">amon setup
            claude</span>); <span class="lift">--all</span> takes every
            detected agent plus the desktop integration without a screen.
            <span class="lift">--no-alias</span> skips aliasing the agent's
            name - on the non-interactive forms only, the screen always
-           aliases.</p>
+           aliases. Ducking - music dips while a notification plays - is
+           included by default where WirePlumber runs, as one drop-in file
+           amon owns; <span class="lift">--no-duck</span> opts out, and
+           either flag alone installs or removes just that piece.</p>
       </div>
       <div>
         <a class="cli-anchor" id="cli-status" href="#cli-status"><code class="cli-cmd">amon status [--json]</code></a>
@@ -1234,6 +1237,14 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
       <div>
         <a class="cli-anchor" id="set-sound-blocked" href="#set-sound-blocked"><code class="cli-cmd">blocked = "&hellip;/attention.mp3"</code></a>
         <p>Your own sound for the needs-input case, same rules.</p>
+      </div>
+      <div>
+        <p>Music and other audio dip to a quarter volume while these sounds
+           play if ducking is set up (<span class="lift">amon setup
+           --duck</span>, on by default in setup). It is one WirePlumber
+           drop-in owned by amon; <span class="lift">amon setup
+           --no-duck</span> removes it and restores stock audio
+           completely.</p>
       </div>
     </div>
   </section>

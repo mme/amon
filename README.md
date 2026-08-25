@@ -130,12 +130,16 @@ a binary that is gone.
 
 ## Command line reference
 
-**`amon setup [target] [--all] [--no-alias]`**
+**`amon setup [target] [--all] [--no-alias] [--duck | --no-duck]`**
 
 Set up integrations. Without arguments, an interactive screen; with a target,
 one agent (`amon setup claude`). `--all` takes every detected agent plus the
 desktop integration without a screen. `--no-alias` skips aliasing the agent's
 name, on the non-interactive forms only; the screen always aliases.
+Ducking - music dips while a notification plays - is included by default
+where WirePlumber runs (one drop-in file amon owns; deleting it restores
+stock audio); `--no-duck` opts out, and either flag alone installs or
+removes just that piece.
 
 **`amon status [--json]`**
 
@@ -225,6 +229,11 @@ Font is installed, which on Omarchy is everywhere.
   file's own directory.
 - `blocked = ".../attention.mp3"` - your own sound for the needs-input case,
   same rules.
+
+Music and other audio dip to a quarter volume while these sounds play if
+ducking is set up (`amon setup --duck`, on by default in setup). It is one
+WirePlumber drop-in owned by amon; `amon setup --no-duck` removes it and
+restores stock audio completely.
 
 ## Credits
 

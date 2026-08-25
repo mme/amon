@@ -832,3 +832,25 @@ fn every_way_into_the_pane_resets_the_cursor() {
         "the window picks when it shows"
     );
 }
+
+#[test]
+fn the_players_role_is_the_one_the_ducking_dropin_ranks() {
+    // Three parties have to agree on one word: the daemon tags its stream,
+    // the drop-in routes that tag onto the Notification bus, and the bus's
+    // priority is what ducks the music. A drift would not fail loudly —
+    // sounds would simply stop ducking anything.
+    const SOUND: &str = include_str!("../../amon-daemon/src/sound.rs");
+    const DROPIN: &str = include_str!("../src/assets/wireplumber/50-amon-ducking.conf");
+    assert!(
+        SOUND.contains(r#"media.role = "Notification""#),
+        "the daemon tags its stream"
+    );
+    assert!(
+        DROPIN.contains(r#"device.intended-roles = [ "Notification" ]"#),
+        "the drop-in routes that tag"
+    );
+    assert!(
+        DROPIN.contains(r#"policy.role-based.action.lower-priority = "duck""#),
+        "and the notification bus ducks what sits below it"
+    );
+}
