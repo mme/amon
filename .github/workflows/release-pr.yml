@@ -165,7 +165,7 @@ jobs:
           # ships, and editing CHANGELOG.md on the branch edits both.
           awk "/^## v$NEW\$/{found=1; next} /^## /{found=0} found" CHANGELOG.md > /tmp/section.md
           {
-            echo "Merging publishes **v$NEW**: the tag, a GitHub Release carrying the notes below, the binary tarball, and \`amon-bin\` on the AUR."
+            echo "Merging publishes **v$NEW**: the tag, and a GitHub Release carrying the notes below with the binary tarball \`amon.sh/install\` serves."
             echo
             echo "To change the notes, edit CHANGELOG.md on this branch. To cancel, close this PR — nothing has been published."
             echo
