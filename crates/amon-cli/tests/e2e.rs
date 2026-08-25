@@ -1132,9 +1132,63 @@ fn a_wireplumber_that_rejects_the_config_gets_it_rolled_back() {
         calls.matches("--user restart wireplumber").count() >= 2,
         "a recovery restart runs after the rollback: {calls}"
     );
+    // This fake's is-active never succeeds, so the recovery restart cannot
+    // be verified either — and the report must say that, not claim a
+    // recovery nobody checked.
     assert!(
-        String::from_utf8_lossy(&output.stdout).contains("removed it again"),
-        "and the user is told what happened: {output:?}"
+        String::from_utf8_lossy(&output.stdout).contains("has not come back"),
+        "the report matches what actually happened: {output:?}"
+    );
+}
+
+#[test]
+fn a_crashed_installs_staging_leftover_does_not_block_the_next() {
+    // The staging file contains the role markers the foreign-config scan
+    // looks for; a scan that read it would refuse forever with "someone
+    // else's config" over amon's own debris.
+    let sandbox = Sandbox::new();
+    audio_stack_is_present(&sandbox);
+    let conf = sandbox.config_path(DUCKING_CONF);
+    std::fs::create_dir_all(conf.parent().expect("parent")).expect("conf dir");
+    std::fs::write(
+        conf.with_extension("conf.amon-staging"),
+        "loopback.sink.role.multimedia\n",
+    )
+    .expect("leftover");
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(conf.exists(), "the leftover is swept, the install lands");
+}
+
+#[test]
+fn an_unreadable_neighbour_fragment_refuses_the_install() {
+    // Fail closed: a fragment that could not be read is a fragment that was
+    // not checked, and restarting WirePlumber over an unfinished scan is
+    // how a second set of role buses sneaks in.
+    let sandbox = Sandbox::new();
+    let restarts = audio_stack_is_present(&sandbox);
+    let conf = sandbox.config_path(DUCKING_CONF);
+    std::fs::create_dir_all(conf.parent().expect("parent")).expect("conf dir");
+    std::fs::write(
+        conf.parent().expect("parent").join("20-theirs.conf"),
+        [0xff, 0xfe, 0xfd],
+    )
+    .expect("their fragment");
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        !conf.exists(),
+        "nothing is installed over an unchecked scan"
+    );
+    assert!(
+        !std::fs::read_to_string(&restarts)
+            .unwrap_or_default()
+            .contains("restart"),
+        "and nothing is restarted"
     );
 }
 

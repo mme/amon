@@ -98,7 +98,7 @@ pub fn install() -> io::Result<Vec<String>> {
     // choices this file makes, and WirePlumber merges fragments by
     // appending — two sets of role buses under the same names is a broken
     // profile, not a second opinion. Theirs stands.
-    if let Some(theirs) = foreign_role_config(&path) {
+    if let Some(theirs) = foreign_role_config(&path)? {
         return Err(io::Error::other(format!(
             "{} already sets up role-based audio; leaving it alone",
             theirs.display()
@@ -107,9 +107,24 @@ pub fn install() -> io::Result<Vec<String>> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    // The staging name is amon's own, so whatever a crashed earlier run (or
+    // anything else) left there is removed rather than reasoned about — and
+    // `create_new` then guarantees a fresh regular file: it cannot follow a
+    // symlink or truncate anything that exists.
     let staging = path.with_extension("conf.amon-staging");
-    std::fs::write(&staging, DROPIN)?;
-    std::fs::rename(&staging, &path)?;
+    let _ = std::fs::remove_file(&staging);
+    {
+        use std::io::Write as _;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&staging)?;
+        file.write_all(DROPIN.as_bytes())?;
+    }
+    if let Err(error) = std::fs::rename(&staging, &path) {
+        let _ = std::fs::remove_file(&staging);
+        return Err(error);
+    }
 
     match restart_wireplumber() {
         Restart::Restarted => Ok(vec![
@@ -120,38 +135,81 @@ pub fn install() -> io::Result<Vec<String>> {
         ]),
         Restart::Failed => {
             // The service is down and our file is the prime suspect: take
-            // it back out and get audio running again before saying why.
-            let _ = std::fs::remove_file(&path);
-            let _ = restart_wireplumber();
-            Err(io::Error::other(
-                "wireplumber refused to restart with the ducking config; \
-                 removed it again and restarted without it",
-            ))
+            // it back out and get audio running again — and report what
+            // actually happened, each step verified rather than assumed.
+            let removed = std::fs::remove_file(&path).is_ok();
+            if !removed {
+                return Err(io::Error::other(format!(
+                    "wireplumber refused to restart with the ducking config, \
+                     and the file could not be removed — delete {} and run \
+                     `systemctl --user restart wireplumber`",
+                    path.display()
+                )));
+            }
+            match restart_wireplumber() {
+                Restart::Restarted => Err(io::Error::other(
+                    "wireplumber refused to restart with the ducking config; \
+                     removed it again and restarted without it",
+                )),
+                Restart::NoSystemctl | Restart::Failed => Err(io::Error::other(
+                    "wireplumber refused to restart with the ducking config; \
+                     removed it again, but wireplumber has not come back — \
+                     check `systemctl --user status wireplumber`",
+                )),
+            }
         }
     }
 }
 
 /// Another fragment in the drop-in directory that already declares role
-/// buses — anything mentioning the role-loopback machinery that is not
+/// buses — any `.conf` mentioning the role-loopback machinery that is not
 /// amon's own file.
-fn foreign_role_config(ours: &std::path::Path) -> Option<PathBuf> {
-    let dir = ours.parent()?;
-    let entries = std::fs::read_dir(dir).ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path == ours {
+///
+/// Fails closed: a fragment that cannot be read is a fragment that could
+/// not be checked, and installing anyway would mean restarting WirePlumber
+/// over a scan that never finished. Only `.conf` files count — WirePlumber
+/// reads nothing else here, and neither does the scan, so amon's own
+/// staging leftovers can never read as someone else's config.
+fn foreign_role_config(ours: &std::path::Path) -> io::Result<Option<PathBuf>> {
+    let Some(dir) = ours.parent() else {
+        return Ok(None);
+    };
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        // No directory yet is the ordinary first install.
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(io::Error::other(format!(
+                "could not scan {} for existing audio config: {error}",
+                dir.display()
+            )))
+        }
+    };
+    for entry in entries {
+        let path = entry
+            .map_err(|error| {
+                io::Error::other(format!(
+                    "could not scan {} for existing audio config: {error}",
+                    dir.display()
+                ))
+            })?
+            .path();
+        if path == ours || path.extension().and_then(|ext| ext.to_str()) != Some("conf") {
             continue;
         }
-        let Ok(content) = std::fs::read_to_string(&path) else {
-            continue;
-        };
+        let content = std::fs::read_to_string(&path).map_err(|error| {
+            io::Error::other(format!(
+                "could not read {} while checking for existing audio config: {error}",
+                path.display()
+            ))
+        })?;
         if content.contains("loopback.sink.role")
             || content.contains("policy.linking.role-based.loopbacks")
         {
-            return Some(path);
+            return Ok(Some(path));
         }
     }
-    None
+    Ok(None)
 }
 
 /// Removes the drop-in and restarts WirePlumber: the audio stack is stock
