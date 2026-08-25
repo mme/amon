@@ -1105,6 +1105,113 @@ fn remove_all_takes_the_ducking_too() {
 }
 
 #[test]
+fn a_wireplumber_that_rejects_the_config_gets_it_rolled_back() {
+    // The failure that shaped install(): a refused fragment makes `restart`
+    // return success and then crash-loops the service. Reported exit codes
+    // are not the signal; is-active afterwards is.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("wireplumber", "#!/bin/sh\n");
+    let record = sandbox.runtime_path("systemctl-calls");
+    sandbox.fake_agent(
+        "systemctl",
+        &format!(
+            "#!/bin/sh\necho \"$*\" >> {}\ncase \"$*\" in *is-active*) exit 1;; esac\nexit 0\n",
+            path_str(&record)
+        ),
+    );
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(!output.status.success(), "a dead service is a failure");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "the file that killed the service does not stay to kill it again"
+    );
+    let calls = std::fs::read_to_string(&record).expect("systemctl invoked");
+    assert!(
+        calls.matches("--user restart wireplumber").count() >= 2,
+        "a recovery restart runs after the rollback: {calls}"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("removed it again"),
+        "and the user is told what happened: {output:?}"
+    );
+}
+
+#[test]
+fn a_symlinked_dropin_is_never_written_through() {
+    // A dotfiles checkout may own this path. Writing through the link would
+    // edit a file amon does not own — the same line the bashrc code draws.
+    let sandbox = Sandbox::new();
+    audio_stack_is_present(&sandbox);
+    let theirs = sandbox.runtime_path("dotfiles-ducking.conf");
+    std::fs::write(&theirs, "# theirs\n").expect("their file");
+    let link = sandbox.config_path(DUCKING_CONF);
+    std::fs::create_dir_all(link.parent().expect("parent")).expect("conf dir");
+    std::os::unix::fs::symlink(&theirs, &link).expect("link");
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(!output.status.success(), "{output:?}");
+    assert_eq!(
+        std::fs::read_to_string(&theirs).expect("still theirs"),
+        "# theirs\n",
+        "the symlink target is untouched"
+    );
+}
+
+#[test]
+fn an_existing_role_audio_setup_is_left_alone() {
+    // Someone who configured role buses themselves has already made these
+    // choices, and WirePlumber merges fragments by appending — a second set
+    // of buses under the same names is a broken profile.
+    let sandbox = Sandbox::new();
+    let restarts = audio_stack_is_present(&sandbox);
+    let conf_dir = sandbox
+        .config_path(DUCKING_CONF)
+        .parent()
+        .expect("parent")
+        .to_path_buf();
+    std::fs::create_dir_all(&conf_dir).expect("conf dir");
+    std::fs::write(
+        conf_dir.join("10-my-roles.conf"),
+        "# hand-rolled\nloopback.sink.role.multimedia\n",
+    )
+    .expect("their config");
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "amon adds nothing next to it"
+    );
+    assert!(
+        !std::fs::read_to_string(&restarts)
+            .unwrap_or_default()
+            .contains("restart"),
+        "and does not restart a service it changed nothing about"
+    );
+}
+
+#[test]
+fn an_unreadable_dropin_still_counts_as_installed() {
+    // Whatever occupies amon's filename is amon's to remove. Calling an
+    // unreadable file "not installed" would make remove --all skip it while
+    // doctor reports nothing wrong.
+    let sandbox = Sandbox::new();
+    audio_stack_is_present(&sandbox);
+    let conf = sandbox.config_path(DUCKING_CONF);
+    std::fs::create_dir_all(conf.parent().expect("parent")).expect("conf dir");
+    std::fs::write(&conf, [0xff, 0xfe, 0xfd]).expect("garbage");
+
+    let output = sandbox.run(&["remove", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(!conf.exists(), "the garbage is gone");
+}
+
+#[test]
 fn the_setup_screen_offers_ducking_and_applies_it() {
     let sandbox = Sandbox::new();
     sandbox.fake_agent("claude", "#!/bin/sh\n");

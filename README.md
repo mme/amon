@@ -233,7 +233,8 @@ Font is installed, which on Omarchy is everywhere.
 Music and other audio dip to a quarter volume while these sounds play if
 ducking is set up (`amon setup --duck`, on by default in setup). It is one
 WirePlumber drop-in owned by amon; `amon setup --no-duck` removes it and
-restores stock audio completely.
+restores stock audio completely. The buses it routes audio through are
+stereo - on a surround or bitstream-passthrough setup, skip ducking.
 
 ## Credits
 
