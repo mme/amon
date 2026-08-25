@@ -130,12 +130,14 @@ a binary that is gone.
 
 ## Command line reference
 
-**`amon setup [target] [--all] [--no-alias]`**
+**`amon setup [target] [--all] [--no-alias] [--upgrade]`**
 
 Set up integrations. Without arguments, an interactive screen; with a target,
 one agent (`amon setup claude`). `--all` takes every detected agent plus the
 desktop integration without a screen. `--no-alias` skips aliasing the agent's
 name, on the non-interactive forms only; the screen always aliases.
+`--upgrade` refreshes everything already set up after a binary upgrade -
+installs nothing new and revisits no choices; the installer runs it for you.
 
 **`amon status [--json]`**
 
@@ -225,6 +227,14 @@ Font is installed, which on Omarchy is everywhere.
   file's own directory.
 - `blocked = ".../attention.mp3"` - your own sound for the needs-input case,
   same rules.
+
+**`[updates]`**
+
+- `check = true` - whether the daemon may look for newer releases: one
+  request against the GitHub release page's redirect, at most daily, with
+  nothing about your machine in it. When a newer release exists, the agent
+  panel shows a one-line footer with the command that upgrades; nothing
+  downloads or installs itself. Set to false and it never checks.
 
 ## Credits
 
