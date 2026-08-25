@@ -1,0 +1,134 @@
+# The half of a release that acts. Fires when main's Cargo.toml changes and
+# the version it declares has no tag yet — which is what a merged release PR
+# looks like, and also what a hand-bumped version looks like, so both publish.
+# The trigger is the gap between manifest and tags rather than the PR itself
+# (ag-ui's registry-diff idea, with tags standing in for the registry).
+#
+# Recovery, precisely: a run that died *before* the tag existed can simply be
+# dispatched again — the gate still sees an untagged version and everything
+# re-runs. A run that died *after* the tag existed
+# is healed with "Re-run failed jobs" on that run, which keeps the succeeded
+# publish job's outputs; a fresh dispatch would see the tag and rightly stand
+# down. One seconds-wide window sits between those two: the runner dying
+# after `gh release create` went through but before the job recorded its
+# success. Re-running then finds the tag and stands down — heal it with `gh release delete vX.Y.Z --cleanup-tag` and a fresh
+# dispatch, which republishes from a clean slate. Deliberately a documented
+# command and not machinery: automating it means teaching the gate to judge
+# how *complete* an existing release is (tag without release, release
+# without asset, all three sound), which is more new failure surface than a
+# window this narrow justifies. And if two release merges ever race, the queued run GitHub keeps is
+# the newest — a superseded version can end up never tagged, which costs
+# nothing: it was never distributed, and the release that replaced it ships
+# everything it contained.
+#
+# Order matters once: the GitHub Release must exist before anyone runs the
+# installer, and it is the Release itself that makes `amon.sh/install` work -
+# the script resolves the latest tag and downloads the tarball and its sha256
+# sidecar from the Release's assets. Both names are contracts with
+# install.sh, held by tests in crates/amon-cli/tests/release.rs.
+
+name: release / publish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Cargo.toml
+  workflow_dispatch:
+
+concurrency:
+  group: release-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      released: ${{ steps.gate.outputs.released }}
+      version: ${{ steps.gate.outputs.version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # Tags are the ledger of what is already published.
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+
+      # Zig (which libghostty-vt builds with, at exactly the pinned version)
+      # and nextest, both from .mise.toml — the same pins a developer's
+      # machine uses, so the release can never build with a toolchain the
+      # repo did not name.
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+
+      - name: Is this a release?
+        id: gate
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # Plain x.y.z only, checked before anything public exists: the
+          # tarball name, the installer's tag check, and the version amon
+          # prints all assume it. Failing here leaves nothing to clean up.
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::$VERSION is not a plain x.y.z version; nothing was published."
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/v$VERSION" > /dev/null; then
+            echo "Cargo.toml says $VERSION and v$VERSION is already tagged — not a release."
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "released=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Test
+        # The only CI this repository has, run at the moment it matters most.
+        # nextest and not `cargo test`, for the reason the justfile gives:
+        # tests mutate process-global env vars and need a process per test.
+        if: steps.gate.outputs.released == 'true'
+        run: |
+          cargo nextest run --workspace --status-level fail
+          cargo test --workspace --doc
+
+      - name: Build the tarball
+        if: steps.gate.outputs.released == 'true'
+        env:
+          VERSION: ${{ steps.gate.outputs.version }}
+        run: |
+          cargo build --workspace --release
+          STAGE=$(mktemp -d)
+          install -m 755 target/release/amon "$STAGE/amon"
+          install -m 644 LICENSE NOTICE "$STAGE/"
+          # The name and the sidecar are contracts with install.sh, pinned by
+          # tests in crates/amon-cli/tests/release.rs.
+          tar -C "$STAGE" -czf "amon-v${VERSION}-x86_64-linux.tar.gz" amon LICENSE NOTICE
+          sha256sum "amon-v${VERSION}-x86_64-linux.tar.gz" > "amon-v${VERSION}-x86_64-linux.tar.gz.sha256"
+
+      - name: Cut the release
+        if: steps.gate.outputs.released == 'true'
+        env:
+          VERSION: ${{ steps.gate.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The release body is the changelog section the release PR wrote —
+          # already reviewed, possibly edited, never regenerated here.
+          awk "/^## v${VERSION}\$/{found=1; next} /^## /{found=0} found" CHANGELOG.md > /tmp/notes.md
+          if ! [ -s /tmp/notes.md ]; then
+            # A hand-bumped version with no changelog section still releases;
+            # it just reads like what it is.
+            echo "See the commit history for what changed." > /tmp/notes.md
+          fi
+          # --target pins the tag to this run's own commit. Left to itself,
+          # `gh release create` tags whatever main's latest commit is by the
+          # time this line runs — and a commit landing mid-run would then be
+          # what the tag names, while the attached
+          # binary came from the commit actually tested above.
+          gh release create "v$VERSION" \
+            --target "$GITHUB_SHA" \
+            --title "amon v$VERSION" \
+            --notes-file /tmp/notes.md \
+            "amon-v${VERSION}-x86_64-linux.tar.gz" \
+            "amon-v${VERSION}-x86_64-linux.tar.gz.sha256"
+
