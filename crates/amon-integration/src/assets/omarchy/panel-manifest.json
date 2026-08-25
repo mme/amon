@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "sh.amon.panel",
   "name": "Agents (amon)",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "author": "amon",
   "description": "A centred pane listing every agent amon can see, on Super+A",
   "kinds": [
