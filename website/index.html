@@ -29,7 +29,7 @@
      unicode-range keeps it inert for everything else. */
   @font-face{font-family:"Glyphs";src:url(fonts/amon-glyphs.woff2) format("woff2");font-display:swap;unicode-range:U+F02D7,U+F05E0,U+F14FB,U+2812,U+2830,U+2824,U+2806}
 
-  /* Dark first — the mark's own ground. Light is the same page inverted.
+  /* Dark first - the mark's own ground. Light is the same page inverted.
      Three states: bare :root is dark, the media query covers the un-stamped
      "system" setting, and [data-theme] lets the toggle win either direction. */
   :root{
@@ -40,7 +40,7 @@
     /* which switch icon shows: offer the mode you would move to */
     --sun:block; --moon:none;
   }
-  /* Light mode is switched off for now — not merely hidden. Leaving the media
+  /* Light mode is switched off for now - not merely hidden. Leaving the media
      query in place would have the page turn light for anyone whose system asks
      for it, which is exactly the thing being switched off. The palette is kept
      below the fold of this rule so it can come back in one edit. */
@@ -53,7 +53,7 @@
     font-size:15px; line-height:1.65; -webkit-font-smoothing:antialiased;
   }
   /* The UA sheet gives code and pre a bare `monospace`, which shadows the
-     page's own stack — and with it the Glyphs face the config chips need.
+     page's own stack - and with it the Glyphs face the config chips need.
      Invisible on a desktop whose monospace fallback carries Nerd glyphs;
      tofu on an iPhone, whose monospace is Courier. The page is duospace
      throughout, so inherit is the truth. */
@@ -81,7 +81,7 @@
   /* ---- masthead ---------------------------------------------------- */
   .masthead{display:flex; flex-direction:column; align-items:center; gap:1.75rem; text-align:center}
   /* The viewBox carries 40 units of empty headroom so the antenna's rings have
-     somewhere to expand into — the ball sat flush with the old top edge. That
+     somewhere to expand into - the ball sat flush with the old top edge. That
      space is pulled back out with a negative margin in the same proportion
      (40/214.75), so the mark lands exactly where it did before.
      Only the top constrains them: the rings stroke in currentColor, the same
@@ -89,8 +89,8 @@
      reads as the head occluding the wave. */
   /* And 56 units of empty runway either side in x, so the conveyor's capsules have
      somewhere to slide in from and out to. Widening x alone leaves the scale
-     untouched — rendered size is width / viewBox-width and both grow by the same
-     factor — so --art stays the artwork's own width, the mark draws exactly as it
+     untouched - rendered size is width / viewBox-width and both grow by the same
+     factor - so --art stays the artwork's own width, the mark draws exactly as it
      did, and the 40/214.75 headroom compensation above still holds. The element is
      simply wider than the mark inside it. */
   .masthead .lockup{--art:min(210px,42vw);
@@ -125,7 +125,7 @@
   .masthead p{margin:.75rem 0 0; max-width:58ch; color:var(--muted); font-size:14px;
               text-wrap:pretty}
   /* The Omarchy line closes the paragraph, so it gets a line to itself at every
-     width — a block, rather than a wrap that only happens to fall in the right
+     width - a block, rather than a wrap that only happens to fall in the right
      place. The lifted "amon" at the start stays inline. */
   .masthead p .lift:last-child{display:block}
   /* raises a phrase out of the muted body text to full ink. Never broken
@@ -174,11 +174,11 @@
   .pairing header p .lift{text-transform:uppercase}
   /* A hair more air under this heading than the others get. Set as capitals,
      OMARCHY sits tight against the line above it in a way the lowercase
-     openings elsewhere do not — 5px on top of the header's own gap, which is
+     openings elsewhere do not - 5px on top of the header's own gap, which is
      enough to see and not enough to read as a new rhythm. */
   .pairing header p:first-of-type{margin-top:5px}
   /* Three actions, ranked: bare icons for the two that ask little, and one
-     solid block for install — the page's only inverted element. */
+     solid block for install - the page's only inverted element. */
   .actions{display:flex; align-items:center; justify-content:center;
            gap:1.15rem; flex-wrap:wrap}
   .glyphs{display:flex; align-items:center; gap:.15rem}
@@ -207,7 +207,7 @@
      Masked rather than <img>ed: an image is its own document and could not see
      the theme, while a mask reads only alpha and lets currentColor do the rest.
      Unscoped, because the schematic bar draws the same mark at the same size the
-     real bar does — one asset, two places, each taking its own colour. */
+     real bar does - one asset, two places, each taking its own colour. */
   .mark-omarchy{background:currentColor;
                 -webkit-mask:url(omarchy-logo.svg) center/contain no-repeat;
                         mask:url(omarchy-logo.svg) center/contain no-repeat}
@@ -255,21 +255,21 @@
   .plate header p + p{margin-top:.35rem}   /* on top of the header's own gap */
   /* A note under an illustration is the same size and colour as the explainer's
      own line, so it needs a clear beat or the two read as one block. One extra
-     step of the plate's own rhythm — 1.25rem on top of the 1.25rem gap, so 40px
-     — which is double the spacing inside the plate and still comfortably under
+     step of the plate's own rhythm - 1.25rem on top of the 1.25rem gap, so 40px
+     - which is double the spacing inside the plate and still comfortably under
      the 48px minimum that separates one section from the next. */
   .plate > figure + p{margin-top:1.25rem}
 
   /* ---- the top bar, schematic -------------------------------------- */
   /* A diagram of the bar, not a picture of one. It has no ground and no edge of
-     its own — only marks, in the page's own ink — because the point being made
+     its own - only marks, in the page's own ink - because the point being made
      is what sits where, and a panel drawn around it would be one more thing to
      read. Drawn well above life size for the same reason: legibility beats
      fidelity here, so nothing is pixel-matched to the real bar.
 
      The layout is the one thing kept exact: three grid columns with the middle
      sized to its content, so the clock holds the centre line whatever the two
-     sides carry — which is how the widget itself behaves, and what makes room
+     sides carry - which is how the widget itself behaves, and what makes room
      for the left side to grow later. An outline and no ground: the rule says
      where the bar is, the page shows through it. */
   .topbar{margin:0; display:flex; flex-direction:column}
@@ -279,7 +279,7 @@
   .bar-left{display:flex; align-items:center; gap:5px}
   .bar-right{display:flex; align-items:center; justify-content:flex-end; gap:5px}
   .bar-mid{display:flex; align-items:center; gap:.7rem; white-space:nowrap}
-  /* The clock, the weather and the tray are context, not subject — dimmed a
+  /* The clock, the weather and the tray are context, not subject - dimmed a
      step below the muted body so the workspace indicators carry the diagram. */
   .bar-mid,.bar-right{opacity:.55}
 
@@ -287,7 +287,7 @@
              color:var(--ink); margin-right:8px;
              transition:color 340ms ease, opacity 340ms ease}
   /* The step about a quiet agent makes its point with brightness alone, so
-     everything that is not the lit workspace steps back — the Omarchy mark
+     everything that is not the lit workspace steps back - the Omarchy mark
      included, which is otherwise the brightest thing on the bar and would be
      competing with the very difference the step is asking you to notice. */
   .bar.is-dim .logo{color:var(--muted); opacity:.55}
@@ -304,13 +304,13 @@
   .ws:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
   /* Every face a slot can wear is in the slot, stacked in one grid cell, and
      data-state picks which is lit. Swapping state is then a crossfade rather
-     than a rebuild — and because they share the cell, nothing reflows and the
+     than a rebuild - and because they share the cell, nothing reflows and the
      row keeps its width whichever face is showing. */
   .ws-face{grid-area:1/1; display:block; transition:opacity 340ms ease; opacity:0}
   /* Three states wear the digit and differ only in what is done to it.
      "idle" is a slot the step is not talking about: muted, out of the way.
      "active" is an agent at rest: full ink, underlined. "bare" is the slot
-     the step *is* talking about when there is no agent on it — full ink,
+     the step *is* talking about when there is no agent on it - full ink,
      because the aimed slot holds ink in every other step too, and nothing
      else, because nothing else is the state. */
   .ws[data-state="idle"]    .ws-idle,
@@ -321,20 +321,20 @@
   .ws[data-state="blocked"] .ws-blocked,
   .ws[data-state="focused"] .ws-focused{opacity:1}
   /* icon faces are sized; the digit is not. Given a box it would sit at that
-     box's left edge, and the slot centres the box rather than the glyph — which
+     box's left edge, and the slot centres the box rather than the glyph - which
      put every number 4.4px left of where the pointer aims. */
   .ws-done,.ws-blocked{width:19px; height:19px}
   /* the spinner lights two of the cell's four rows, so its ink sits in the
-     middle of a box that is mostly empty — it needs the extra size for those
+     middle of a box that is mostly empty - it needs the extra size for those
      dots to carry beside a digit */
   .ws-working{width:24px; height:24px}
   /* the focus marker fills only 54% of its viewBox, so at the glyph size the
-     others use it reads as a dot — sized up until the square is square */
+     others use it reads as a dot - sized up until the square is square */
   .ws-focused{width:25px; height:25px}
   .ws[data-state="idle"]{color:var(--muted)}
   /* An agent that has come to rest keeps its number and is underlined: it is
      here and it wants nothing. The widget tried weight first and it could not
-     be seen — a lone digit has nothing beside it to be heavier than — so the
+     be seen - a lone digit has nothing beside it to be heavier than - so the
      cue adds a mark instead of thickening one. Drawn in descender space, so
      the digit does not move and the row keeps its rhythm. */
   .ws[data-state="active"] .ws-idle{text-decoration:underline;
@@ -372,17 +372,17 @@
   .explain-line{margin:0; font-size:13.5px; color:var(--muted); min-height:1.65em;
                 transition:opacity 200ms ease}
   .explain.is-fading .explain-line{opacity:0}
-  /* On a phone the step copy wraps — up to three lines — and without a floor
+  /* On a phone the step copy wraps - up to three lines - and without a floor
      each step would shove the whole page below it. Reserve the worst case. */
   @media (max-width:480px){ .explain-line{min-height:calc(1.65em * 3)} }
   /* No caret. A block cursor at this size outweighed the workspace indicator
      the line is about, and the typing already reads as typing without one. */
   /* kbd for the keys, so a screen reader and a stylesheet both know what they
-     are — but drawn as plain lifted text, since a boxed key at this size would
+     are - but drawn as plain lifted text, since a boxed key at this size would
      outweigh the indicator the line is about */
   /* only the state is lifted. The key rides in brackets, which set it apart
      without a second piece of ink competing for the same glance. */
-  /* ink, not weight — b and kbd both carry a UA default the page does not want,
+  /* ink, not weight - b and kbd both carry a UA default the page does not want,
      and .lift lifts a phrase by colour alone everywhere else */
   .explain b{color:var(--ink); font-weight:inherit}
   .explain kbd{font:inherit}
@@ -394,7 +394,7 @@
   /* ---- the agent panel -------------------------------------------------
      A replica rather than a diagram: the same columns in the same order, so
      someone who reads this and then installs amon recognises what opens.
-     Nothing here animates on its own — the panel is a thing you look at and
+     Nothing here animates on its own - the panel is a thing you look at and
      read, not a thing that performs, and the top bar above already carries
      this page's one moving figure. */
   .panel{margin:0; display:flex; flex-direction:column}
@@ -437,7 +437,7 @@
      figure above uses, out of the same sprite. */
   .panel-glyph{width:14px; height:14px; display:block; color:inherit}
 
-  /* The working spinner turns. Not the page performing at you — this is what
+  /* The working spinner turns. Not the page performing at you - this is what
      the glyph does in the panel, and a still one says the wrong thing about an
      agent that is mid-task.
      Two dots going round: top, right, bottom, left. Each of the four positions
@@ -493,7 +493,7 @@
                 line-height:1.65;
                 color:var(--ink)}
   /* A transcript, so the parts are told apart the way a terminal tells them
-     apart — but in one ink. What you typed and the marks amon draws are the
+     apart - but in one ink. What you typed and the marks amon draws are the
      page's full ink; what came back is a step down. amon shows the checked
      boxes in its accent colour and the page does not follow it: nothing else
      here is coloured, and one hue in one box would be the only hue on the
@@ -541,7 +541,7 @@
   /* ---- the theme gallery ------------------------------------------- */
   /* Grey until you point at one. Every shot is the same desktop, the same
      panel and the same four agents, so colour is the only thing that differs
-     between them — which makes it the one thing worth spending on hover. */
+     between them - which makes it the one thing worth spending on hover. */
   /* One row, pushed sideways. Snapping so a flick lands on a shot rather than
      between two, and the scrollbar left visible: a strip with no bar is a strip
      nobody knows continues. */
@@ -616,11 +616,11 @@
 
   <!-- Bar glyphs. The real widget draws these from a Nerd Font's private use
        area (blocked U+F02D7, done U+F05E0, focus U+F14FB), which would be tofu
-       on the web — so they are redrawn here.
+       on the web - so they are redrawn here.
        Those two code points are Material's *filled* help-circle and
        check-circle: a solid disc with the mark knocked out of it, not a ring
        with a mark inside. Drawn through a mask so the knockout stays a stroke
-       — the alternative is hand-converting a checkmark to an outline path —
+       - the alternative is hand-converting a checkmark to an outline path -
        and so the hole is real transparency rather than the page colour painted
        back over, which would break the moment a plate changed its ground.
        The disc takes the radius the stroked ring's outer edge had, so the
@@ -701,7 +701,7 @@
         reads as an invisible mask. Painted on and clipped to the head's exact
         outline, an eye keeps its full height the whole way and simply stops at
         the edge, while the head's own fill is never disturbed.
-        (website/amon-logo.svg keeps real holes — that one has to work anywhere.)
+        (website/amon-logo.svg keeps real holes - that one has to work anywhere.)
       -->
       <!--
         Each reel is wrapped twice: an outer translate parks the origin on the
@@ -711,10 +711,10 @@
 
         A reel, not a swap: six eyes spaced 160 apart ride each group, so
         driving the group down by a whole number of 160s brings the next one
-        exactly into place. The spacing is deliberate — between two eyes it
+        exactly into place. The spacing is deliberate - between two eyes it
         leaves a 139.5 gap, wider than the 132.6 of head they cross, so two are
         never in view at once however fast it spins. A suit is taller and eats
-        into that margin — at SUIT_SCALE 1.5 it leaves 134 against the same
+        into that margin - at SUIT_SCALE 1.5 it leaves 134 against the same
         132.6, so the rule still holds, but only by 1.4. Scale the suits up much
         further and a symbol will start showing above its neighbour mid-spin.
       -->
@@ -745,7 +745,7 @@
         once here in the ink, once in the layer below in the page's own ground,
         clipped to the head. Ink laid over the ink head is invisible, so one
         capsule crossing the rim is ear on the outside and eye on the inside with
-        no colour animating anywhere — the outline splits it. The rects are
+        no colour animating anywhere - the outline splits it. The rects are
         generated, since their count follows STEP.
       -->
       <g id="amon-row-ink" fill="currentColor"></g>
@@ -801,10 +801,10 @@
     <header>
       <h2><a class="h-anchor" id="agent-native-os" href="#agent-native-os">omarchy + amon = the agent-native OS</a></h2>
       <p><span class="lift">Omarchy</span> is the perfect environment for using agents. A workspace holds everything
-         a project needs: agent terminals, a browser, the logs — tiled or side-scrolling,
+         a project needs: agent terminals, a browser, the logs - tiled or side-scrolling,
          set up the way you want.</p>
       <p><span class="lift">amon</span> adds the missing piece: it shows you what your agents
-         are doing, which one needs your attention — and lets you quickly jump between them.</p>
+         are doing, which one needs your attention - and lets you quickly jump between them.</p>
     </header>
   </section>
 
@@ -879,7 +879,7 @@
         <span class="explain-stem" aria-hidden="true"></span>
         <!-- The visible line is retyped a character at a time, so it is hidden
              from assistive tech and the settled sentence is carried alongside
-             it instead — nobody should have to listen to a typewriter. -->
+             it instead - nobody should have to listen to a typewriter. -->
         <div class="explain-copy">
           <p class="explain-line" aria-hidden="true"></p>
           <span class="sr explain-said"></span>
@@ -899,7 +899,7 @@
 
     <!--
       The agent panel, replicated. A picture and not a control: nothing here is
-      clickable, because nothing here does anything — the cursor follows the
+      clickable, because nothing here does anything - the cursor follows the
       pointer the way it does in the real panel, and that is the whole of the
       interaction. The one thing that moves is the spinner, which moves there
       too.
@@ -962,7 +962,7 @@
 
     </figure>
 
-    <p>The agent panel is the central piece — <span class="lift">Super+A</span> from wherever
+    <p>The agent panel is the central piece - <span class="lift">Super+A</span> from wherever
        you are, over whatever you are doing. It is where you come back to: every agent,
        grouped by the workspace it is on, with what it is doing and how long it has been
        at it. Pick one and <span class="lift">Enter</span> immediately puts you in front
@@ -975,7 +975,7 @@
     </header>
 
     <!--
-      The same four agents as the panel above, answered in the terminal — and
+      The same four agents as the panel above, answered in the terminal - and
       sorted the way everything in amon sorts: blocked first, then finished-
       but-unseen (which the CLI prints as idle; only its place in the order
       gives it away), then working. The trailing focus command is typed and
@@ -990,7 +990,7 @@ opencode  idle      41m  4  website           ~/.cache/worktrees/site</span>
 <span class="t-p">~ &#10095;</span> <span class="t-in">amon focus 3</span></code></pre>
     </figure>
 
-    <p>Everything the desktop shows is one command away — add
+    <p>Everything the desktop shows is one command away - add
        <span class="lift">--json</span> and it's scriptable.
        <a href="https://github.com/mme/amon#readme">Reference</a>.</p>
   </section>
@@ -1009,7 +1009,7 @@ opencode  idle      41m  4  website           ~/.cache/worktrees/site</span>
       <pre><code><span class="t-p">~ &#10095;</span> <span class="t-in">yay -S amon-bin</span>
 <span class="t-o">(1/1) installing amon-bin                       [######################] 100%</span>
 <span class="t-p">~ &#10095;</span> <span class="t-in">amon setup</span>
-Set up amon <span class="t-o">— space toggles, enter applies</span>
+Set up amon <span class="t-o">- space toggles, enter applies</span>
 
 <span class="t-c">&#9656;</span> <span class="t-x">[x]</span> pi        <span class="t-o">detected</span>
   <span class="t-x">[x]</span> claude    <span class="t-o">detected</span>
@@ -1040,7 +1040,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     <!--
       Every Omarchy theme, in roughly the order people reach for them. The same
       desktop, the same panel and the same four agents in each, so the only
-      thing that differs is the colour — which is why the strip is grey until
+      thing that differs is the colour - which is why the strip is grey until
       pointed at, and why it scrolls rather than wrapping: a row you push
       through reads as one set of variations, where a grid reads as a catalogue.
     -->
@@ -1166,7 +1166,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     <!--
       Plain reference, deliberately unmarketed: the command as you type it,
       and what the help text says it does. The page is set in a duospace face
-      throughout, so the commands need no separate mono treatment — the grid
+      throughout, so the commands need no separate mono treatment - the grid
       and the ink/muted split do all the work.
     -->
     <div class="cliref">
@@ -1177,7 +1177,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
            claude</span>); <span class="lift">--all</span> takes every
            detected agent plus the desktop integration without a screen.
            <span class="lift">--no-alias</span> skips aliasing the agent's
-           name — on the non-interactive forms only, the screen always
+           name - on the non-interactive forms only, the screen always
            aliases.</p>
       </div>
       <div>
@@ -1207,23 +1207,23 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
         <a class="cli-anchor" id="cli-agent" href="#cli-agent"><code class="cli-cmd">amon &lt;agent&gt; [args&hellip;]</code></a>
         <p>Run an agent under amon. Any first word that is not a subcommand
            below names an agent, and every argument after it is passed to the
-           agent verbatim — flags included, nothing interpreted.</p>
+           agent verbatim - flags included, nothing interpreted.</p>
       </div>
       <div>
         <a class="cli-anchor" id="cli-remove" href="#cli-remove"><code class="cli-cmd">amon remove [target] [--all]</code></a>
-        <p>Remove integrations — one target, or everything after one
+        <p>Remove integrations - one target, or everything after one
            confirmation. <span class="lift">--all</span> skips the
            confirmation, for scripts.</p>
       </div>
       <div>
         <a class="cli-anchor" id="cli-daemon" href="#cli-daemon"><code class="cli-cmd">amon daemon</code></a>
-        <p>Run the daemon in the foreground. Rarely needed — any amon
+        <p>Run the daemon in the foreground. Rarely needed - any amon
            command starts it on demand.</p>
       </div>
       <div>
         <a class="cli-anchor" id="cli-hook" href="#cli-hook"><code class="cli-cmd">amon hook report-agent | report-agent-session</code></a>
-        <p>Relays an installed hook's report — the agent's state, or which
-           session it is in — to its wrapper. Used by the hook scripts
+        <p>Relays an installed hook's report - the agent's state, or which
+           session it is in - to its wrapper. Used by the hook scripts
            <span class="lift">amon setup</span> installs, not by hand.</p>
       </div>
     </div>
@@ -1235,11 +1235,11 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     </header>
 
     <p>Everything configurable lives in one file,
-       <span class="lift">~/.config/amon/config.toml</span> —
+       <span class="lift">~/.config/amon/config.toml</span> -
        <span class="lift">amon setup</span> writes it once, fully commented and
        fully commented-out, and never touches it again. Every setting is
        optional; each chip below shows its default. The daemon watches the
-       file, so changes apply live under a running bar — nothing restarts. A
+       file, so changes apply live under a running bar - nothing restarts. A
        file that fails to parse keeps the last good configuration
        (<span class="lift">amon doctor</span> reports it), and a missing file
        simply means the defaults.</p>
@@ -1265,7 +1265,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
       <div class="cli-sect">[bar.glyphs]</div>
       <div>
         <a class="cli-anchor" id="set-glyph-working" href="#set-glyph-working"><code class="cli-cmd">working = ["&#x2812;", "&#x2830;", "&#x2824;", "&#x2806;"]</code></a>
-        <p>The animation frames for a working agent, in order, any length —
+        <p>The animation frames for a working agent, in order, any length -
            one frame is a static glyph. Plain characters, here and below:
            a glyph setting chooses which character, never how it is drawn.</p>
       </div>
@@ -1276,7 +1276,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
       <div>
         <a class="cli-anchor" id="set-glyph-done" href="#set-glyph-done"><code class="cli-cmd">done = "&#xF05E0;"</code></a>
         <p>The glyph for an agent that finished while you were not looking.
-           An agent at rest has no glyph — its workspace keeps the number,
+           An agent at rest has no glyph - its workspace keeps the number,
            underlined.</p>
       </div>
       <div>
@@ -1306,7 +1306,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
 
 <!--
   The footer: the mark once more, at rest except for a blink every few
-  seconds — the eyes are knocked-out holes, so a blink is two ink capsules
+  seconds - the eyes are knocked-out holes, so a blink is two ink capsules
   briefly covering them. The line under it is the masthead's own tagline,
   and the fine print is anchors and facts, nothing warmer.
 -->
@@ -1352,7 +1352,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
   // characters, which a web font may not carry.
   //
   // A cell is two columns by four rows, and the four frames light only the
-  // middle two — a two-dot bar going round: top, right, bottom, left. Which
+  // middle two - a two-dot bar going round: top, right, bottom, left. Which
   // rows is the whole of it. herdr's own ten frames light dots 1-6 only, so
   // their ink fills the top three quarters of the cell and the spinner rides
   // visibly high against the digits beside it; the middle two rows are centred
@@ -1362,7 +1362,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     var COLS = [8.7, 15.3], ROWS = [4.35, 9.45, 14.55, 19.65], R = 2.35;
 
     // Where a lit dot goes. Bits 0-2 are the left column's first three rows,
-    // 3-5 the right column's, 6-7 the fourth row of each — which is exactly
+    // 3-5 the right column's, 6-7 the fourth row of each - which is exactly
     // why a six-dot reading of the cell cannot say "the middle two rows".
     function place(bit){
       return bit < 6 ? [bit > 2 ? 1 : 0, bit % 3] : [bit - 6, 3];
@@ -1398,7 +1398,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     }
   })();
 
-  // The bar's clock is the real one, in the visitor's own locale — a schematic
+  // The bar's clock is the real one, in the visitor's own locale - a schematic
   // can simplify, but a wrong time is the one detail anybody can catch. h23
   // rather than hour12:false, which yields "24:00" at midnight in some locales.
   (function(){
@@ -1418,7 +1418,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
 
   // The explainer aims itself. It reads which workspace it is about off
   // data-explains, measures that slot, and hands the offset to the CSS as
-  // --point-x — so the stem and the copy line up with the indicator whatever
+  // --point-x - so the stem and the copy line up with the indicator whatever
   // the bar's width, and moving to the next step is one attribute away. An
   // observer watches the attribute, which is why nothing here is exported.
   (function(){
@@ -1441,8 +1441,8 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(aim);
   })();
 
-  // The explainer's cycle. Each step owns the whole picture — which workspaces
-  // are in which state, where the pointer sits, and what the line says — so the
+  // The explainer's cycle. Each step owns the whole picture - which workspaces
+  // are in which state, where the pointer sits, and what the line says - so the
   // bar and the copy can never disagree about which step is showing. A step
   // lights exactly one workspace and leaves the rest as plain numbers: the line
   // below names one state, so the bar should have one state to find.
@@ -1464,7 +1464,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     var STEPS = [
       // One state on screen at a time: the step's own workspace wears its
       // state, every other slot is just its number. The reader is asked to
-      // look at one thing, and no step leans on remembering another — which
+      // look at one thing, and no step leans on remembering another - which
       // is why four no longer holds a standing agent. Being lit in every step
       // made it the exception that taught the rule.
       // The state is what gets lifted; the errand rides in brackets after it,
@@ -1485,14 +1485,14 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
       { ws: 4, states: { 4: 'active' }, dim: true,
         parts: [['Your agent is '], ['idle', 'b'], ['. [Check in with '],
                 ['Super+4', 'kbd'], [']']] },
-      // The bracket is the same slot throughout — what to know about this state.
+      // The bracket is the same slot throughout - what to know about this state.
       // For the first four that is the key; here there is nothing to press, so
       // it names the appearance instead, which is the only cue this state has.
       // It answers the step before it rather than the slot beside it: four wore
       // the underline an agent at rest gets, five does not, and that is the
       // whole difference between "an agent is here, wanting nothing" and
-      // "nothing is here". The contrast used to be spatial — four sat lit in
-      // every step — which made one slot behave unlike the other four.
+      // "nothing is here". The contrast used to be spatial - four sat lit in
+      // every step - which made one slot behave unlike the other four.
       { ws: 5, states: { 5: 'bare' }, dim: true,
         parts: [['There is '], ['no agent', 'b'],
                 [' on this workspace. [No underline]']] }
@@ -1524,7 +1524,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     }
 
     // The old line leaves by fading, not by being unpicked a character at a
-    // time — backspacing made the reader watch the same sentence twice. Only
+    // time - backspacing made the reader watch the same sentence twice. Only
     // the arriving line is typed, and the caption travels while it is empty, so
     // the caret shows up at the new workspace and writes from there.
     function show(step, typed){
@@ -1552,7 +1552,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     show(STEPS[0], false);
 
     // A carousel that advances itself is the thing the preference is asking us
-    // not to do, so under reduce the cycle never starts — but the bar is still
+    // not to do, so under reduce the cycle never starts - but the bar is still
     // fully explorable by hand, which is the better half of the deal.
     var motionOK = !matchMedia('(prefers-reduced-motion: reduce)').matches,
         timer = null;
@@ -1570,7 +1570,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     // the cycle and jumps the explainer to that one; leaving the bar hands it
     // back. Instant rather than typed, because someone reading by hand is
     // asking a question and should not have to wait for an answer to be typed
-    // out — the stem and the copy still glide, since that is CSS on --point-x.
+    // out - the stem and the copy still glide, since that is CSS on --point-x.
     function grab(ws){
       var i = -1;
       for (var j = 0; j < STEPS.length; j++) if (String(STEPS[j].ws) === String(ws)) i = j;
@@ -1598,7 +1598,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
   // Theme toggle. The page follows the OS until you say otherwise.
   // The mark glances. Left first, then alternating, so a glance always reads
   // as one of a pair rather than a twitch. The gap is random but floored by a
-  // cooldown, so two never land on top of each other — and it only ever moves
+  // cooldown, so two never land on top of each other - and it only ever moves
   // the eyes, never the head.
   (function(){
     var L = document.getElementById('amon-eye-l'),
@@ -1619,7 +1619,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     //
     // Easing goes on the keyframes, not on the timing: an `easing` in the
     // options remaps the whole timeline, which drags the offsets away from the
-    // moments they name. Per-keyframe, each leg gets its own curve — the value
+    // moments they name. Per-keyframe, each leg gets its own curve - the value
     // set on a keyframe governs the interval that starts there.
     function move(el, dx){
       el.animate([
@@ -1665,7 +1665,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     // Slot machine. Both reels spin the same way, as real ones do, and each
     // runs a whole number of symbol-spacings so a fresh eye lands dead centre.
     // The right is nudged off the line by a beat and given further to go, so
-    // they neither start nor stop together — reels falling out of step is most
+    // they neither start nor stop together - reels falling out of step is most
     // of what makes it read as a slot machine rather than a swap.
     var SPACING = 160;
 
@@ -1673,7 +1673,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
       var D = SPACING * turns, PULL = 12;
       return group.animate([
         // Winds back first, slowly, so you catch it loading up before anything
-        // happens — the pull is only 12, small enough that no second symbol can
+        // happens - the pull is only 12, small enough that no second symbol can
         // creep into view while it hangs there.
         { transform: 'translateY(0)',                   offset: 0,   easing: 'cubic-bezier(.25,.6,.4,1)' },
         { transform: 'translateY(' + (-PULL) + 'px)',   offset: .17, easing: 'cubic-bezier(.7,0,.9,.35)' },
@@ -1687,7 +1687,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
       ], { duration: dur, delay: delay || 0, fill: 'forwards' });
     }
 
-    // Suits, drawn rather than typed — the same reason the bar glyphs are:
+    // Suits, drawn rather than typed - the same reason the bar glyphs are:
     // ♠♥♦♣ in a font is a gamble on what the visitor has installed. Each is
     // centred on (0,0) at about the eye's footprint and dealt at SUIT_SCALE, so
     // the drawing stays readable and only one number decides how big they land.
@@ -1728,13 +1728,13 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     }
     function restoreEye(side){ setSlot(side, '<path d="' + EYE_D[side] + '"/>'); }
 
-    // The two run at different speeds on purpose — the right covers five turns
+    // The two run at different speeds on purpose - the right covers five turns
     // where the left covers three, and not proportionally slower for it, so it
     // is plainly the quicker reel. It also sets off a third of a second late
     // and locks well after: nothing about the pair is ever in step.
     //
     // Each reel lands on a suit, holds it long enough to be read, and then both
-    // blink — and the blink is what does the tidying. While the eyes are shut
+    // blink - and the blink is what does the tidying. While the eyes are shut
     // the reels are cancelled (snapping back to their resting symbol) and the
     // suits are swapped out, so the swap is never seen, only its result.
     var HOLD = 1100, SQUASH = 170;
@@ -1769,17 +1769,17 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     }
 
     // The antenna transmits: two rings leave the ball, expand and fade, one
-    // behind the other. Two rather than three, and further apart — at full
+    // behind the other. Two rather than three, and further apart - at full
     // opacity a third crowds the other two and the burst reads as a target
     // rather than as something travelling. The circles are drawn at the ball's own radius and scaled up
-    // rather than having their r animated, which keeps it to a transform — and
+    // rather than having their r animated, which keeps it to a transform - and
     // non-scaling-stroke stops the ring fattening as it grows, so it reads as
     // a wavefront thinning out rather than a swelling blob.
     var waves = document.querySelectorAll('.wave'),
         WAVE = 900, WAVE_GAP = 320, REACH = 2.56;
 
     function beacon(){
-      // the ball kicks once as the first ring leaves it — a beacon that throws
+      // the ball kicks once as the first ring leaves it - a beacon that throws
       // off waves while sitting perfectly still reads as detached from them
       var ball = document.getElementById('amon-ball');
       if (ball) ball.animate([
@@ -1790,7 +1790,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
 
       waves.forEach(function(ring, i){
         // Solid for most of the journey, then gone. Fading the whole way makes
-        // a ring read as a gradient rather than as a wavefront — it is at full
+        // a ring read as a gradient rather than as a wavefront - it is at full
         // strength from 8% to 72% and only lets go over the last quarter.
         ring.animate([
           { transform: 'scale(1)',    opacity: 0, offset: 0 },
@@ -1802,14 +1802,14 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
       return WAVE + WAVE_GAP * (waves.length - 1);
     }
 
-    // The head turns half a circle and nothing else moves — not the ears, not
+    // The head turns half a circle and nothing else moves - not the ears, not
     // the antenna, not the eyes riding on it. Same shape as the reel: winds
     // back slowly enough to be seen loading, lets go, runs, then brakes past
     // the mark and settles onto it.
     //
     // A half turn lands looking identical: the squircle is symmetric about both
     // axes, and its Bezier fit was mirrored from one quadrant, so it is exactly
-    // so. The animation therefore needs no fill — when it ends and the
+    // so. The animation therefore needs no fill - when it ends and the
     // transform drops away, the head is already where it appears to be. It also
     // halves the diagonals, and the diagonals are where the head's corners
     // reach 99.9 and briefly swallow the ears at 97.25.
@@ -1825,15 +1825,15 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
         { transform: 'rotate(' + TURN + 'deg)',         offset: 1 }
       // 750, not 1500: the turn halved, so the duration has to halve with it or
       // the head sweeps at half the speed. The cruise leg covers .64 of the
-      // turn in .36 of the run either way — 0.43 degrees/ms, unchanged.
+      // turn in .36 of the run either way - 0.43 degrees/ms, unchanged.
       ], { duration: 750 });
       return 750;
     }
 
     // ---- the conveyor ----------------------------------------------------
     //
-    // Left ear, both eyes, right ear are four capsules on one axis — they all
-    // sit at cy 133 — so the row can shift along it. Whatever crosses the head's
+    // Left ear, both eyes, right ear are four capsules on one axis - they all
+    // sit at cy 133 - so the row can shift along it. Whatever crosses the head's
     // rim changes colour on the way through, and that costs nothing: each
     // capsule is drawn twice, ink and ground, and the clip does the rest.
     //
@@ -1841,7 +1841,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     // row moving at two speeds, and the further it travels the less that shows:
     // one slot is 63.5 against 53, a 17% spread; two is 127 against 116.5, 8%;
     // three is 190.5 against 180, under 6%. At three the left ear also crosses
-    // the whole face — ear, eye, eye, ear in one run — and comes out the far side
+    // the whole face - ear, eye, eye, ear in one run - and comes out the far side
     // as the right ear, which is the trip that shows the idea off.
     var SLOT = [41, 104.5, 157.5, 221],   // ear, eye, eye, ear
         PITCH = 63.5,                     // spacing assumed for the slots beyond
@@ -1896,7 +1896,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     // Opacity follows x, not progress, and both fades happen out in the runway,
     // hard against the edge rather than beside the artwork: in over cx -23 to -11,
     // out over 271 to 283. A capsule is solid for the whole of its visible
-    // approach — some 50 units before it lands, 50 more after it leaves home — and
+    // approach - some 50 units before it lands, 50 more after it leaves home - and
     // it is already gone before the edge could clip it.
     //
     // Fading beside the artwork was the mistake: with 11 units of space left of the
@@ -1914,7 +1914,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     // somewhere rather than being switched on nearby. Leaving is the same in
     // reverse, measured from the far ear.
     //
-    // Centred because the row's rects set transform-box: fill-box — without it
+    // Centred because the row's rects set transform-box: fill-box - without it
     // scaling would drag each capsule toward the viewBox origin.
     function place(it, t){
       var cx = it.x0 + (it.x1 - it.x0) * t, op = 1, grow = 1, a, b;
@@ -1973,7 +1973,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     }
 
     // Watching the cursor. Come within WATCH_PAD of the install button and the
-    // mark stops whatever it was doing and follows the pointer instead — the
+    // mark stops whatever it was doing and follows the pointer instead - the
     // idling is what a mark does when nobody is paying attention, so it should
     // stop the moment somebody is.
     var lockup = document.querySelector('.masthead .lockup'),
@@ -1995,7 +1995,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
       return document.getElementById('amon-eye-' + side); }); }
 
     // Each eye aims at the cursor from where it actually sits, so the two toe
-    // in slightly on anything close — one shared direction would have them
+    // in slightly on anything close - one shared direction would have them
     // staring parallel like a printed pair.
     function lookAt(x, y){
       ['l','r'].forEach(function(side){
@@ -2012,7 +2012,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     function startWatching(){
       watching = true;
       // drop whatever the mark was mid-way through, including a reel holding a
-      // suit — cancelling puts every group back where it rests
+      // suit - cancelling puts every group back where it rests
       lockup.getAnimations({ subtree: true }).forEach(function(a){ a.cancel(); });
       eyes().forEach(function(g){ g.classList.add('watching'); });
     }
@@ -2044,7 +2044,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
       }
     }, { passive: true });
 
-    // Pick a gesture at random. Repeats are allowed — the cooldown already
+    // Pick a gesture at random. Repeats are allowed - the cooldown already
     // keeps them apart, and forbidding them makes the sequence predictable.
     // Each returns how long it occupies the mark, and the next wait is added on
     // top: the reel runs some 3.5s all told, well past the 2s floor, and a
@@ -2064,8 +2064,8 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
   // The CTA is a command, not a link: clicking copies it. The Omarchy mark
   // becomes a check for a moment, so the command itself never disappears.
   //
-  // It shows `yay -S amon-bin` and copies the whole line — install, set up, and
-  // source the shell — because that is what the install block hands over and two
+  // It shows `yay -S amon-bin` and copies the whole line - install, set up, and
+  // source the shell - because that is what the install block hands over and two
   // buttons offering different commands would be worse than either. The command
   // has one home, on that button, and this reads it: written down twice it would
   // be right twice until the day one of them changed.
@@ -2086,7 +2086,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
           status.textContent = '';
         }, 1600);
       }).catch(function(){
-        // clipboard refused — say so rather than pretending it worked
+        // clipboard refused - say so rather than pretending it worked
         status.textContent = 'Copy blocked. Select the command and press Ctrl+C.';
       });
     });
@@ -2098,7 +2098,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
   // ---- the agent panel ---------------------------------------------------
   // The cursor follows the pointer, as it does in the real panel: hovering a
   // row makes it the selected one, and it stays selected while the pointer is
-  // anywhere in the panel — over a gap, over a workspace heading — because a
+  // anywhere in the panel - over a gap, over a workspace heading - because a
   // highlight that snaps back to the top whenever you cross a divider is a
   // highlight you cannot aim.
   //
@@ -2124,8 +2124,8 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
     card.addEventListener('pointerleave', function(){ put(resting); });
   })();
 
-  // The install block. What is shown is a transcript — two commands and what
-  // they print — and what is copied is the single line that does both and
+  // The install block. What is shown is a transcript - two commands and what
+  // they print - and what is copied is the single line that does both and
   // sources the shell afterwards, so the aliases work in the terminal you are
   // already in. They are deliberately not the same text, which is why the
   // command is on the button rather than read back out of the picture.
@@ -2146,7 +2146,7 @@ Set up amon <span class="t-o">— space toggles, enter applies</span>
           status.textContent = '';
         }, 1600);
       }).catch(function(){
-        // Clipboard refused — say so rather than showing a check that lied.
+        // Clipboard refused - say so rather than showing a check that lied.
         status.textContent = 'Copy blocked: ' + commands;
       });
     });
