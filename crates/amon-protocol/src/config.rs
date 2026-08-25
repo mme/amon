@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 pub struct Config {
     pub bar: BarConfig,
     pub sound: SoundConfig,
+    pub updates: UpdatesConfig,
 }
 
 /// What the workspace indicators draw, and how fast.
@@ -90,5 +91,21 @@ impl Default for SoundConfig {
             done: None,
             blocked: None,
         }
+    }
+}
+
+/// Whether the daemon may look for newer releases.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct UpdatesConfig {
+    /// On unless turned off. The whole of the check is one HEAD request
+    /// against the release page's stable redirect, at most daily; nothing
+    /// about this machine travels with it.
+    pub check: bool,
+}
+
+impl Default for UpdatesConfig {
+    fn default() -> Self {
+        Self { check: true }
     }
 }

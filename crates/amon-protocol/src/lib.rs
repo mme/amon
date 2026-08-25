@@ -24,7 +24,7 @@ pub mod paths;
 mod schema;
 
 pub use agent::{AgentEntry, AgentPatch, AgentState};
-pub use config::{BarConfig, Config, GlyphConfig, SoundConfig};
+pub use config::{BarConfig, Config, GlyphConfig, SoundConfig, UpdatesConfig};
 pub use connect::connect_or_spawn_daemon;
 pub use event::Event;
 pub use frame::{Error, ErrorCode, ParseError, Request, Response, ServerFrame};

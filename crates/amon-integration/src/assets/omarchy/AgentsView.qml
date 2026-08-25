@@ -17,6 +17,7 @@
 import QtQuick
 import QtQuick.Controls
 import Quickshell
+import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
@@ -275,7 +276,8 @@ FocusScope {
       id: body
 
       width: parent.width
-      height: Math.max(0, view.height - hero.height - rule.height - view.contentSpacing * 2)
+      height: Math.max(0, view.height - hero.height - rule.height - view.contentSpacing * 2
+                         - (updateFooter.visible ? updateFooter.height + view.contentSpacing : 0))
 
     // One flat list with the workspace headings folded into it, the way the
     // network panel separates known networks from the others. A ListView rather
@@ -371,6 +373,62 @@ FocusScope {
         lineHeight: 1.35
       }
     }
+    }
+
+    // The one line the daemon's release check buys: which versions, and the
+    // command that closes the gap. Invisible when current — an up-to-date
+    // pane owes nobody a footer. Clicking copies the command (wl-copy is
+    // stock Omarchy; the clipboard plugin is built on it), because the next
+    // stop is a terminal and retyping a pipeline is how typos ship.
+    Item {
+      id: updateFooter
+
+      // Held to install.sh by a test: the pane must never advertise a line
+      // the installer stopped answering to.
+      readonly property string command: "curl -fsSL amon.sh/install | sh"
+      property bool copied: false
+
+      width: parent.width
+      height: footerText.implicitHeight
+      visible: view.agents.updateAvailable
+
+      Text {
+        id: footerText
+        width: parent.width
+        horizontalAlignment: Text.AlignHCenter
+        elide: Text.ElideRight
+        text: updateFooter.copied
+          ? "copied"
+          : "v" + view.agents.installedVersion + " -> v" + view.agents.latestVersion
+            + " · " + updateFooter.command
+        color: view.dim
+        font.family: view.fontFamily
+        font.pixelSize: Style.font.body
+      }
+
+      MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: {
+          copyCommand.running = true
+          updateFooter.copied = true
+          copiedFlash.restart()
+        }
+      }
+
+      // Long enough to read, short enough that the line is back before the
+      // hand reaches the terminal.
+      Timer {
+        id: copiedFlash
+        interval: 1500
+        onTriggered: updateFooter.copied = false
+      }
+
+      Process {
+        id: copyCommand
+        running: false
+        command: ["wl-copy", updateFooter.command]
+      }
     }
   }
   }
