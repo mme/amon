@@ -1001,15 +1001,14 @@ opencode  idle      41m  4  website           ~/.cache/worktrees/site</span>
     </header>
 
     <!--
-      One box, both commands, one button: they are run one after the other, and
-      a button each would make the reader choose between two things that are not
-      alternatives.
+      One box, one command: the installer opens the setup screen itself, so
+      the mock shows install flowing straight into it - typing a second
+      command is exactly what the reader does not have to do.
     -->
     <figure class="snippet">
       <pre><code><span class="t-p">~ &#10095;</span> <span class="t-in">curl -fsSL amon.sh/install | sh</span>
 <span class="t-o">downloading amon v0.1.0
 installed ~/.local/bin/amon</span>
-<span class="t-p">~ &#10095;</span> <span class="t-in">amon setup</span>
 Set up amon <span class="t-o">- space toggles, enter applies</span>
 
 <span class="t-c">&#9656;</span> <span class="t-x">[x]</span> pi        <span class="t-o">detected</span>
@@ -1020,7 +1019,7 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
 <span class="t-ok">✓</span> amon installed.</code></pre>
       <button class="snippet-copy" type="button" id="copy-install"
               title="Copy the install command"
-              data-copy="curl -fsSL amon.sh/install | sh &amp;&amp; amon setup &amp;&amp; source ~/.bashrc">
+              data-copy="curl -fsSL amon.sh/install | sh &amp;&amp; source ~/.bashrc">
         <span class="mark mark-omarchy" aria-hidden="true"></span>
         <svg class="mark mark-check" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-copied"/></svg>
         <span class="label"><span class="label-copy">Install</span><span class="label-copied">Copied</span></span>
