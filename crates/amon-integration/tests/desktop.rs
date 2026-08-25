@@ -854,3 +854,24 @@ fn the_players_role_is_the_one_the_ducking_dropin_ranks() {
         "and the notification bus ducks what sits below it"
     );
 }
+
+#[test]
+fn the_spinner_ticks_for_every_working_agent() {
+    // stateByWorkspace keeps only each workspace's most urgent state, and
+    // blocked outranks working — so a workspace holding both hid its working
+    // agent from the old anyWorking scan, and the panel's spinners froze
+    // exactly while an agent waited for input (#38). The per-agent tally is
+    // the honest source: a working agent counts wherever it sits.
+    let any_working = AGENT_STATES
+        .lines()
+        .find(|line| line.contains("property bool anyWorking:"))
+        .expect("anyWorking exists in the QML");
+    assert!(
+        any_working.contains("counts.working"),
+        "anyWorking derives from the per-agent tally: {any_working}"
+    );
+    assert!(
+        !any_working.contains("stateByWorkspace"),
+        "and never from the per-workspace maxima, which blocked dominates: {any_working}"
+    );
+}
