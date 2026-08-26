@@ -2652,3 +2652,48 @@ fn daemon_pid_for(runtime: &std::path::Path) -> Option<i32> {
     }
     None
 }
+
+#[test]
+fn setup_upgrade_refreshes_an_installed_ducking() {
+    // A binary upgrade can carry a newer drop-in; --upgrade rewrites the one
+    // on disk the same way it rewrites plugins — and only where it was
+    // installed (#43).
+    let sandbox = Sandbox::new();
+    audio_stack_is_present(&sandbox);
+    assert!(sandbox.run(&["setup", "--duck"]).status.success());
+    let conf = sandbox.config_path(DUCKING_CONF);
+    std::fs::write(&conf, "# an older amon's copy\n").expect("tamper");
+
+    let output = sandbox.run(&["setup", "--upgrade"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        std::fs::read_to_string(&conf)
+            .expect("still there")
+            .contains("duck-level"),
+        "the stale drop-in is brought back in line"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("ducking"),
+        "and accounted for: {output:?}"
+    );
+}
+
+#[test]
+fn setup_upgrade_does_not_install_ducking_where_it_was_not() {
+    // The --upgrade rule everywhere: refresh what exists, add nothing. A
+    // user who opted out with --no-duck must not gain it back on upgrade.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    audio_stack_is_present(&sandbox);
+    assert!(sandbox.run(&["setup", "claude"]).status.success());
+
+    let output = sandbox.run(&["setup", "--upgrade"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "opting out survives an upgrade"
+    );
+}
