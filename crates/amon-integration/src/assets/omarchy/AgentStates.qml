@@ -155,11 +155,12 @@ Item {
   /// any other way without leaving what you are doing.
   readonly property int stateBeats: root.tuned("state_beats", 5)
   readonly property int markerBeats: root.tuned("marker_beats", 3)
-  readonly property bool anyWorking: {
-    for (const workspace in root.stateByWorkspace)
-      if (root.stateByWorkspace[workspace] === "working") return true
-    return false
-  }
+  // Derived from the per-agent tally, never from the per-workspace maxima:
+  // blocked outranks working there, so a workspace holding both would hide
+  // its working agent — and the panel's spinners froze exactly while an
+  // agent waited for input (#38). A working agent ticks the spinner
+  // wherever it sits, whatever its neighbours are doing.
+  readonly property bool anyWorking: (root.counts.working || 0) > 0
 
   // Which workspace the compositor says you are on. Set by the widget, which
   // is the only party that knows — this object talks to the daemon, and the

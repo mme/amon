@@ -155,6 +155,20 @@ end
 hl.unbind("SUPER + A")
 o.bind("SUPER + A", "Agents", "omarchy-shell shell toggle sh.amon.panel")
 
+-- Super+W closes what you are looking at. Stock Hyprland closes the focused
+-- *toplevel*, and the panel is an overlay — so with the pane open, the stock
+-- bind reached straight through it and closed the window underneath (#39).
+-- This asks the panel first, through the shell: a panel that answers
+-- "dismissed" has taken the keypress; every other answer — pane closed, shell
+-- not running, plugin missing — falls through to the close the key always
+-- meant. The popped-out window is a real toplevel and takes the stock path.
+--
+-- The description matches Omarchy's own, so the keybinding viewer keeps
+-- telling the truth about what the key does.
+hl.unbind("SUPER + W")
+o.bind("SUPER + W", "Close active window",
+  [[sh -c 'if [ "$(omarchy-shell shell call sh.amon.panel dismissIfOpen x 2>/dev/null)" != dismissed ]; then hyprctl dispatch "hl.dsp.window.close()"; fi']])
+
 -- Omarchy fades every layer surface in and out — `looknfeel.lua` gives both
 -- `layersIn` and `layersOut` a fade — and then exempts its own panes by
 -- namespace in `apps/omarchy-shell.lua`. The clipboard, the emoji picker and

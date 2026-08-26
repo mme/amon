@@ -67,8 +67,17 @@ enum Command {
         no_alias: bool,
         /// Refresh everything already set up after a binary upgrade —
         /// installs nothing new, revisits no choices (the installer runs this)
-        #[arg(long, conflicts_with_all = ["target", "all", "no_alias"])]
+        #[arg(long, conflicts_with_all = ["target", "all", "no_alias", "duck", "no_duck"])]
         upgrade: bool,
+        /// Duck other audio while a notification plays (a WirePlumber
+        /// drop-in). Included in `--all` by default; alone, installs just
+        /// this piece
+        #[arg(long, conflicts_with_all = ["target", "no_duck"])]
+        duck: bool,
+        /// Leave the audio stack alone: skip ducking in `--all`, or, alone,
+        /// remove an installed ducking drop-in
+        #[arg(long, conflicts_with = "target")]
+        no_duck: bool,
     },
     /// Remove integrations — everything after one confirmation, or one target
     Remove {
@@ -158,11 +167,13 @@ fn main() -> ExitCode {
             all,
             no_alias,
             upgrade,
+            duck,
+            no_duck,
         } => {
             if upgrade {
                 setup::upgrade()
             } else {
-                run_setup(target.as_deref(), all, no_alias)
+                run_setup(target.as_deref(), all, no_alias, duck, no_duck)
             }
         }
         Command::Remove { target, all } => run_remove(target.as_deref(), all),
@@ -317,6 +328,8 @@ fn run_setup(
     target: Option<&str>,
     all: bool,
     no_alias: bool,
+    duck: bool,
+    no_duck: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Before any form of setup, and only ever once: a commented file so the
     // settings can be found at all. Failing to write it is not a reason to
@@ -326,7 +339,17 @@ fn run_setup(
         println!();
     }
     if all {
-        return setup::all(no_alias);
+        // Ducking rides along unless opted out — the same preselection the
+        // screen shows, minus the screen.
+        return setup::all(no_alias, !no_duck);
+    }
+    // Alone, the duck flags are the whole request: install or remove just
+    // the audio piece, touching no agents.
+    if duck {
+        return setup::ducking_only(true);
+    }
+    if no_duck {
+        return setup::ducking_only(false);
     }
     let Some(target) = target else {
         if !setup::is_tty() {

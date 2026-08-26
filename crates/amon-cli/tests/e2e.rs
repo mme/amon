@@ -6,6 +6,7 @@
 
 mod harness;
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use harness::{agent_named, path_str, read_to_string, state_of, Client, Sandbox};
@@ -1106,6 +1107,323 @@ fn remove_all_takes_everything_back() {
     assert!(
         !bashrc(&sandbox).contains("alias claude"),
         "no alias may outlive the hooks it pointed at"
+    );
+}
+
+/// Where the ducking drop-in lands, relative to the sandbox config dir.
+const DUCKING_CONF: &str = "wireplumber/wireplumber.conf.d/50-amon-ducking.conf";
+
+/// Plants the audio stack setup looks for: a wireplumber on PATH (existence
+/// is the whole test) and a systemctl that records what it was asked.
+fn audio_stack_is_present(sandbox: &Sandbox) -> PathBuf {
+    sandbox.fake_agent("wireplumber", "#!/bin/sh\n");
+    let record = sandbox.runtime_path("systemctl-calls");
+    sandbox.fake_agent(
+        "systemctl",
+        &format!("#!/bin/sh\necho \"$*\" >> {}\n", path_str(&record)),
+    );
+    record
+}
+
+#[test]
+fn setup_all_sets_up_ducking_with_everything_else() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    let restarts = audio_stack_is_present(&sandbox);
+
+    let output = sandbox.run(&["setup", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let conf = sandbox.config_path(DUCKING_CONF);
+    assert!(conf.exists(), "the drop-in is installed");
+    assert!(
+        std::fs::read_to_string(&conf)
+            .expect("readable")
+            .contains("duck-level"),
+        "and it is amon's ducking config"
+    );
+    assert!(
+        std::fs::read_to_string(&restarts)
+            .expect("systemctl invoked")
+            .contains("--user restart wireplumber"),
+        "wireplumber is restarted so the config takes"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("✓ ducking"),
+        "{output:?}"
+    );
+}
+
+#[test]
+fn a_machine_without_wireplumber_gets_no_ducking_and_no_noise_about_it() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+
+    let output = sandbox.run(&["setup", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "no audio stack, no file"
+    );
+    assert!(
+        !String::from_utf8_lossy(&output.stdout).contains("ducking"),
+        "and nothing to explain: {output:?}"
+    );
+}
+
+#[test]
+fn no_duck_keeps_setup_all_out_of_the_audio_stack() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    let restarts = audio_stack_is_present(&sandbox);
+
+    let output = sandbox.run(&["setup", "--all", "--no-duck"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(!sandbox.config_path(DUCKING_CONF).exists());
+    assert!(
+        !std::fs::read_to_string(&restarts)
+            .unwrap_or_default()
+            .contains("wireplumber"),
+        "opting out must not touch the audio stack at all"
+    );
+}
+
+#[test]
+fn duck_alone_installs_only_the_ducking() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    audio_stack_is_present(&sandbox);
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(sandbox.config_path(DUCKING_CONF).exists());
+    assert!(
+        !bashrc(&sandbox).contains("alias claude"),
+        "--duck is about audio, not about agents"
+    );
+}
+
+#[test]
+fn no_duck_alone_takes_the_ducking_back_out() {
+    let sandbox = Sandbox::new();
+    audio_stack_is_present(&sandbox);
+    assert!(sandbox.run(&["setup", "--duck"]).status.success());
+    assert!(sandbox.config_path(DUCKING_CONF).exists());
+
+    let output = sandbox.run(&["setup", "--no-duck"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "the file is gone, the audio stack is stock again"
+    );
+}
+
+#[test]
+fn remove_all_takes_the_ducking_too() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    audio_stack_is_present(&sandbox);
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
+    assert!(sandbox.run(&["setup", "--all"]).status.success());
+
+    let output = sandbox.run(&["remove", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "remove everything means the audio stack too"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("ducking"),
+        "and it is accounted for: {output:?}"
+    );
+}
+
+#[test]
+fn a_wireplumber_that_rejects_the_config_gets_it_rolled_back() {
+    // The failure that shaped install(): a refused fragment makes `restart`
+    // return success and then crash-loops the service. Reported exit codes
+    // are not the signal; is-active afterwards is.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("wireplumber", "#!/bin/sh\n");
+    let record = sandbox.runtime_path("systemctl-calls");
+    sandbox.fake_agent(
+        "systemctl",
+        &format!(
+            "#!/bin/sh\necho \"$*\" >> {}\ncase \"$*\" in *is-active*) exit 1;; esac\nexit 0\n",
+            path_str(&record)
+        ),
+    );
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(!output.status.success(), "a dead service is a failure");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "the file that killed the service does not stay to kill it again"
+    );
+    let calls = std::fs::read_to_string(&record).expect("systemctl invoked");
+    assert!(
+        calls.matches("--user restart wireplumber").count() >= 2,
+        "a recovery restart runs after the rollback: {calls}"
+    );
+    // This fake's is-active never succeeds, so the recovery restart cannot
+    // be verified either — and the report must say that, not claim a
+    // recovery nobody checked.
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("has not come back"),
+        "the report matches what actually happened: {output:?}"
+    );
+}
+
+#[test]
+fn a_crashed_installs_staging_leftover_does_not_block_the_next() {
+    // The staging file contains the role markers the foreign-config scan
+    // looks for; a scan that read it would refuse forever with "someone
+    // else's config" over amon's own debris.
+    let sandbox = Sandbox::new();
+    audio_stack_is_present(&sandbox);
+    let conf = sandbox.config_path(DUCKING_CONF);
+    std::fs::create_dir_all(conf.parent().expect("parent")).expect("conf dir");
+    std::fs::write(
+        conf.with_extension("conf.amon-staging"),
+        "loopback.sink.role.multimedia\n",
+    )
+    .expect("leftover");
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(conf.exists(), "the leftover is swept, the install lands");
+}
+
+#[test]
+fn an_unreadable_neighbour_fragment_refuses_the_install() {
+    // Fail closed: a fragment that could not be read is a fragment that was
+    // not checked, and restarting WirePlumber over an unfinished scan is
+    // how a second set of role buses sneaks in.
+    let sandbox = Sandbox::new();
+    let restarts = audio_stack_is_present(&sandbox);
+    let conf = sandbox.config_path(DUCKING_CONF);
+    std::fs::create_dir_all(conf.parent().expect("parent")).expect("conf dir");
+    std::fs::write(
+        conf.parent().expect("parent").join("20-theirs.conf"),
+        [0xff, 0xfe, 0xfd],
+    )
+    .expect("their fragment");
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        !conf.exists(),
+        "nothing is installed over an unchecked scan"
+    );
+    assert!(
+        !std::fs::read_to_string(&restarts)
+            .unwrap_or_default()
+            .contains("restart"),
+        "and nothing is restarted"
+    );
+}
+
+#[test]
+fn a_symlinked_dropin_is_never_written_through() {
+    // A dotfiles checkout may own this path. Writing through the link would
+    // edit a file amon does not own — the same line the bashrc code draws.
+    let sandbox = Sandbox::new();
+    audio_stack_is_present(&sandbox);
+    let theirs = sandbox.runtime_path("dotfiles-ducking.conf");
+    std::fs::write(&theirs, "# theirs\n").expect("their file");
+    let link = sandbox.config_path(DUCKING_CONF);
+    std::fs::create_dir_all(link.parent().expect("parent")).expect("conf dir");
+    std::os::unix::fs::symlink(&theirs, &link).expect("link");
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(!output.status.success(), "{output:?}");
+    assert_eq!(
+        std::fs::read_to_string(&theirs).expect("still theirs"),
+        "# theirs\n",
+        "the symlink target is untouched"
+    );
+}
+
+#[test]
+fn an_existing_role_audio_setup_is_left_alone() {
+    // Someone who configured role buses themselves has already made these
+    // choices, and WirePlumber merges fragments by appending — a second set
+    // of buses under the same names is a broken profile.
+    let sandbox = Sandbox::new();
+    let restarts = audio_stack_is_present(&sandbox);
+    let conf_dir = sandbox
+        .config_path(DUCKING_CONF)
+        .parent()
+        .expect("parent")
+        .to_path_buf();
+    std::fs::create_dir_all(&conf_dir).expect("conf dir");
+    std::fs::write(
+        conf_dir.join("10-my-roles.conf"),
+        "# hand-rolled\nloopback.sink.role.multimedia\n",
+    )
+    .expect("their config");
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "amon adds nothing next to it"
+    );
+    assert!(
+        !std::fs::read_to_string(&restarts)
+            .unwrap_or_default()
+            .contains("restart"),
+        "and does not restart a service it changed nothing about"
+    );
+}
+
+#[test]
+fn an_unreadable_dropin_still_counts_as_installed() {
+    // Whatever occupies amon's filename is amon's to remove. Calling an
+    // unreadable file "not installed" would make remove --all skip it while
+    // doctor reports nothing wrong.
+    let sandbox = Sandbox::new();
+    audio_stack_is_present(&sandbox);
+    let conf = sandbox.config_path(DUCKING_CONF);
+    std::fs::create_dir_all(conf.parent().expect("parent")).expect("conf dir");
+    std::fs::write(&conf, [0xff, 0xfe, 0xfd]).expect("garbage");
+
+    let output = sandbox.run(&["remove", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(!conf.exists(), "the garbage is gone");
+}
+
+#[test]
+fn the_setup_screen_offers_ducking_and_applies_it() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    audio_stack_is_present(&sandbox);
+
+    let mut session = harness::PtySession::start(&sandbox, &["setup"]);
+    session.wait_for_output(b"ducking");
+    session.send(b"\r");
+    session.wait();
+
+    assert!(
+        sandbox.config_path(DUCKING_CONF).exists(),
+        "preselected, so Enter installs it"
     );
 }
 

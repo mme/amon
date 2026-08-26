@@ -1106,7 +1106,7 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
     -->
     <div class="cliref">
       <div>
-        <a class="cli-anchor" id="cli-setup" href="#cli-setup"><code class="cli-cmd">amon setup [target] [--all] [--no-alias] [--upgrade]</code></a>
+        <a class="cli-anchor" id="cli-setup" href="#cli-setup"><code class="cli-cmd">amon setup [target] [--all] [--no-alias] [--upgrade] [--duck | --no-duck]</code></a>
         <p>Set up integrations. Without arguments, an interactive screen;
            with a target, one agent (<span class="lift">amon setup
            claude</span>); <span class="lift">--all</span> takes every
@@ -1115,7 +1115,11 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
            name - on the non-interactive forms only, the screen always
            aliases. <span class="lift">--upgrade</span> refreshes everything
            already set up after a binary upgrade - installs nothing new,
-           revisits no choices; the installer runs it for you.</p>
+           revisits no choices; the installer runs it for you. Ducking -
+           music dips while a notification plays - is included by default
+           where WirePlumber runs, as one drop-in file amon owns;
+           <span class="lift">--no-duck</span> opts out, and either flag
+           alone installs or removes just that piece.</p>
       </div>
       <div>
         <a class="cli-anchor" id="cli-status" href="#cli-status"><code class="cli-cmd">amon status [--json]</code></a>
@@ -1235,7 +1239,16 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
       </div>
       <div>
         <a class="cli-anchor" id="set-sound-blocked" href="#set-sound-blocked"><code class="cli-cmd">blocked = "&hellip;/attention.mp3"</code></a>
-        <p>Your own sound for the needs-input case, same rules.</p>
+        <p>Your own sound for the needs-input case, same rules. Give a
+           custom sound about 300ms of leading silence: an idle sink
+           suspends, a USB device takes a moment to wake, and a sound
+           without the pad loses its opening to the DAC powering up. The
+           bundled sounds carry it already.</p>
+      </div>
+      <div>
+        <p>Other audio dips while these sounds play - ducking is on by
+           default in setup, and <span class="lift">amon setup
+           --no-duck</span> lets you turn it off.</p>
       </div>
 
       <div class="cli-sect">[updates]</div>
