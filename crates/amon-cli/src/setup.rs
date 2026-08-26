@@ -238,6 +238,9 @@ pub fn upgrade() -> Result<(), Box<dyn std::error::Error>> {
     if bindings::installed() {
         actions.push(Action::SetupBindings);
     }
+    if ducking::status() != InstallState::NotInstalled {
+        actions.push(Action::SetupDucking);
+    }
     if actions.is_empty() {
         println!("nothing is set up yet — run `amon setup`");
         return Ok(());
