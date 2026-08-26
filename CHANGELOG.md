@@ -8,6 +8,18 @@ the machinery, not decoration.
 
 <!-- next -->
 
+## v0.1.1
+
+- **The installer finishes the job**: `curl -fsSL amon.sh/install | sh` now
+  flows straight into the setup screen instead of leaving you to run it
+  yourself. Re-run the same command any time to update; `amon setup
+  --upgrade` refreshes the desktop integrations on their own. Uninstalling
+  is `amon remove --all`, then delete the binary and share directory.
+- **Chimes survive a sleeping speaker**: amon now wakes a suspended audio
+  device itself before playing a chime, instead of hoping it's already
+  awake. Fixes chimes getting clipped or lost on their first note,
+  especially over Bluetooth.
+
 ## v0.1.0
 
 The first release. amon runs your coding agents untouched in your own
