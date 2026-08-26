@@ -43,8 +43,8 @@ case "$TAG" in
 esac
 
 # Whether this is an upgrade, decided by what is on disk before the swap.
-# The old version is captured now — the binary that can answer is about to be
-# replaced — and used only for the closing message: `amon setup --upgrade`
+# The old version is captured now - the binary that can answer is about to be
+# replaced - and used only for the closing message: `amon setup --upgrade`
 # reads disk state instead, so a hand-swapped binary heals the same way.
 UPGRADING=0
 PREVIOUS=""

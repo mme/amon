@@ -41,11 +41,30 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("daemon:");
     let socket = amon_protocol::paths::daemon_socket();
     match probe_daemon(version) {
-        DaemonProbe::Running(running) => print_line(
-            "amond",
-            &format!("running (v{running})"),
-            &socket.display().to_string(),
-        ),
+        DaemonProbe::Running(running) => {
+            print_line(
+                "amond",
+                &format!("running (v{running})"),
+                &socket.display().to_string(),
+            );
+            // What the daemon is actually running on, from the daemon
+            // itself: a file that failed to parse keeps the last good
+            // configuration (ADR-0012), and this is the report the docs
+            // promise. Only the error's first line — TOML errors span
+            // several, and the row is a status, not a stack trace.
+            match probe_config() {
+                Some(Some(error)) => print_line(
+                    "config",
+                    &format!(
+                        "not applied ({}) — keeping the previous settings",
+                        error.lines().next().unwrap_or("unreadable")
+                    ),
+                    "",
+                ),
+                Some(None) => print_line("config", "ok", ""),
+                None => {}
+            }
+        }
         // A socket that accepts and then will not talk is a wedged daemon,
         // which is the opposite of "starts on demand" — it *blocks* on-demand
         // starts, since the socket looks taken.
@@ -169,6 +188,25 @@ enum DaemonProbe {
     /// sense — a daemon that exists but cannot be talked to.
     Unresponsive,
     NotRunning,
+}
+
+/// Asks the running daemon for its configuration state: `Some(Some(error))`
+/// when the file on disk is not what the daemon runs on, `Some(None)` when
+/// all is well, `None` when the daemon could not answer (its own row already
+/// says so) — or is too old to know the field, which deserializes as absent.
+fn probe_config() -> Option<Option<String>> {
+    let stream = UnixStream::connect(amon_protocol::paths::daemon_socket()).ok()?;
+    let timeout = Some(std::time::Duration::from_secs(2));
+    let _ = stream.set_read_timeout(timeout);
+    let _ = stream.set_write_timeout(timeout);
+    let request = Request::new("doctor-config", Method::Config);
+    let mut writer = &stream;
+    writer.write_all(request.to_line().as_bytes()).ok()?;
+    let mut line = String::new();
+    BufReader::new(&stream).read_line(&mut line).ok()?;
+    let response: Response = serde_json::from_str(&line).ok()?;
+    let result: amon_protocol::ConfigResult = serde_json::from_value(response.result?).ok()?;
+    Some(result.error)
 }
 
 /// Asks a *running* daemon for its version. Deliberately not connect-or-spawn:

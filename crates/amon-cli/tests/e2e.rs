@@ -2435,6 +2435,13 @@ fn setup_leaves_a_commented_config_behind() {
     );
     assert!(written.contains("frame_ms"), "{written}");
     assert!(written.contains("marker_beats"), "{written}");
+    // The whole point of this file is that every setting can be *found* in
+    // it — and the update check's kill switch is the one a privacy-minded
+    // user goes looking for.
+    assert!(
+        written.contains("[updates]") && written.contains("check = false"),
+        "the update check's opt-out is discoverable: {written}"
+    );
 }
 
 #[test]
@@ -2695,5 +2702,26 @@ fn setup_upgrade_does_not_install_ducking_where_it_was_not() {
     assert!(
         !sandbox.config_path(DUCKING_CONF).exists(),
         "opting out survives an upgrade"
+    );
+}
+
+#[test]
+fn doctor_reports_a_config_file_that_does_not_parse() {
+    // The daemon keeps the last good configuration when a save does not
+    // parse — and the docs promise doctor says so. A kept-but-unreported
+    // error is a bar quietly ignoring the file its owner is editing.
+    let sandbox = Sandbox::new();
+    let config_dir = sandbox.home_path(".config/amon-dev");
+    std::fs::create_dir_all(&config_dir).expect("config dir");
+    std::fs::write(config_dir.join("config.toml"), "not = [valid toml\n").expect("broken config");
+    assert!(sandbox.run(&["status"]).status.success(), "daemon up");
+
+    let output = sandbox.run(&["doctor"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("config") && stdout.contains("not applied"),
+        "the kept-last-good state is reported: {stdout}"
     );
 }

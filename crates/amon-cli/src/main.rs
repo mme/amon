@@ -93,7 +93,7 @@ enum Command {
         /// Workspace number, e.g. `3`
         workspace: u32,
     },
-    /// Integration, daemon, widget, and alias health in one report
+    /// Integration, daemon, widget, audio, and alias health in one report
     Doctor,
     /// Run the daemon in the foreground
     Daemon,
