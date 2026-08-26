@@ -272,7 +272,9 @@ fn super_w_asks_the_panel_before_closing_a_window() {
         "the panel is asked through the shell: {ours}"
     );
     assert!(
-        ours.contains("dismissed") && ours.contains("killactive"),
-        "anything but a dismissal closes the window as before: {ours}"
+        ours.contains("dismissed") && ours.contains(r#"hl.dsp.window.close()"#),
+        "anything but a dismissal closes the window as before - through the \
+         Quattro dispatcher: plain `killactive` is evaluated as Lua there, \
+         `killactive` is nil, and the close silently never happens: {ours}"
     );
 }
