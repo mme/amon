@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "amon-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "amon-daemon",
  "amon-integration",
@@ -27,7 +27,7 @@ dependencies = [
 
 [[package]]
 name = "amon-daemon"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "amon-detect",
  "amon-protocol",
@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "amon-detect"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "libc",
  "portable-pty",
@@ -53,7 +53,7 @@ dependencies = [
 
 [[package]]
 name = "amon-integration"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "amon-protocol",
  "portable-pty",
@@ -65,7 +65,7 @@ dependencies = [
 
 [[package]]
 name = "amon-protocol"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "libc",
  "schemars",
@@ -75,7 +75,7 @@ dependencies = [
 
 [[package]]
 name = "amon-term"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "amon-detect",
  "libghostty-vt",
@@ -85,7 +85,7 @@ dependencies = [
 
 [[package]]
 name = "amon-wrapper"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "amon-detect",
  "amon-protocol",
