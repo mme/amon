@@ -791,7 +791,7 @@
         <span class="mark mark-omarchy" aria-hidden="true"></span>
         <svg class="mark mark-check" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-copied"/></svg>
         <span class="label"><span class="label-install">Install</span><span class="label-copied">Copied</span></span>
-        <code>yay -S amon-bin</code>
+        <code>curl -fsSL amon.sh/install | sh</code>
       </button>
       <span class="sr" role="status" id="install-status"></span>
     </div>
@@ -1001,14 +1001,14 @@ opencode  idle      41m  4  website           ~/.cache/worktrees/site</span>
     </header>
 
     <!--
-      One box, both commands, one button: they are run one after the other, and
-      a button each would make the reader choose between two things that are not
-      alternatives.
+      One box, one command: the installer opens the setup screen itself, so
+      the mock shows install flowing straight into it - typing a second
+      command is exactly what the reader does not have to do.
     -->
     <figure class="snippet">
-      <pre><code><span class="t-p">~ &#10095;</span> <span class="t-in">yay -S amon-bin</span>
-<span class="t-o">(1/1) installing amon-bin                       [######################] 100%</span>
-<span class="t-p">~ &#10095;</span> <span class="t-in">amon setup</span>
+      <pre><code><span class="t-p">~ &#10095;</span> <span class="t-in">curl -fsSL amon.sh/install | sh</span>
+<span class="t-o">downloading amon v0.1.0
+installed ~/.local/bin/amon</span>
 Set up amon <span class="t-o">- space toggles, enter applies</span>
 
 <span class="t-c">&#9656;</span> <span class="t-x">[x]</span> pi        <span class="t-o">detected</span>
@@ -1019,7 +1019,7 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
 <span class="t-ok">✓</span> amon installed.</code></pre>
       <button class="snippet-copy" type="button" id="copy-install"
               title="Copy the install command"
-              data-copy="yay -S amon-bin &amp;&amp; amon setup &amp;&amp; source ~/.bashrc">
+              data-copy="curl -fsSL amon.sh/install | sh &amp;&amp; source ~/.bashrc">
         <span class="mark mark-omarchy" aria-hidden="true"></span>
         <svg class="mark mark-check" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-copied"/></svg>
         <span class="label"><span class="label-copy">Install</span><span class="label-copied">Copied</span></span>
@@ -2025,7 +2025,7 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
   // The CTA is a command, not a link: clicking copies it. The Omarchy mark
   // becomes a check for a moment, so the command itself never disappears.
   //
-  // It shows `yay -S amon-bin` and copies the whole line - install, set up, and
+  // It shows the curl installer and copies the whole line - install, set up, and
   // source the shell - because that is what the install block hands over and two
   // buttons offering different commands would be worse than either. The command
   // has one home, on that button, and this reads it: written down twice it would
