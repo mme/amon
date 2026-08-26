@@ -190,8 +190,6 @@ enum DaemonProbe {
     NotRunning,
 }
 
-/// Asks a *running* daemon for its version. Deliberately not connect-or-spawn:
-/// a diagnostic that starts the thing it is diagnosing reports only on itself.
 /// Asks the running daemon for its configuration state: `Some(Some(error))`
 /// when the file on disk is not what the daemon runs on, `Some(None)` when
 /// all is well, `None` when the daemon could not answer (its own row already
@@ -211,6 +209,8 @@ fn probe_config() -> Option<Option<String>> {
     Some(result.error)
 }
 
+/// Asks a *running* daemon for its version. Deliberately not connect-or-spawn:
+/// a diagnostic that starts the thing it is diagnosing reports only on itself.
 fn probe_daemon(version: &str) -> DaemonProbe {
     let Ok(stream) = UnixStream::connect(amon_protocol::paths::daemon_socket()) else {
         return DaemonProbe::NotRunning;

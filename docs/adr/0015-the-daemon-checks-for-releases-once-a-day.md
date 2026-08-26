@@ -15,9 +15,9 @@ upgrading stays the user re-running the installer.
   the existing watcher. On by default for the reason the sounds are: a
   notification nobody knows exists notifies nobody, and the starter config
   file `amon setup` writes shows the switch.
-- **Debug builds never check.** Every test sandbox and dev daemon would
-  otherwise reach the real network. Pointing `AMON_UPDATE_URL` somewhere is
-  both the test hook and the dev enabler.
+- **Debug builds never check on their own.** Every test sandbox and dev
+  daemon would otherwise reach the real network. Pointing `AMON_UPDATE_URL`
+  somewhere is both the test hook and the dev enabler.
 - **Strictly newer only**: a from-source build ahead of the last release
   must never be told to downgrade, and the current release is not an update.
 - **No release yet reads as silence**: the redirect lands somewhere that is
