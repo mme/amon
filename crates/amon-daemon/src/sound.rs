@@ -79,13 +79,11 @@ pub fn crossing(was: (AgentState, Option<bool>), now: (AgentState, Option<bool>)
 /// it as a question matches. Playing immediately turns one event into two — a
 /// finish, then a request — which is what this delay exists to prevent.
 ///
-/// 650 rather than herdr's full second because the bundled sounds carry 350ms
-/// of leading silence (see the README beside them): the pad is settle time
-/// relocated into the file, so the sum — crossing to first audible note —
-/// stays the second herdr tuned. The last 350ms of it are committed rather
-/// than cancelable, which detection's flaps, over inside half a second, never
-/// reach.
-const SETTLE: Duration = Duration::from_millis(650);
+/// herdr's default is the same second, for the same reason. (It briefly ran
+/// at 650ms while the bundled sounds carried leading silence; the wake logic
+/// in [`wake_default_sink`] replaced the pad, and the full second returned
+/// with it.)
+const SETTLE: Duration = Duration::from_secs(1);
 
 /// One agent's pending noise, and whether it is still the current one.
 ///
@@ -162,6 +160,10 @@ pub fn play(sound: Sound, config: &SoundConfig) {
         let Some(file) = resolve(sound, chosen) else {
             return;
         };
+        // Woken before the player starts, and held awake until it is done:
+        // the waker's stream is what keeps the device up while the chime's
+        // own stream is still being established.
+        let waker = wake_default_sink();
         let spawned = Command::new(PLAYER)
             .args(arguments(&file))
             .stdin(Stdio::null())
@@ -171,7 +173,90 @@ pub fn play(sound: Sound, config: &SoundConfig) {
         if let Ok(mut child) = spawned {
             let _ = child.wait();
         }
+        if let Some(mut waker) = waker {
+            let _ = waker.kill();
+            let _ = waker.wait();
+        }
     });
+}
+
+/// How long a freshly woken sink gets between reporting RUNNING and the
+/// chime, on top of the poll. The graph says RUNNING within milliseconds of
+/// a stream connecting; a Bluetooth link and the speaker's own amplifier
+/// take audibly longer to actually move air — measured on a Z407 over
+/// Bluetooth, where a chime played at RUNNING+0 lost its opening notes.
+const WAKE_GRACE: Duration = Duration::from_millis(800);
+
+/// How long to wait for a suspended sink to report RUNNING before playing
+/// anyway — a bound, not a target; the common case turns in well under it.
+const WAKE_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Wakes the default sink if it is suspended, returning the silent stream
+/// holding it awake — the caller drops it when the chime is done.
+///
+/// An idle device suspends, and a suspended device swallows the start of
+/// whatever wakes it: PipeWire's graph reports RUNNING long before a
+/// Bluetooth link or a USB DAC is audibly up, so the chime itself must
+/// never be the thing doing the waking. The waker streams zeros straight
+/// from /dev/zero — no file is written anywhere — and every failure path
+/// (no pactl, no default sink, no pw-play) degrades to playing immediately,
+/// which is exactly what happened before this existed.
+fn wake_default_sink() -> Option<std::process::Child> {
+    let sink = pactl(&["get-default-sink"])?;
+    let sink = sink.trim();
+    let listing = pactl(&["list", "short", "sinks"])?;
+    if sink_state(&listing, sink).as_deref() != Some("SUSPENDED") {
+        return None;
+    }
+    let waker = Command::new(PLAYER)
+        .args([
+            "--raw",
+            "--rate",
+            "48000",
+            "--channels",
+            "2",
+            "--format",
+            "s16",
+            "/dev/zero",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let deadline = std::time::Instant::now() + WAKE_TIMEOUT;
+    while std::time::Instant::now() < deadline {
+        let Some(listing) = pactl(&["list", "short", "sinks"]) else {
+            break;
+        };
+        if sink_state(&listing, sink).as_deref() == Some("RUNNING") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    std::thread::sleep(WAKE_GRACE);
+    Some(waker)
+}
+
+fn pactl(arguments: &[&str]) -> Option<String> {
+    let output = Command::new("pactl").args(arguments).output().ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// The state column of `pactl list short sinks` for one sink, `None` when
+/// the sink is not in the listing.
+fn sink_state(listing: &str, sink: &str) -> Option<String> {
+    listing.lines().find_map(|line| {
+        let mut columns = line.split_whitespace();
+        let _index = columns.next()?;
+        if columns.next()? != sink {
+            return None;
+        }
+        line.split_whitespace().last().map(str::to_string)
+    })
 }
 
 /// The file to hand a player: the user's if they named one, otherwise the
@@ -432,6 +517,21 @@ mod tests {
         assert_eq!(args[0], "-P");
         assert!(args[1].contains("media.role"), "{args:?}");
         assert_eq!(args.last().map(String::as_str), Some("chime.mp3"));
+    }
+
+    #[test]
+    fn the_sink_state_is_read_from_the_pulse_listing() {
+        let listing = "40\talsa_output.usb\tPipeWire\ts16le 2ch 48000Hz\tIDLE\n\
+                       53820\tbluez_output.10_94_97\tPipeWire\ts16le 2ch 48000Hz\tSUSPENDED\n";
+        assert_eq!(
+            sink_state(listing, "bluez_output.10_94_97").as_deref(),
+            Some("SUSPENDED")
+        );
+        assert_eq!(
+            sink_state(listing, "alsa_output.usb").as_deref(),
+            Some("IDLE")
+        );
+        assert_eq!(sink_state(listing, "not_there"), None);
     }
 
     #[test]

@@ -248,10 +248,6 @@ Font is installed, which on Omarchy is everywhere.
 - `blocked = ".../attention.mp3"` - your own sound for the needs-input case,
   same rules.
 
-Give a custom sound about 300ms of leading silence: an idle sink suspends,
-a USB device takes a moment to wake, and a sound without the pad loses its
-opening to the DAC powering up. The bundled sounds carry it already.
-
 Music and other audio dip to a quarter volume while these sounds play if
 ducking is set up (`amon setup --duck`, on by default in setup). It is one
 WirePlumber drop-in owned by amon; `amon setup --no-duck` removes it and
