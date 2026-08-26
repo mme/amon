@@ -8,6 +8,11 @@ the machinery, not decoration.
 
 <!-- next -->
 
+## v0.1.1
+
+- Wake a suspended sink before the chime, not with it (#54)
+- Swap the install story to the curl installer (#34)
+
 ## v0.1.0
 
 The first release. amon runs your coding agents untouched in your own
