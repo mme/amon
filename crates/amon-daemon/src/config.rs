@@ -118,6 +118,13 @@ impl Watcher {
     pub fn current(&self) -> Config {
         self.inner.lock().expect("config lock").config.clone()
     }
+
+    /// The configuration together with why the file on disk disagrees with
+    /// it, when it does. This is the "somewhere to be reported" the error was
+    /// always kept for: it rides `ConfigResult` to `amon doctor`.
+    pub fn loaded(&self) -> Loaded {
+        self.inner.lock().expect("config lock").clone()
+    }
 }
 
 /// The file's modification time, or `None` when it is not there. Both are

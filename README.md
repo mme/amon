@@ -33,6 +33,8 @@ blocked first, then finished-but-unseen, then working, never an agent at rest.
 `Super+A` opens the agent panel from wherever you are, over whatever you are
 doing: every agent, grouped by the workspace it is on, with what it is doing
 and how long it has been at it. Pick one and Enter puts you in front of it.
+`Super+W` closes the panel while it is open - amon rebinds Omarchy's
+close-window key to ask the panel first, so the window underneath survives.
 
 There is nothing to configure. `amon setup` makes it all work automatically -
 agent hooks, aliases, the bar widget, the panel, the keybindings - and
@@ -44,7 +46,7 @@ amon codex --resume
 amon status          # what's blocked, working, or idle right now?
 amon focus 3         # go to workspace 3, landing on the agent that needs you
 amon setup           # agent hooks, aliases, the desktop integration
-amon doctor          # integration, daemon, widget, and alias health
+amon doctor          # integration, daemon, widget, audio, and alias health
 ```
 
 ```
@@ -156,7 +158,7 @@ no agent wants anything.
 
 **`amon doctor`**
 
-Integration, daemon, widget, and alias health in one report.
+Integration, daemon, widget, audio, and alias health in one report.
 
 **`amon --help | --version`**
 

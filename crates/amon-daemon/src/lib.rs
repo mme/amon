@@ -319,8 +319,10 @@ fn handle(
             Outcome::Reply(Box::new(move |id| Response::ok(id, &result)))
         }
         Method::Config => {
+            let loaded = config.loaded();
             let result = ConfigResult {
-                config: config.current(),
+                config: loaded.config,
+                error: loaded.error,
             };
             Outcome::Reply(Box::new(move |id| Response::ok(id, &result)))
         }
