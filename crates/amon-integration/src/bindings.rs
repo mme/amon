@@ -167,7 +167,7 @@ o.bind("SUPER + A", "Agents", "omarchy-shell shell toggle sh.amon.panel")
 -- telling the truth about what the key does.
 hl.unbind("SUPER + W")
 o.bind("SUPER + W", "Close active window",
-  [[sh -c 'if [ "$(omarchy-shell shell call sh.amon.panel dismissIfOpen x 2>/dev/null)" != dismissed ]; then hyprctl dispatch killactive; fi']])
+  [[sh -c 'if [ "$(omarchy-shell shell call sh.amon.panel dismissIfOpen x 2>/dev/null)" != dismissed ]; then hyprctl dispatch "hl.dsp.window.close()"; fi']])
 
 -- Omarchy fades every layer surface in and out — `looknfeel.lua` gives both
 -- `layersIn` and `layersOut` a fade — and then exempts its own panes by
