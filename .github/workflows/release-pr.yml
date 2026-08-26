@@ -158,6 +158,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # The notes-drafting action above replaces checkout's credentials
+          # with its own app token in the remote URL and revokes that token
+          # when its step ends - a push through what it leaves behind fails
+          # authentication. Learned from the second live run; this step
+          # trusts nothing about the remote's auth and states its own.
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git checkout -B "release/v$NEW"
           git add Cargo.toml Cargo.lock CHANGELOG.md
           git commit -m "Release v$NEW"
