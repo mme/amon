@@ -29,6 +29,10 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  # The notes-drafting action authenticates its GitHub half over OIDC and
+  # aborts without this - which continue-on-error then masks into the
+  # commit-list fallback, silently. Learned from the first live run.
+  id-token: write
 
 jobs:
   create-release-pr:
