@@ -7,6 +7,7 @@
 mod harness;
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use harness::{agent_named, path_str, read_to_string, state_of, Client, Sandbox};
 
@@ -231,6 +232,149 @@ fn state_reaches_status_from_the_shadow_terminal() {
 
     let _ = child.kill();
     let _ = child.wait();
+}
+
+/// A stand-in for GitHub's `/releases/latest` redirect: answers with a 302 to
+/// the tag page for `tag`, which is all the daemon's release check reads.
+fn serve_release_redirect(tag: &'static str) -> String {
+    use std::io::{BufRead as _, Write as _};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let base = format!("http://{}", listener.local_addr().expect("addr"));
+    let base_for_thread = base.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
+            let mut line = String::new();
+            if reader.read_line(&mut line).is_err() {
+                continue;
+            }
+            let path = line.split_whitespace().nth(1).unwrap_or("").to_string();
+            let mut header = String::new();
+            while reader.read_line(&mut header).is_ok() && header.trim() != "" {
+                header.clear();
+            }
+            let response = if path == "/releases/latest" {
+                format!(
+                    "HTTP/1.1 302 Found\r\nLocation: {base_for_thread}/releases/tag/{tag}\r\nContent-Length: 0\r\n\r\n"
+                )
+            } else {
+                "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".to_string()
+            };
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+    base
+}
+
+#[test]
+fn subscribers_hear_about_a_newer_release() {
+    let sandbox = Sandbox::new();
+    let base = serve_release_redirect("v9.9.9");
+    // The first command starts the daemon, which inherits the override; the
+    // check is dormant in dev builds without it.
+    let output = sandbox
+        .command(&["status"])
+        .env("AMON_UPDATE_URL", format!("{base}/releases/latest"))
+        .output()
+        .expect("amon runs");
+    assert!(output.status.success(), "{output:?}");
+
+    let mut client = Client::new(sandbox.connect());
+    client.send(r#"{"id":"1","method":"hello","params":{"role":"subscriber","protocol":1,"version":"test"}}"#);
+    client.read_frame();
+    client.send(r#"{"id":"2","method":"subscribe"}"#);
+
+    let event = client.wait_for_event("update_available");
+    assert_eq!(event["params"]["latest"], serde_json::json!("9.9.9"));
+    assert_eq!(
+        event["params"]["installed"],
+        serde_json::json!(env!("CARGO_PKG_VERSION"))
+    );
+
+    // A subscriber that connects long after the check still hears about it:
+    // the panel may be restarted at any time, and a check already done would
+    // otherwise be a check nobody sees for a day.
+    let mut late = Client::new(sandbox.connect());
+    late.send(r#"{"id":"1","method":"hello","params":{"role":"subscriber","protocol":1,"version":"test"}}"#);
+    late.read_frame();
+    late.send(r#"{"id":"2","method":"subscribe"}"#);
+    let replay = late.wait_for_event("update_available");
+    assert_eq!(replay["params"]["latest"], serde_json::json!("9.9.9"));
+}
+
+#[test]
+fn a_release_no_newer_than_this_build_is_no_event() {
+    // The redirect answering with the running version means there is nothing
+    // to say — and a from-source build ahead of the last release must never
+    // be nagged backwards.
+    let sandbox = Sandbox::new();
+    let base = serve_release_redirect("v0.0.1");
+    let output = sandbox
+        .command(&["status"])
+        .env("AMON_UPDATE_URL", format!("{base}/releases/latest"))
+        .output()
+        .expect("amon runs");
+    assert!(output.status.success(), "{output:?}");
+
+    let mut client = Client::new(sandbox.connect());
+    client.send(r#"{"id":"1","method":"hello","params":{"role":"subscriber","protocol":1,"version":"test"}}"#);
+    client.read_frame();
+    client.send(r#"{"id":"2","method":"subscribe"}"#);
+    client.read_frame();
+
+    // Give the check time to run, then use the ordered stream as the fence:
+    // any event it produced would arrive before the answer to this request.
+    std::thread::sleep(Duration::from_millis(700));
+    client.send(r#"{"id":"fence","method":"status"}"#);
+    loop {
+        let frame = client.read_frame();
+        assert_ne!(
+            frame.get("event").and_then(|value| value.as_str()),
+            Some("update_available"),
+            "an older release is not an update: {frame}"
+        );
+        if frame.get("id") == Some(&serde_json::json!("fence")) {
+            break;
+        }
+    }
+}
+
+#[test]
+fn the_update_check_obeys_the_config_kill_switch() {
+    let sandbox = Sandbox::new();
+    let config_dir = sandbox.home_path(".config/amon-dev");
+    std::fs::create_dir_all(&config_dir).expect("config dir");
+    std::fs::write(config_dir.join("config.toml"), "[updates]\ncheck = false\n")
+        .expect("config file");
+    let base = serve_release_redirect("v9.9.9");
+    let output = sandbox
+        .command(&["status"])
+        .env("AMON_UPDATE_URL", format!("{base}/releases/latest"))
+        .output()
+        .expect("amon runs");
+    assert!(output.status.success(), "{output:?}");
+
+    let mut client = Client::new(sandbox.connect());
+    client.send(r#"{"id":"1","method":"hello","params":{"role":"subscriber","protocol":1,"version":"test"}}"#);
+    client.read_frame();
+    client.send(r#"{"id":"2","method":"subscribe"}"#);
+    client.read_frame();
+
+    std::thread::sleep(Duration::from_millis(700));
+    client.send(r#"{"id":"fence","method":"status"}"#);
+    loop {
+        let frame = client.read_frame();
+        assert_ne!(
+            frame.get("event").and_then(|value| value.as_str()),
+            Some("update_available"),
+            "check = false means no check: {frame}"
+        );
+        if frame.get("id") == Some(&serde_json::json!("fence")) {
+            break;
+        }
+    }
 }
 
 #[test]
@@ -1280,6 +1424,95 @@ fn the_setup_screen_offers_ducking_and_applies_it() {
     assert!(
         sandbox.config_path(DUCKING_CONF).exists(),
         "preselected, so Enter installs it"
+    );
+}
+
+#[test]
+fn setup_upgrade_with_nothing_installed_points_at_setup() {
+    // `--upgrade` repairs what a previous setup put on disk. Where nothing
+    // was ever set up there is nothing to repair, and inventing a first
+    // install here would make the installer's upgrade path do what only the
+    // user's own `amon setup` may decide.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+
+    let output = sandbox.run(&["setup", "--upgrade"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("amon setup"),
+        "the way forward is named: {stdout}"
+    );
+    assert!(
+        !bashrc(&sandbox).contains("alias claude"),
+        "a detected but never-set-up agent stays untouched"
+    );
+}
+
+#[test]
+fn setup_upgrade_refreshes_installed_integrations_and_no_others() {
+    // After a binary swap the plugin QML on disk is the old build's. The
+    // upgrade rewrites what is installed — and only that: an agent the user
+    // never set up must not come out of an upgrade wrapped.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    sandbox.fake_agent("codex", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".codex");
+    let record = sandbox.runtime_path("omarchy-calls");
+    sandbox.fake_agent(
+        "omarchy",
+        &format!("#!/bin/sh\necho \"$*\" >> {}\n", path_str(&record)),
+    );
+    assert!(sandbox.run(&["setup", "claude"]).status.success());
+    stale_widget_is_installed(&sandbox);
+    std::fs::write(&record, "").expect("forget the setup run");
+
+    let output = sandbox.run(&["setup", "--upgrade"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("✓ claude — hooks installed, aliased"),
+        "what was set up is refreshed: {stdout}"
+    );
+    assert!(
+        !stdout.contains("codex"),
+        "what was never set up is not touched: {stdout}"
+    );
+    let calls = std::fs::read_to_string(&record).expect("omarchy invoked");
+    assert!(
+        calls.contains("restart shell"),
+        "the stale widget is replaced and the bar redrawn: {calls}"
+    );
+    assert!(
+        !calls.contains("plugin enable sh.amon.panel"),
+        "the panel was never installed, so the upgrade does not add it: {calls}"
+    );
+}
+
+#[test]
+fn setup_upgrade_keeps_the_no_alias_choice() {
+    // Set up with --no-alias means the user chose typing `amon claude`. An
+    // upgrade refreshes the hooks; it does not revisit that decision.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    assert!(sandbox
+        .run(&["setup", "claude", "--no-alias"])
+        .status
+        .success());
+
+    let output = sandbox.run(&["setup", "--upgrade"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("✓ claude — hooks installed"), "{stdout}");
+    assert!(
+        !bashrc(&sandbox).contains("alias claude"),
+        "--upgrade must not alias what setup was told not to"
     );
 }
 

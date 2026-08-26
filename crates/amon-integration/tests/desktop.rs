@@ -834,6 +834,27 @@ fn every_way_into_the_pane_resets_the_cursor() {
 }
 
 #[test]
+fn the_pane_hears_about_a_newer_release_by_the_daemons_name() {
+    // The daemon's side of the wire — the check, the strictness, the replay
+    // to late subscribers — is covered in amon-cli's e2e suite. These hold
+    // the QML to the same event name and fields; a drift here would not
+    // fail loudly, the footer would simply never appear.
+    const EVENT: &str = include_str!("../../amon-protocol/src/event.rs");
+    assert!(
+        EVENT.contains(r#"rename = "update_available""#),
+        "the name the daemon sends under"
+    );
+    assert!(
+        AGENT_STATES.contains(r#"frame.event === "update_available""#),
+        "the model listens for the same name"
+    );
+    assert!(
+        AGENT_STATES.contains("params.installed") && AGENT_STATES.contains("params.latest"),
+        "and reads the fields the event carries"
+    );
+}
+
+#[test]
 fn the_players_role_is_the_one_the_ducking_dropin_ranks() {
     // Three parties have to agree on one word: the daemon tags its stream,
     // the drop-in routes that tag onto the Notification bus, and the bus's
@@ -852,6 +873,18 @@ fn the_players_role_is_the_one_the_ducking_dropin_ranks() {
     assert!(
         DROPIN.contains(r#"policy.role-based.action.lower-priority = "duck""#),
         "and the notification bus ducks what sits below it"
+    );
+}
+
+#[test]
+fn a_known_update_does_not_survive_a_reconnect() {
+    // `reset` runs on every connection state change. Versions cleared there
+    // cannot go stale: a daemon restarted after its own upgrade replays the
+    // event if there is still anything to say.
+    let reset = qml_function(AGENT_STATES, "function reset()");
+    assert!(
+        reset.contains("installedVersion") && reset.contains("latestVersion"),
+        "reset clears the update: {reset}"
     );
 }
 
@@ -877,6 +910,31 @@ fn super_ws_question_and_the_panels_answer_are_one_word() {
     assert!(
         BINDINGS.contains(r#"!= dismissed"#),
         "and matches that exact word"
+    );
+}
+
+#[test]
+fn the_update_footer_offers_the_installers_own_line() {
+    // The command the footer shows (and copies) is the installer's own
+    // masthead line, held here to the script itself so the pane can never
+    // advertise a command that stopped working.
+    const INSTALL: &str = include_str!("../../../install.sh");
+    const COMMAND: &str = "curl -fsSL amon.sh/install | sh";
+    assert!(
+        INSTALL.contains(COMMAND),
+        "install.sh documents the line the footer shows"
+    );
+    assert!(
+        AGENTS_VIEW.contains(COMMAND),
+        "the footer shows that exact line"
+    );
+    assert!(
+        AGENTS_VIEW.contains("view.agents.updateAvailable"),
+        "and only when the shared model says there is an update"
+    );
+    assert!(
+        AGENTS_VIEW.contains("wl-copy"),
+        "clicking copies rather than asking the user to retype"
     );
 }
 

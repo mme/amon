@@ -22,6 +22,9 @@ struct Inner {
     /// reaching back out to whatever read the file.
     sound: SoundConfig,
     sounds: crate::sound::Notifier,
+    /// The newer release the last check found, as (installed, latest).
+    /// Held so a subscriber arriving after the check hears about it too.
+    update: Option<(String, String)>,
 }
 
 #[derive(Clone, Default)]
@@ -99,7 +102,27 @@ impl Registry {
     }
 
     pub fn subscribe(&self, connection: ConnectionId, events: std::sync::mpsc::Sender<Event>) {
-        self.lock().subscribers.insert(connection, events);
+        let mut inner = self.lock();
+        // A known update is replayed rather than waited for: checks are at
+        // most daily, and the subscriber asking is usually a panel that was
+        // just restarted — the same person the original broadcast missed.
+        if let Some((installed, latest)) = inner.update.clone() {
+            let _ = events.send(Event::UpdateAvailable { installed, latest });
+        }
+        inner.subscribers.insert(connection, events);
+    }
+
+    /// Records that a newer release exists and tells every subscriber —
+    /// once: the daily re-check finding the same release again is not news.
+    pub fn publish_update(&self, installed: String, latest: String) {
+        let mut inner = self.lock();
+        let update = (installed, latest);
+        if inner.update.as_ref() == Some(&update) {
+            return;
+        }
+        inner.update = Some(update.clone());
+        let (installed, latest) = update;
+        Self::broadcast(&mut inner, Event::UpdateAvailable { installed, latest });
     }
 
     /// Every connected agent, most urgent first: the question `amon status`

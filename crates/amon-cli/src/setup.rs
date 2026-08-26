@@ -209,6 +209,42 @@ pub fn all(no_alias: bool, duck: bool) -> Result<(), Box<dyn std::error::Error>>
     apply(&actions)
 }
 
+/// `amon setup --upgrade`: after a binary swap, bring everything a previous
+/// setup put on disk back in line with the binary now running — and nothing
+/// else. Keyed entirely on disk state, never on what the previous version
+/// was: an artifact either matches this build or it does not, which also
+/// heals installs that skipped versions or were swapped by hand.
+///
+/// Every choice the user made stands. An agent set up without an alias is
+/// refreshed without one, an agent never set up stays bare, and a desktop
+/// piece that was never installed is not installed now.
+pub fn upgrade() -> Result<(), Box<dyn std::error::Error>> {
+    let mut actions = Vec::new();
+    for status in amon_integration::statuses() {
+        if status.state != InstallState::NotInstalled {
+            actions.push(Action::SetupAgent {
+                target: status.target,
+                label: status.label,
+                alias: alias::any_installed(status.target),
+            });
+        }
+    }
+    if desktop::status(DesktopTarget::Omarchy).state != InstallState::NotInstalled {
+        actions.push(Action::SetupWidget);
+    }
+    if desktop::status(DesktopTarget::Panel).state != InstallState::NotInstalled {
+        actions.push(Action::SetupPanel);
+    }
+    if bindings::installed() {
+        actions.push(Action::SetupBindings);
+    }
+    if actions.is_empty() {
+        println!("nothing is set up yet — run `amon setup`");
+        return Ok(());
+    }
+    apply(&actions)
+}
+
 /// `amon setup --duck` / `--no-duck` with nothing else: just the audio piece.
 pub fn ducking_only(install: bool) -> Result<(), Box<dyn std::error::Error>> {
     if install {

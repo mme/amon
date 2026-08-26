@@ -96,6 +96,14 @@ Item {
   // why a bar with no daemon looks like a bar with no configuration.
   property var config: ({})
 
+  // Set by the daemon's `update_available` event — sent when its daily check
+  // finds a release newer than what is running, and replayed to subscribers
+  // who connect after the fact. Bare versions ("0.2.0"), the way the wire
+  // carries them; whoever draws them adds the "v".
+  property string installedVersion: ""
+  property string latestVersion: ""
+  readonly property bool updateAvailable: root.latestVersion !== ""
+
   // Absent means "unset", so every unset field falls through to the default
   // beside it. The daemon omits what the file does not say rather than sending
   // zeros, which is what makes a half-filled config file legible.
@@ -400,6 +408,11 @@ Item {
     root.rows = []
     root.seeded = false
     root.pending = []
+    // Cleared with the link rather than kept: a daemon restarted after its
+    // own upgrade replays the event if there is still anything to say, and a
+    // kept answer would outlive the very upgrade it was asking for.
+    root.installedVersion = ""
+    root.latestVersion = ""
   }
 
   function applyEvent(frame) {
@@ -407,6 +420,10 @@ Item {
       root.remember(frame.params)
     else if (frame.event === "agent_disconnected")
       root.forget(frame.params ? frame.params.id : "")
+    else if (frame.event === "update_available" && frame.params) {
+      root.installedVersion = frame.params.installed || ""
+      root.latestVersion = frame.params.latest || ""
+    }
   }
 
   // The reply to `status`, which seeds everything already running: `subscribe`

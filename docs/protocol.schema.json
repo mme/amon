@@ -277,6 +277,12 @@
           "default": {
             "enabled": true
           }
+        },
+        "updates": {
+          "$ref": "#/$defs/UpdatesConfig",
+          "default": {
+            "check": true
+          }
         }
       },
       "type": "object"
@@ -393,6 +399,35 @@
             },
             "params": {
               "$ref": "#/$defs/Config"
+            }
+          },
+          "required": [
+            "event",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A release newer than the running daemon exists. Broadcast when a\ncheck finds one, and replayed to every later subscriber — a panel\nrestarted after the check must not wait a day to hear about it.\nVersions are bare (`0.2.0`), never tagged (`v0.2.0`).",
+          "properties": {
+            "event": {
+              "const": "update_available",
+              "type": "string"
+            },
+            "params": {
+              "properties": {
+                "installed": {
+                  "type": "string"
+                },
+                "latest": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "installed",
+                "latest"
+              ],
+              "type": "object"
             }
           },
           "required": [
@@ -752,6 +787,17 @@
         "enabled": {
           "default": true,
           "description": "On unless turned off.\n\nThis started as off-by-default, reasoning that a tool which begins\nmaking noise on upgrade is a tool people turn off entirely. The counter\nis stronger: the whole point is to tell you about an agent you are *not*\nwatching, and a notification nobody knows exists notifies nobody. The\ntwo sounds are rare — an agent finishing unwatched, or starting to wait\nfor you — and the config file `amon setup` writes shows how to silence\nthem.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "UpdatesConfig": {
+      "description": "Whether the daemon may look for newer releases.",
+      "properties": {
+        "check": {
+          "default": true,
+          "description": "On unless turned off. The whole of the check is one HEAD request\nagainst the release page's stable redirect, at most daily; nothing\nabout this machine travels with it.",
           "type": "boolean"
         }
       },

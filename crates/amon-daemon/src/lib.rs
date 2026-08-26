@@ -22,6 +22,7 @@ mod config;
 mod manifests;
 mod registry;
 mod sound;
+mod updates;
 
 pub use registry::Registry;
 
@@ -63,6 +64,7 @@ pub fn run(version: String) -> std::io::Result<()> {
         let registry = registry.clone();
         move |config| registry.broadcast_config(config.clone())
     });
+    updates::check_periodically(registry.clone(), config.clone(), version.clone());
     let shutdown = Arc::new(AtomicBool::new(false));
     let next_connection = AtomicU64::new(0);
 
@@ -195,7 +197,7 @@ fn ask_existing_daemon_to_exit(socket: &Path, version: &str) -> DaemonAtSocket {
 /// Compares dotted version strings numerically, so 0.10.0 beats 0.9.0.
 /// Unparseable components count as 0, which keeps a malformed version from
 /// squatting on the socket.
-fn is_newer(candidate: &str, running: &str) -> bool {
+pub(crate) fn is_newer(candidate: &str, running: &str) -> bool {
     fn parts(version: &str) -> Vec<u64> {
         version
             .split(['.', '-', '+'])

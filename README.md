@@ -130,12 +130,14 @@ a binary that is gone.
 
 ## Command line reference
 
-**`amon setup [target] [--all] [--no-alias] [--duck | --no-duck]`**
+**`amon setup [target] [--all] [--no-alias] [--upgrade] [--duck | --no-duck]`**
 
 Set up integrations. Without arguments, an interactive screen; with a target,
 one agent (`amon setup claude`). `--all` takes every detected agent plus the
 desktop integration without a screen. `--no-alias` skips aliasing the agent's
 name, on the non-interactive forms only; the screen always aliases.
+`--upgrade` refreshes everything already set up after a binary upgrade -
+installs nothing new and revisits no choices; the installer runs it for you.
 Ducking - music dips while a notification plays - is included by default
 where WirePlumber runs (one drop-in file amon owns; deleting it restores
 stock audio); `--no-duck` opts out, and either flag alone installs or
@@ -239,6 +241,14 @@ ducking is set up (`amon setup --duck`, on by default in setup). It is one
 WirePlumber drop-in owned by amon; `amon setup --no-duck` removes it and
 restores stock audio completely. The buses it routes audio through are
 stereo - on a surround or bitstream-passthrough setup, skip ducking.
+
+**`[updates]`**
+
+- `check = true` - whether the daemon may look for newer releases: one
+  request against the GitHub release page's redirect, at most daily, with
+  nothing about your machine in it. When a newer release exists, the agent
+  panel shows a one-line footer with the command that upgrades; nothing
+  downloads or installs itself. Set to false and it never checks.
 
 ## Credits
 

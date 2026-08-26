@@ -65,6 +65,10 @@ enum Command {
         /// (non-interactive forms only — the screen always aliases)
         #[arg(long)]
         no_alias: bool,
+        /// Refresh everything already set up after a binary upgrade —
+        /// installs nothing new, revisits no choices (the installer runs this)
+        #[arg(long, conflicts_with_all = ["target", "all", "no_alias", "duck", "no_duck"])]
+        upgrade: bool,
         /// Duck other audio while a notification plays (a WirePlumber
         /// drop-in). Included in `--all` by default; alone, installs just
         /// this piece
@@ -162,9 +166,16 @@ fn main() -> ExitCode {
             target,
             all,
             no_alias,
+            upgrade,
             duck,
             no_duck,
-        } => run_setup(target.as_deref(), all, no_alias, duck, no_duck),
+        } => {
+            if upgrade {
+                setup::upgrade()
+            } else {
+                run_setup(target.as_deref(), all, no_alias, duck, no_duck)
+            }
+        }
         Command::Remove { target, all } => run_remove(target.as_deref(), all),
         Command::Focus { workspace } => focus::run(workspace),
         Command::Doctor => doctor::run(VERSION),

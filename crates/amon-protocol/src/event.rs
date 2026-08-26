@@ -27,6 +27,12 @@ pub enum Event {
     /// missed an earlier event.
     #[serde(rename = "config_changed")]
     ConfigChanged(Config),
+    /// A release newer than the running daemon exists. Broadcast when a
+    /// check finds one, and replayed to every later subscriber — a panel
+    /// restarted after the check must not wait a day to hear about it.
+    /// Versions are bare (`0.2.0`), never tagged (`v0.2.0`).
+    #[serde(rename = "update_available")]
+    UpdateAvailable { installed: String, latest: String },
     /// An event this build does not know. Never sent, only received.
     #[serde(skip)]
     #[schemars(skip)]
@@ -67,6 +73,16 @@ impl<'de> Deserialize<'de> for Event {
                 }
                 let Params { id } = serde_json::from_value(params()).map_err(D::Error::custom)?;
                 Self::AgentDisconnected { id }
+            }
+            Some("update_available") => {
+                #[derive(Deserialize)]
+                struct Params {
+                    installed: String,
+                    latest: String,
+                }
+                let Params { installed, latest } =
+                    serde_json::from_value(params()).map_err(D::Error::custom)?;
+                Self::UpdateAvailable { installed, latest }
             }
             _ => Self::Unknown,
         })
