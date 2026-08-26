@@ -3,6 +3,11 @@
 #
 #   curl -fsSL amon.sh/install | sh
 #
+# Running it again is also how amon upgrades: an existing install is replaced
+# in place and `amon setup --upgrade` refreshes what setup put on disk. A
+# first install hands off to the interactive `amon setup` instead, when a
+# terminal is there to run it on.
+#
 # ~/.local/bin because Omarchy puts it on PATH for every login shell and the
 # whole session (default/bash/env-bootstrap appends it). Override the
 # directory with AMON_PREFIX, pin a version with AMON_VERSION=vX.Y.Z.
@@ -37,6 +42,17 @@ case "$TAG" in
   *) echo "expected a release tag like v0.1.0, got '$TAG'" >&2; exit 1 ;;
 esac
 
+# Whether this is an upgrade, decided by what is on disk before the swap.
+# The old version is captured now - the binary that can answer is about to be
+# replaced - and used only for the closing message: `amon setup --upgrade`
+# reads disk state instead, so a hand-swapped binary heals the same way.
+UPGRADING=0
+PREVIOUS=""
+if [ -x "$BIN_DIR/amon" ]; then
+  UPGRADING=1
+  PREVIOUS="$("$BIN_DIR/amon" --version 2>/dev/null | cut -d' ' -f2)" || true
+fi
+
 TARBALL="amon-$TAG-x86_64-linux.tar.gz"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -57,9 +73,30 @@ install -m 755 "$TMP/amon" "$BIN_DIR/.amon.new"
 mv -f "$BIN_DIR/.amon.new" "$BIN_DIR/amon"
 install -m 644 "$TMP/LICENSE" "$TMP/NOTICE" "$SHARE_DIR/"
 
-echo "installed $BIN_DIR/amon"
+if [ "$UPGRADING" = 1 ]; then
+  case "$PREVIOUS" in
+    "${TAG#v}") echo "reinstalled amon ${TAG#v}" ;;
+    "") echo "upgraded amon to ${TAG#v}" ;;
+    *) echo "upgraded amon $PREVIOUS -> ${TAG#v}" ;;
+  esac
+else
+  echo "installed $BIN_DIR/amon"
+fi
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) echo "note: $BIN_DIR is not on PATH in this shell" ;;
 esac
-echo "next: amon setup"
+
+if [ "$UPGRADING" = 1 ]; then
+  # Refreshes only what a previous setup installed; the binary is in place
+  # either way, so a hiccup here is a note, not a failed install.
+  "$BIN_DIR/amon" setup --upgrade \
+    || echo "amon setup --upgrade did not finish cleanly - run it again" >&2
+elif (exec </dev/tty) 2>/dev/null; then
+  # A first install flows straight into the setup screen. Stdin is the curl
+  # pipe, so the terminal has to be borrowed back from /dev/tty.
+  "$BIN_DIR/amon" setup </dev/tty >/dev/tty \
+    || echo "setup did not finish cleanly - run amon setup again" >&2
+else
+  echo "next: amon setup"
+fi

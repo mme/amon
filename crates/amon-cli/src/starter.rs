@@ -64,4 +64,12 @@ const STARTER: &str = r##"# amon
 # this file's own directory.
 # done = "~/sounds/finished.mp3"
 # blocked = "~/sounds/attention.mp3"
+
+[updates]
+# Whether the daemon may look for newer releases: one request against the
+# GitHub release page's redirect, at most daily, with nothing about your
+# machine in it. When a newer release exists, the agent panel says so.
+#
+# On by default. Uncomment to never check:
+# check = false
 "##;

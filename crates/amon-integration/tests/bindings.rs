@@ -248,3 +248,33 @@ fn the_window_rule_matches_the_title_the_qml_sets() {
     assert!(ours.contains("pin = true"), "the window is pinned: {ours}");
     assert!(ours.contains("float = true"), "and floated first: {ours}");
 }
+
+#[test]
+fn super_w_asks_the_panel_before_closing_a_window() {
+    // With the panel open, Hyprland's stock Super+W closes the window
+    // underneath it - an overlay is not a toplevel, so "close active window"
+    // reaches straight through what you are looking at (#39). amon's bind
+    // asks the panel first, and only a panel that answers "dismissed" stops
+    // the close; a closed panel, a dead shell, or a missing plugin all fall
+    // through to the stock behavior.
+    let home = Home::new();
+    home.write_theirs(THEIRS);
+
+    bindings::install().expect("install succeeds");
+
+    let ours = std::fs::read_to_string(home.ours()).expect("amon.lua written");
+    assert!(
+        ours.contains("hl.unbind(\"SUPER + W\")"),
+        "Omarchy's own bind is replaced, not doubled: {ours}"
+    );
+    assert!(
+        ours.contains("call sh.amon.panel dismissIfOpen"),
+        "the panel is asked through the shell: {ours}"
+    );
+    assert!(
+        ours.contains("dismissed") && ours.contains(r#"hl.dsp.window.close()"#),
+        "anything but a dismissal closes the window as before - through the \
+         Quattro dispatcher: plain `killactive` is evaluated as Lua there, \
+         `killactive` is nil, and the close silently never happens: {ours}"
+    );
+}

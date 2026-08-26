@@ -46,6 +46,12 @@ pub struct StatusResult {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ConfigResult {
     pub config: Config,
+    /// Why the file on disk is not what `config` says, when it is not: a
+    /// parse failure keeps the last good configuration (ADR-0012), and this
+    /// is where that state travels so `amon doctor` can report it. Absent
+    /// when the file parsed or simply does not exist.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// A hook reporting agent state. Field names mirror herdr's `pane.report_agent`

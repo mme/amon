@@ -23,26 +23,20 @@ use amon_protocol::{AgentState, SoundConfig};
 static DONE: &[u8] = include_bytes!("../assets/sounds/done.mp3");
 static BLOCKED: &[u8] = include_bytes!("../assets/sounds/request.mp3");
 
-/// The players worth trying, most likely first. Linux only: amon's platform is
-/// Omarchy, and herdr's macOS and Windows branches would be code carried for
-/// nobody. Anywhere else reads as "no player" and stays quiet.
-const PLAYERS: [&str; 5] = ["paplay", "pw-play", "ffplay", "mpg123", "mpv"];
+/// The one player: pw-play, PipeWire's own, pinned by Omarchy's base
+/// packages. herdr's fallback chain (paplay, ffplay, mpg123, mpv) was
+/// carried for machines amon does not target; a machine without pw-play
+/// reads as "no player" and stays quiet, the same stance as everywhere else.
+const PLAYER: &str = "pw-play";
 
-/// Extra arguments a player needs to be usable as a notification: not to take
-/// over the terminal, and to exit when the file ends.
-fn arguments(player: &str, file: &str) -> Vec<String> {
-    match player {
-        "ffplay" => vec![
-            "-nodisp".into(),
-            "-autoexit".into(),
-            "-loglevel".into(),
-            "quiet".into(),
-            file.into(),
-        ],
-        "mpv" => vec!["--no-video".into(), "--really-quiet".into(), file.into()],
-        "mpg123" => vec!["-q".into(), file.into()],
-        _ => vec![file.into()],
-    }
+/// The stream declares itself a notification. That is what lets the ducking
+/// drop-in (`amon setup --duck`) route it onto the Notification bus, above
+/// the music; without the drop-in the tag is inert. A test holds this role
+/// to the one the drop-in ranks.
+const ROLE: &str = r#"{ media.role = "Notification" }"#;
+
+fn arguments(file: &str) -> Vec<String> {
+    vec!["-P".into(), ROLE.into(), file.into()]
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,9 +77,15 @@ pub fn crossing(was: (AgentState, Option<bool>), now: (AgentState, Option<bool>)
 /// Detection passes through intermediate states on its way to a settled one: a
 /// prompt appearing reads as idle for a moment before the rule that recognises
 /// it as a question matches. Playing immediately turns one event into two — a
-/// finish, then a request — which is what this delay exists to prevent. herdr's
-/// default is the same second, for the same reason.
-const SETTLE: Duration = Duration::from_secs(1);
+/// finish, then a request — which is what this delay exists to prevent.
+///
+/// 650 rather than herdr's full second because the bundled sounds carry 350ms
+/// of leading silence (see the README beside them): the pad is settle time
+/// relocated into the file, so the sum — crossing to first audible note —
+/// stays the second herdr tuned. The last 350ms of it are committed rather
+/// than cancelable, which detection's flaps, over inside half a second, never
+/// reach.
+const SETTLE: Duration = Duration::from_millis(650);
 
 /// One agent's pending noise, and whether it is still the current one.
 ///
@@ -162,67 +162,68 @@ pub fn play(sound: Sound, config: &SoundConfig) {
         let Some(file) = resolve(sound, chosen) else {
             return;
         };
-        for player in PLAYERS {
-            let spawned = Command::new(player)
-                .args(arguments(player, &file.path))
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn();
-            if let Ok(mut child) = spawned {
-                let _ = child.wait();
-                return;
-            }
+        let spawned = Command::new(PLAYER)
+            .args(arguments(&file))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+        if let Ok(mut child) = spawned {
+            let _ = child.wait();
         }
     });
 }
 
 /// The file to hand a player: the user's if they named one, otherwise the
-/// bundled bytes written somewhere a player can open them.
-fn resolve(sound: Sound, configured: Option<String>) -> Option<Playable> {
+/// bundled sound as a real file in amon's share directory.
+///
+/// The bundled sounds are bytes in the binary, so they have to land on disk
+/// once — and once is the point. An earlier design wrote a temp file per
+/// play and deleted it after: two overlapping plays then shared one path,
+/// and the second truncated the file under the first player's read, which
+/// is a sound cut off. Here the path is stable, an intact file is never
+/// touched, and repair goes through a rename — a player mid-read keeps its
+/// bytes while the path moves on.
+fn resolve(sound: Sound, configured: Option<String>) -> Option<String> {
     if let Some(configured) = configured {
         let path = expand(&configured)?;
-        return path.exists().then(|| Playable {
-            path: path.to_string_lossy().into_owned(),
-            temporary: false,
-        });
+        return path.exists().then(|| path.to_string_lossy().into_owned());
     }
-    let bytes = match sound {
-        Sound::Done => DONE,
-        Sound::Blocked => BLOCKED,
+    let (name, bytes) = match sound {
+        Sound::Done => ("done.mp3", DONE),
+        Sound::Blocked => ("request.mp3", BLOCKED),
     };
-    let path = std::env::temp_dir().join(format!(
-        "amon-{}-{}.mp3",
-        match sound {
-            Sound::Done => "done",
-            Sound::Blocked => "blocked",
-        },
-        std::process::id()
-    ));
-    // Rewritten every time rather than cached: it costs a few tens of
-    // kilobytes and means a half-written file from a killed daemon cannot
-    // become a permanently silent notification.
-    let mut file = std::fs::File::create(&path).ok()?;
-    file.write_all(bytes).ok()?;
-    Some(Playable {
-        path: path.to_string_lossy().into_owned(),
-        temporary: true,
-    })
-}
-
-/// A path a player can be pointed at.
-struct Playable {
-    path: String,
-    /// Bundled bytes we wrote out, and therefore ours to clean up.
-    temporary: bool,
-}
-
-impl Drop for Playable {
-    fn drop(&mut self) {
-        if self.temporary {
-            let _ = std::fs::remove_file(&self.path);
-        }
+    let dir = sounds_dir()?;
+    let path = dir.join(name);
+    // Healed whenever the size disagrees with the binary's copy: missing,
+    // torn, or left over from another release. Nothing else ever writes.
+    let current = std::fs::metadata(&path).map(|meta| meta.len()).ok();
+    if current != Some(bytes.len() as u64) {
+        std::fs::create_dir_all(&dir).ok()?;
+        let staging = dir.join(format!(".{name}.{}", std::process::id()));
+        let mut file = std::fs::File::create(&staging).ok()?;
+        file.write_all(bytes).ok()?;
+        std::fs::rename(&staging, &path).ok()?;
     }
+    Some(path.to_string_lossy().into_owned())
+}
+
+/// Where the bundled sounds live as files, beside the licenses the installer
+/// puts in the same share directory. Per-build like every other amon
+/// directory, so a dev daemon cannot write into a release install.
+fn sounds_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .filter(|value| !value.is_empty())
+                .map(|home| PathBuf::from(home).join(".local/share"))
+        })?;
+    Some(
+        base.join(amon_protocol::paths::app_dir_name())
+            .join("sounds"),
+    )
 }
 
 /// Resolves `~` and makes a relative path relative to the config file's own
@@ -373,6 +374,64 @@ mod tests {
             crossing((AgentState::Idle, UNSEEN), (AgentState::Idle, SEEN)),
             None
         );
+    }
+
+    #[test]
+    fn bundled_sounds_are_real_files_that_heal() {
+        // Sets an env var, which is why this suite runs under nextest: one
+        // process per test, nothing to race.
+        let dir = std::env::temp_dir().join(format!("amon-sound-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("XDG_DATA_HOME", &dir);
+
+        let path = resolve(Sound::Done, None).expect("a playable path");
+        assert_eq!(
+            std::fs::read(&path).expect("the file exists").as_slice(),
+            DONE,
+            "the bundled bytes, installed where a player can open them"
+        );
+
+        // Damaged — a torn write, a stray truncation — the next play repairs
+        // it rather than handing the player a stub forever.
+        std::fs::write(&path, b"stub").unwrap();
+        let again = resolve(Sound::Done, None).expect("still playable");
+        assert_eq!(again, path, "the path is stable across plays");
+        assert_eq!(
+            std::fs::read(&path).unwrap().as_slice(),
+            DONE,
+            "and the content is whole again"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_intact_sound_file_is_not_rewritten() {
+        // Rewriting on every play is the temp-file design this replaced: a
+        // player mid-read of a file being truncated under it is a sound cut
+        // off. An intact file must be left exactly as it is.
+        let dir = std::env::temp_dir().join(format!("amon-sound-keep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("XDG_DATA_HOME", &dir);
+
+        let path = resolve(Sound::Blocked, None).expect("a playable path");
+        let before = std::fs::metadata(&path).unwrap().modified().unwrap();
+        std::thread::sleep(Duration::from_millis(20));
+        resolve(Sound::Blocked, None).expect("still playable");
+        let after = std::fs::metadata(&path).unwrap().modified().unwrap();
+        assert_eq!(before, after, "a second play writes nothing");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn playback_declares_the_notification_role() {
+        // The tag is what the ducking drop-in routes by; losing it would not
+        // fail anything visibly — the sound would simply stop ducking music.
+        let args = arguments("chime.mp3");
+        assert_eq!(args[0], "-P");
+        assert!(args[1].contains("media.role"), "{args:?}");
+        assert_eq!(args.last().map(String::as_str), Some("chime.mp3"));
     }
 
     #[test]

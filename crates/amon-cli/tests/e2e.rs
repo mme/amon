@@ -6,6 +6,9 @@
 
 mod harness;
 
+use std::path::PathBuf;
+use std::time::Duration;
+
 use harness::{agent_named, path_str, read_to_string, state_of, Client, Sandbox};
 
 /// A fake claude that announces work through the OSC title, the way the real
@@ -229,6 +232,149 @@ fn state_reaches_status_from_the_shadow_terminal() {
 
     let _ = child.kill();
     let _ = child.wait();
+}
+
+/// A stand-in for GitHub's `/releases/latest` redirect: answers with a 302 to
+/// the tag page for `tag`, which is all the daemon's release check reads.
+fn serve_release_redirect(tag: &'static str) -> String {
+    use std::io::{BufRead as _, Write as _};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let base = format!("http://{}", listener.local_addr().expect("addr"));
+    let base_for_thread = base.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
+            let mut line = String::new();
+            if reader.read_line(&mut line).is_err() {
+                continue;
+            }
+            let path = line.split_whitespace().nth(1).unwrap_or("").to_string();
+            let mut header = String::new();
+            while reader.read_line(&mut header).is_ok() && header.trim() != "" {
+                header.clear();
+            }
+            let response = if path == "/releases/latest" {
+                format!(
+                    "HTTP/1.1 302 Found\r\nLocation: {base_for_thread}/releases/tag/{tag}\r\nContent-Length: 0\r\n\r\n"
+                )
+            } else {
+                "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".to_string()
+            };
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+    base
+}
+
+#[test]
+fn subscribers_hear_about_a_newer_release() {
+    let sandbox = Sandbox::new();
+    let base = serve_release_redirect("v9.9.9");
+    // The first command starts the daemon, which inherits the override; the
+    // check is dormant in dev builds without it.
+    let output = sandbox
+        .command(&["status"])
+        .env("AMON_UPDATE_URL", format!("{base}/releases/latest"))
+        .output()
+        .expect("amon runs");
+    assert!(output.status.success(), "{output:?}");
+
+    let mut client = Client::new(sandbox.connect());
+    client.send(r#"{"id":"1","method":"hello","params":{"role":"subscriber","protocol":1,"version":"test"}}"#);
+    client.read_frame();
+    client.send(r#"{"id":"2","method":"subscribe"}"#);
+
+    let event = client.wait_for_event("update_available");
+    assert_eq!(event["params"]["latest"], serde_json::json!("9.9.9"));
+    assert_eq!(
+        event["params"]["installed"],
+        serde_json::json!(env!("CARGO_PKG_VERSION"))
+    );
+
+    // A subscriber that connects long after the check still hears about it:
+    // the panel may be restarted at any time, and a check already done would
+    // otherwise be a check nobody sees for a day.
+    let mut late = Client::new(sandbox.connect());
+    late.send(r#"{"id":"1","method":"hello","params":{"role":"subscriber","protocol":1,"version":"test"}}"#);
+    late.read_frame();
+    late.send(r#"{"id":"2","method":"subscribe"}"#);
+    let replay = late.wait_for_event("update_available");
+    assert_eq!(replay["params"]["latest"], serde_json::json!("9.9.9"));
+}
+
+#[test]
+fn a_release_no_newer_than_this_build_is_no_event() {
+    // The redirect answering with the running version means there is nothing
+    // to say — and a from-source build ahead of the last release must never
+    // be nagged backwards.
+    let sandbox = Sandbox::new();
+    let base = serve_release_redirect("v0.0.1");
+    let output = sandbox
+        .command(&["status"])
+        .env("AMON_UPDATE_URL", format!("{base}/releases/latest"))
+        .output()
+        .expect("amon runs");
+    assert!(output.status.success(), "{output:?}");
+
+    let mut client = Client::new(sandbox.connect());
+    client.send(r#"{"id":"1","method":"hello","params":{"role":"subscriber","protocol":1,"version":"test"}}"#);
+    client.read_frame();
+    client.send(r#"{"id":"2","method":"subscribe"}"#);
+    client.read_frame();
+
+    // Give the check time to run, then use the ordered stream as the fence:
+    // any event it produced would arrive before the answer to this request.
+    std::thread::sleep(Duration::from_millis(700));
+    client.send(r#"{"id":"fence","method":"status"}"#);
+    loop {
+        let frame = client.read_frame();
+        assert_ne!(
+            frame.get("event").and_then(|value| value.as_str()),
+            Some("update_available"),
+            "an older release is not an update: {frame}"
+        );
+        if frame.get("id") == Some(&serde_json::json!("fence")) {
+            break;
+        }
+    }
+}
+
+#[test]
+fn the_update_check_obeys_the_config_kill_switch() {
+    let sandbox = Sandbox::new();
+    let config_dir = sandbox.home_path(".config/amon-dev");
+    std::fs::create_dir_all(&config_dir).expect("config dir");
+    std::fs::write(config_dir.join("config.toml"), "[updates]\ncheck = false\n")
+        .expect("config file");
+    let base = serve_release_redirect("v9.9.9");
+    let output = sandbox
+        .command(&["status"])
+        .env("AMON_UPDATE_URL", format!("{base}/releases/latest"))
+        .output()
+        .expect("amon runs");
+    assert!(output.status.success(), "{output:?}");
+
+    let mut client = Client::new(sandbox.connect());
+    client.send(r#"{"id":"1","method":"hello","params":{"role":"subscriber","protocol":1,"version":"test"}}"#);
+    client.read_frame();
+    client.send(r#"{"id":"2","method":"subscribe"}"#);
+    client.read_frame();
+
+    std::thread::sleep(Duration::from_millis(700));
+    client.send(r#"{"id":"fence","method":"status"}"#);
+    loop {
+        let frame = client.read_frame();
+        assert_ne!(
+            frame.get("event").and_then(|value| value.as_str()),
+            Some("update_available"),
+            "check = false means no check: {frame}"
+        );
+        if frame.get("id") == Some(&serde_json::json!("fence")) {
+            break;
+        }
+    }
 }
 
 #[test]
@@ -961,6 +1107,412 @@ fn remove_all_takes_everything_back() {
     assert!(
         !bashrc(&sandbox).contains("alias claude"),
         "no alias may outlive the hooks it pointed at"
+    );
+}
+
+/// Where the ducking drop-in lands, relative to the sandbox config dir.
+const DUCKING_CONF: &str = "wireplumber/wireplumber.conf.d/50-amon-ducking.conf";
+
+/// Plants the audio stack setup looks for: a wireplumber on PATH (existence
+/// is the whole test) and a systemctl that records what it was asked.
+fn audio_stack_is_present(sandbox: &Sandbox) -> PathBuf {
+    sandbox.fake_agent("wireplumber", "#!/bin/sh\n");
+    let record = sandbox.runtime_path("systemctl-calls");
+    sandbox.fake_agent(
+        "systemctl",
+        &format!("#!/bin/sh\necho \"$*\" >> {}\n", path_str(&record)),
+    );
+    record
+}
+
+#[test]
+fn setup_all_sets_up_ducking_with_everything_else() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    let restarts = audio_stack_is_present(&sandbox);
+
+    let output = sandbox.run(&["setup", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let conf = sandbox.config_path(DUCKING_CONF);
+    assert!(conf.exists(), "the drop-in is installed");
+    assert!(
+        std::fs::read_to_string(&conf)
+            .expect("readable")
+            .contains("duck-level"),
+        "and it is amon's ducking config"
+    );
+    assert!(
+        std::fs::read_to_string(&restarts)
+            .expect("systemctl invoked")
+            .contains("--user restart wireplumber"),
+        "wireplumber is restarted so the config takes"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("✓ ducking"),
+        "{output:?}"
+    );
+}
+
+#[test]
+fn a_machine_without_wireplumber_gets_no_ducking_and_no_noise_about_it() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+
+    let output = sandbox.run(&["setup", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "no audio stack, no file"
+    );
+    assert!(
+        !String::from_utf8_lossy(&output.stdout).contains("ducking"),
+        "and nothing to explain: {output:?}"
+    );
+}
+
+#[test]
+fn no_duck_keeps_setup_all_out_of_the_audio_stack() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    let restarts = audio_stack_is_present(&sandbox);
+
+    let output = sandbox.run(&["setup", "--all", "--no-duck"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(!sandbox.config_path(DUCKING_CONF).exists());
+    assert!(
+        !std::fs::read_to_string(&restarts)
+            .unwrap_or_default()
+            .contains("wireplumber"),
+        "opting out must not touch the audio stack at all"
+    );
+}
+
+#[test]
+fn duck_alone_installs_only_the_ducking() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    audio_stack_is_present(&sandbox);
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(sandbox.config_path(DUCKING_CONF).exists());
+    assert!(
+        !bashrc(&sandbox).contains("alias claude"),
+        "--duck is about audio, not about agents"
+    );
+}
+
+#[test]
+fn no_duck_alone_takes_the_ducking_back_out() {
+    let sandbox = Sandbox::new();
+    audio_stack_is_present(&sandbox);
+    assert!(sandbox.run(&["setup", "--duck"]).status.success());
+    assert!(sandbox.config_path(DUCKING_CONF).exists());
+
+    let output = sandbox.run(&["setup", "--no-duck"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "the file is gone, the audio stack is stock again"
+    );
+}
+
+#[test]
+fn remove_all_takes_the_ducking_too() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    audio_stack_is_present(&sandbox);
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
+    assert!(sandbox.run(&["setup", "--all"]).status.success());
+
+    let output = sandbox.run(&["remove", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "remove everything means the audio stack too"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("ducking"),
+        "and it is accounted for: {output:?}"
+    );
+}
+
+#[test]
+fn a_wireplumber_that_rejects_the_config_gets_it_rolled_back() {
+    // The failure that shaped install(): a refused fragment makes `restart`
+    // return success and then crash-loops the service. Reported exit codes
+    // are not the signal; is-active afterwards is.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("wireplumber", "#!/bin/sh\n");
+    let record = sandbox.runtime_path("systemctl-calls");
+    sandbox.fake_agent(
+        "systemctl",
+        &format!(
+            "#!/bin/sh\necho \"$*\" >> {}\ncase \"$*\" in *is-active*) exit 1;; esac\nexit 0\n",
+            path_str(&record)
+        ),
+    );
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(!output.status.success(), "a dead service is a failure");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "the file that killed the service does not stay to kill it again"
+    );
+    let calls = std::fs::read_to_string(&record).expect("systemctl invoked");
+    assert!(
+        calls.matches("--user restart wireplumber").count() >= 2,
+        "a recovery restart runs after the rollback: {calls}"
+    );
+    // This fake's is-active never succeeds, so the recovery restart cannot
+    // be verified either — and the report must say that, not claim a
+    // recovery nobody checked.
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("has not come back"),
+        "the report matches what actually happened: {output:?}"
+    );
+}
+
+#[test]
+fn a_crashed_installs_staging_leftover_does_not_block_the_next() {
+    // The staging file contains the role markers the foreign-config scan
+    // looks for; a scan that read it would refuse forever with "someone
+    // else's config" over amon's own debris.
+    let sandbox = Sandbox::new();
+    audio_stack_is_present(&sandbox);
+    let conf = sandbox.config_path(DUCKING_CONF);
+    std::fs::create_dir_all(conf.parent().expect("parent")).expect("conf dir");
+    std::fs::write(
+        conf.with_extension("conf.amon-staging"),
+        "loopback.sink.role.multimedia\n",
+    )
+    .expect("leftover");
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(conf.exists(), "the leftover is swept, the install lands");
+}
+
+#[test]
+fn an_unreadable_neighbour_fragment_refuses_the_install() {
+    // Fail closed: a fragment that could not be read is a fragment that was
+    // not checked, and restarting WirePlumber over an unfinished scan is
+    // how a second set of role buses sneaks in.
+    let sandbox = Sandbox::new();
+    let restarts = audio_stack_is_present(&sandbox);
+    let conf = sandbox.config_path(DUCKING_CONF);
+    std::fs::create_dir_all(conf.parent().expect("parent")).expect("conf dir");
+    std::fs::write(
+        conf.parent().expect("parent").join("20-theirs.conf"),
+        [0xff, 0xfe, 0xfd],
+    )
+    .expect("their fragment");
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        !conf.exists(),
+        "nothing is installed over an unchecked scan"
+    );
+    assert!(
+        !std::fs::read_to_string(&restarts)
+            .unwrap_or_default()
+            .contains("restart"),
+        "and nothing is restarted"
+    );
+}
+
+#[test]
+fn a_symlinked_dropin_is_never_written_through() {
+    // A dotfiles checkout may own this path. Writing through the link would
+    // edit a file amon does not own — the same line the bashrc code draws.
+    let sandbox = Sandbox::new();
+    audio_stack_is_present(&sandbox);
+    let theirs = sandbox.runtime_path("dotfiles-ducking.conf");
+    std::fs::write(&theirs, "# theirs\n").expect("their file");
+    let link = sandbox.config_path(DUCKING_CONF);
+    std::fs::create_dir_all(link.parent().expect("parent")).expect("conf dir");
+    std::os::unix::fs::symlink(&theirs, &link).expect("link");
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(!output.status.success(), "{output:?}");
+    assert_eq!(
+        std::fs::read_to_string(&theirs).expect("still theirs"),
+        "# theirs\n",
+        "the symlink target is untouched"
+    );
+}
+
+#[test]
+fn an_existing_role_audio_setup_is_left_alone() {
+    // Someone who configured role buses themselves has already made these
+    // choices, and WirePlumber merges fragments by appending — a second set
+    // of buses under the same names is a broken profile.
+    let sandbox = Sandbox::new();
+    let restarts = audio_stack_is_present(&sandbox);
+    let conf_dir = sandbox
+        .config_path(DUCKING_CONF)
+        .parent()
+        .expect("parent")
+        .to_path_buf();
+    std::fs::create_dir_all(&conf_dir).expect("conf dir");
+    std::fs::write(
+        conf_dir.join("10-my-roles.conf"),
+        "# hand-rolled\nloopback.sink.role.multimedia\n",
+    )
+    .expect("their config");
+
+    let output = sandbox.run(&["setup", "--duck"]);
+
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "amon adds nothing next to it"
+    );
+    assert!(
+        !std::fs::read_to_string(&restarts)
+            .unwrap_or_default()
+            .contains("restart"),
+        "and does not restart a service it changed nothing about"
+    );
+}
+
+#[test]
+fn an_unreadable_dropin_still_counts_as_installed() {
+    // Whatever occupies amon's filename is amon's to remove. Calling an
+    // unreadable file "not installed" would make remove --all skip it while
+    // doctor reports nothing wrong.
+    let sandbox = Sandbox::new();
+    audio_stack_is_present(&sandbox);
+    let conf = sandbox.config_path(DUCKING_CONF);
+    std::fs::create_dir_all(conf.parent().expect("parent")).expect("conf dir");
+    std::fs::write(&conf, [0xff, 0xfe, 0xfd]).expect("garbage");
+
+    let output = sandbox.run(&["remove", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(!conf.exists(), "the garbage is gone");
+}
+
+#[test]
+fn the_setup_screen_offers_ducking_and_applies_it() {
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    audio_stack_is_present(&sandbox);
+
+    let mut session = harness::PtySession::start(&sandbox, &["setup"]);
+    session.wait_for_output(b"ducking");
+    session.send(b"\r");
+    session.wait();
+
+    assert!(
+        sandbox.config_path(DUCKING_CONF).exists(),
+        "preselected, so Enter installs it"
+    );
+}
+
+#[test]
+fn setup_upgrade_with_nothing_installed_points_at_setup() {
+    // `--upgrade` repairs what a previous setup put on disk. Where nothing
+    // was ever set up there is nothing to repair, and inventing a first
+    // install here would make the installer's upgrade path do what only the
+    // user's own `amon setup` may decide.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+
+    let output = sandbox.run(&["setup", "--upgrade"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("amon setup"),
+        "the way forward is named: {stdout}"
+    );
+    assert!(
+        !bashrc(&sandbox).contains("alias claude"),
+        "a detected but never-set-up agent stays untouched"
+    );
+}
+
+#[test]
+fn setup_upgrade_refreshes_installed_integrations_and_no_others() {
+    // After a binary swap the plugin QML on disk is the old build's. The
+    // upgrade rewrites what is installed — and only that: an agent the user
+    // never set up must not come out of an upgrade wrapped.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    sandbox.fake_agent("codex", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".codex");
+    let record = sandbox.runtime_path("omarchy-calls");
+    sandbox.fake_agent(
+        "omarchy",
+        &format!("#!/bin/sh\necho \"$*\" >> {}\n", path_str(&record)),
+    );
+    assert!(sandbox.run(&["setup", "claude"]).status.success());
+    stale_widget_is_installed(&sandbox);
+    std::fs::write(&record, "").expect("forget the setup run");
+
+    let output = sandbox.run(&["setup", "--upgrade"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("✓ claude — hooks installed, aliased"),
+        "what was set up is refreshed: {stdout}"
+    );
+    assert!(
+        !stdout.contains("codex"),
+        "what was never set up is not touched: {stdout}"
+    );
+    let calls = std::fs::read_to_string(&record).expect("omarchy invoked");
+    assert!(
+        calls.contains("restart shell"),
+        "the stale widget is replaced and the bar redrawn: {calls}"
+    );
+    assert!(
+        !calls.contains("plugin enable sh.amon.panel"),
+        "the panel was never installed, so the upgrade does not add it: {calls}"
+    );
+}
+
+#[test]
+fn setup_upgrade_keeps_the_no_alias_choice() {
+    // Set up with --no-alias means the user chose typing `amon claude`. An
+    // upgrade refreshes the hooks; it does not revisit that decision.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    assert!(sandbox
+        .run(&["setup", "claude", "--no-alias"])
+        .status
+        .success());
+
+    let output = sandbox.run(&["setup", "--upgrade"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("✓ claude — hooks installed"), "{stdout}");
+    assert!(
+        !bashrc(&sandbox).contains("alias claude"),
+        "--upgrade must not alias what setup was told not to"
     );
 }
 
@@ -1883,6 +2435,13 @@ fn setup_leaves_a_commented_config_behind() {
     );
     assert!(written.contains("frame_ms"), "{written}");
     assert!(written.contains("marker_beats"), "{written}");
+    // The whole point of this file is that every setting can be *found* in
+    // it — and the update check's kill switch is the one a privacy-minded
+    // user goes looking for.
+    assert!(
+        written.contains("[updates]") && written.contains("check = false"),
+        "the update check's opt-out is discoverable: {written}"
+    );
 }
 
 #[test]
@@ -2099,4 +2658,70 @@ fn daemon_pid_for(runtime: &std::path::Path) -> Option<i32> {
         }
     }
     None
+}
+
+#[test]
+fn setup_upgrade_refreshes_an_installed_ducking() {
+    // A binary upgrade can carry a newer drop-in; --upgrade rewrites the one
+    // on disk the same way it rewrites plugins — and only where it was
+    // installed (#43).
+    let sandbox = Sandbox::new();
+    audio_stack_is_present(&sandbox);
+    assert!(sandbox.run(&["setup", "--duck"]).status.success());
+    let conf = sandbox.config_path(DUCKING_CONF);
+    std::fs::write(&conf, "# an older amon's copy\n").expect("tamper");
+
+    let output = sandbox.run(&["setup", "--upgrade"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        std::fs::read_to_string(&conf)
+            .expect("still there")
+            .contains("duck-level"),
+        "the stale drop-in is brought back in line"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("ducking"),
+        "and accounted for: {output:?}"
+    );
+}
+
+#[test]
+fn setup_upgrade_does_not_install_ducking_where_it_was_not() {
+    // The --upgrade rule everywhere: refresh what exists, add nothing. A
+    // user who opted out with --no-duck must not gain it back on upgrade.
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("claude", "#!/bin/sh\n");
+    agent_is_installed(&sandbox, ".claude");
+    audio_stack_is_present(&sandbox);
+    assert!(sandbox.run(&["setup", "claude"]).status.success());
+
+    let output = sandbox.run(&["setup", "--upgrade"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !sandbox.config_path(DUCKING_CONF).exists(),
+        "opting out survives an upgrade"
+    );
+}
+
+#[test]
+fn doctor_reports_a_config_file_that_does_not_parse() {
+    // The daemon keeps the last good configuration when a save does not
+    // parse — and the docs promise doctor says so. A kept-but-unreported
+    // error is a bar quietly ignoring the file its owner is editing.
+    let sandbox = Sandbox::new();
+    let config_dir = sandbox.home_path(".config/amon-dev");
+    std::fs::create_dir_all(&config_dir).expect("config dir");
+    std::fs::write(config_dir.join("config.toml"), "not = [valid toml\n").expect("broken config");
+    assert!(sandbox.run(&["status"]).status.success(), "daemon up");
+
+    let output = sandbox.run(&["doctor"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("config") && stdout.contains("not applied"),
+        "the kept-last-good state is reported: {stdout}"
+    );
 }

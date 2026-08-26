@@ -832,3 +832,129 @@ fn every_way_into_the_pane_resets_the_cursor() {
         "the window picks when it shows"
     );
 }
+
+#[test]
+fn the_pane_hears_about_a_newer_release_by_the_daemons_name() {
+    // The daemon's side of the wire — the check, the strictness, the replay
+    // to late subscribers — is covered in amon-cli's e2e suite. These hold
+    // the QML to the same event name and fields; a drift here would not
+    // fail loudly, the footer would simply never appear.
+    const EVENT: &str = include_str!("../../amon-protocol/src/event.rs");
+    assert!(
+        EVENT.contains(r#"rename = "update_available""#),
+        "the name the daemon sends under"
+    );
+    assert!(
+        AGENT_STATES.contains(r#"frame.event === "update_available""#),
+        "the model listens for the same name"
+    );
+    assert!(
+        AGENT_STATES.contains("params.installed") && AGENT_STATES.contains("params.latest"),
+        "and reads the fields the event carries"
+    );
+}
+
+#[test]
+fn the_players_role_is_the_one_the_ducking_dropin_ranks() {
+    // Three parties have to agree on one word: the daemon tags its stream,
+    // the drop-in routes that tag onto the Notification bus, and the bus's
+    // priority is what ducks the music. A drift would not fail loudly —
+    // sounds would simply stop ducking anything.
+    const SOUND: &str = include_str!("../../amon-daemon/src/sound.rs");
+    const DROPIN: &str = include_str!("../src/assets/wireplumber/50-amon-ducking.conf");
+    assert!(
+        SOUND.contains(r#"media.role = "Notification""#),
+        "the daemon tags its stream"
+    );
+    assert!(
+        DROPIN.contains(r#"device.intended-roles = [ "Notification" ]"#),
+        "the drop-in routes that tag"
+    );
+    assert!(
+        DROPIN.contains(r#"policy.role-based.action.lower-priority = "duck""#),
+        "and the notification bus ducks what sits below it"
+    );
+}
+
+#[test]
+fn a_known_update_does_not_survive_a_reconnect() {
+    // `reset` runs on every connection state change. Versions cleared there
+    // cannot go stale: a daemon restarted after its own upgrade replays the
+    // event if there is still anything to say.
+    let reset = qml_function(AGENT_STATES, "function reset()");
+    assert!(
+        reset.contains("installedVersion") && reset.contains("latestVersion"),
+        "reset clears the update: {reset}"
+    );
+}
+
+#[test]
+fn super_ws_question_and_the_panels_answer_are_one_word() {
+    // The bind matches on the literal string "dismissed"; the panel's
+    // function returns it. A drift would not fail loudly — Super+W would
+    // just go back to closing the window under the open pane (#39).
+    const BINDINGS: &str = include_str!("../src/bindings.rs");
+    const PANEL: &str = include_str!("../src/assets/omarchy/AgentPanel.qml");
+    assert!(
+        PANEL.contains("function dismissIfOpen()"),
+        "the panel answers the question"
+    );
+    assert!(
+        PANEL.contains(r#"return "dismissed""#),
+        "with the word the bind matches on"
+    );
+    assert!(
+        BINDINGS.contains("call sh.amon.panel dismissIfOpen"),
+        "the bind asks that exact method"
+    );
+    assert!(
+        BINDINGS.contains(r#"!= dismissed"#),
+        "and matches that exact word"
+    );
+}
+
+#[test]
+fn the_update_footer_offers_the_installers_own_line() {
+    // The command the footer shows (and copies) is the installer's own
+    // masthead line, held here to the script itself so the pane can never
+    // advertise a command that stopped working.
+    const INSTALL: &str = include_str!("../../../install.sh");
+    const COMMAND: &str = "curl -fsSL amon.sh/install | sh";
+    assert!(
+        INSTALL.contains(COMMAND),
+        "install.sh documents the line the footer shows"
+    );
+    assert!(
+        AGENTS_VIEW.contains(COMMAND),
+        "the footer shows that exact line"
+    );
+    assert!(
+        AGENTS_VIEW.contains("view.agents.updateAvailable"),
+        "and only when the shared model says there is an update"
+    );
+    assert!(
+        AGENTS_VIEW.contains("wl-copy"),
+        "clicking copies rather than asking the user to retype"
+    );
+}
+
+#[test]
+fn the_spinner_ticks_for_every_working_agent() {
+    // stateByWorkspace keeps only each workspace's most urgent state, and
+    // blocked outranks working — so a workspace holding both hid its working
+    // agent from the old anyWorking scan, and the panel's spinners froze
+    // exactly while an agent waited for input (#38). The per-agent tally is
+    // the honest source: a working agent counts wherever it sits.
+    let any_working = AGENT_STATES
+        .lines()
+        .find(|line| line.contains("property bool anyWorking:"))
+        .expect("anyWorking exists in the QML");
+    assert!(
+        any_working.contains("counts.working"),
+        "anyWorking derives from the per-agent tally: {any_working}"
+    );
+    assert!(
+        !any_working.contains("stateByWorkspace"),
+        "and never from the per-workspace maxima, which blocked dominates: {any_working}"
+    );
+}

@@ -44,7 +44,11 @@ impl Sandbox {
         // silently somewhere much worse.
         let bin = runtime.join("bin");
         std::fs::create_dir_all(&bin).expect("bin dir");
-        for tool in ["sh", "sleep", "cat", "socat", "timeout", "kill", "env"] {
+        // curl is here for the daemon's release check, which stays dormant in
+        // tests unless AMON_UPDATE_URL points it at a mock — never the network.
+        for tool in [
+            "sh", "sleep", "cat", "socat", "timeout", "kill", "env", "curl",
+        ] {
             for system in ["/usr/bin", "/bin"] {
                 let source = Path::new(system).join(tool);
                 if source.exists() {

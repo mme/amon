@@ -33,6 +33,8 @@ blocked first, then finished-but-unseen, then working, never an agent at rest.
 `Super+A` opens the agent panel from wherever you are, over whatever you are
 doing: every agent, grouped by the workspace it is on, with what it is doing
 and how long it has been at it. Pick one and Enter puts you in front of it.
+`Super+W` closes the panel while it is open - amon rebinds Omarchy's
+close-window key to ask the panel first, so the window underneath survives.
 
 There is nothing to configure. `amon setup` makes it all work automatically -
 agent hooks, aliases, the bar widget, the panel, the keybindings - and
@@ -44,7 +46,7 @@ amon codex --resume
 amon status          # what's blocked, working, or idle right now?
 amon focus 3         # go to workspace 3, landing on the agent that needs you
 amon setup           # agent hooks, aliases, the desktop integration
-amon doctor          # integration, daemon, widget, and alias health
+amon doctor          # integration, daemon, widget, audio, and alias health
 ```
 
 ```
@@ -130,12 +132,18 @@ a binary that is gone.
 
 ## Command line reference
 
-**`amon setup [target] [--all] [--no-alias]`**
+**`amon setup [target] [--all] [--no-alias] [--upgrade] [--duck | --no-duck]`**
 
 Set up integrations. Without arguments, an interactive screen; with a target,
 one agent (`amon setup claude`). `--all` takes every detected agent plus the
 desktop integration without a screen. `--no-alias` skips aliasing the agent's
 name, on the non-interactive forms only; the screen always aliases.
+`--upgrade` refreshes everything already set up after a binary upgrade -
+installs nothing new and revisits no choices; the installer runs it for you.
+Ducking - music dips while a notification plays - is included by default
+where WirePlumber runs (one drop-in file amon owns; deleting it restores
+stock audio); `--no-duck` opts out, and either flag alone installs or
+removes just that piece.
 
 **`amon status [--json]`**
 
@@ -150,7 +158,7 @@ no agent wants anything.
 
 **`amon doctor`**
 
-Integration, daemon, widget, and alias health in one report.
+Integration, daemon, widget, audio, and alias health in one report.
 
 **`amon --help | --version`**
 
@@ -225,6 +233,24 @@ Font is installed, which on Omarchy is everywhere.
   file's own directory.
 - `blocked = ".../attention.mp3"` - your own sound for the needs-input case,
   same rules.
+
+Give a custom sound about 300ms of leading silence: an idle sink suspends,
+a USB device takes a moment to wake, and a sound without the pad loses its
+opening to the DAC powering up. The bundled sounds carry it already.
+
+Music and other audio dip to a quarter volume while these sounds play if
+ducking is set up (`amon setup --duck`, on by default in setup). It is one
+WirePlumber drop-in owned by amon; `amon setup --no-duck` removes it and
+restores stock audio completely. The buses it routes audio through are
+stereo - on a surround or bitstream-passthrough setup, skip ducking.
+
+**`[updates]`**
+
+- `check = true` - whether the daemon may look for newer releases: one
+  request against the GitHub release page's redirect, at most daily, with
+  nothing about your machine in it. When a newer release exists, the agent
+  panel shows a one-line footer with the command that upgrades; nothing
+  downloads or installs itself. Set to false and it never checks.
 
 ## Credits
 
