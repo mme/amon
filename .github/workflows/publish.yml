@@ -83,10 +83,19 @@ jobs:
             echo "released=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # The e2e fake agents report through sockets with socat, which the
+      # runner image does not ship - the same gap ci.yml plugs, found the
+      # same way: four tests hanging to their timeout on this job's first
+      # real run.
+      - name: Install socat
+        if: steps.gate.outputs.released == 'true'
+        run: sudo apt-get install -y --no-install-recommends socat
+
       - name: Test
-        # The only CI this repository has, run at the moment it matters most.
-        # nextest and not `cargo test`, for the reason the justfile gives:
-        # tests mutate process-global env vars and need a process per test.
+        # Run again at the moment it matters most, with the release's own
+        # toolchain pins. nextest and not `cargo test`, for the reason the
+        # justfile gives: tests mutate process-global env vars and need a
+        # process per test.
         if: steps.gate.outputs.released == 'true'
         run: |
           cargo nextest run --workspace --status-level fail
