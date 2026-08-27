@@ -952,6 +952,25 @@ fn super_ws_question_and_the_panels_answer_are_one_word() {
 }
 
 #[test]
+fn the_encoders_calls_and_the_panels_answers_are_one_word() {
+    // The daemon's Micro 2 module calls these two functions through the same
+    // `call` IPC and matches on the literal "handled" to decide between the
+    // panel and the knob's configured fallback. This test holds only the
+    // panel's half; the daemon's half lives in amon-daemon, where the crate
+    // boundary keeps it from being pinned to the same file.
+    const PANEL: &str = include_str!("../src/assets/omarchy/AgentPanel.qml");
+    assert!(
+        PANEL.contains("function encoderMove(delta)"),
+        "the panel takes the knob's detents"
+    );
+    assert!(PANEL.contains("function encoderSelect()"), "and its click");
+    assert!(
+        PANEL.contains(r#"return "handled""#),
+        "answering with the word the daemon matches on"
+    );
+}
+
+#[test]
 fn the_update_footer_offers_the_installers_own_line() {
     // The command the footer shows (and copies) is the installer's own
     // masthead line, held here to the script itself so the pane can never
