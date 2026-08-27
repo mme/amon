@@ -64,6 +64,51 @@ pub(crate) fn parse_payload(payload: &[u8]) -> Option<WhisperFrame> {
     }
 }
 
+/// The answer's exact bytes, spelled out so the input path can match without
+/// allocating. A test pins it to `encode(&WhisperFrame::Answer)`.
+const ANSWER: &[u8] = b"\x1bP+amon;1;here\x1b\\";
+
+/// What a read from the user's keyboard turned out to contain.
+pub struct InputScan {
+    /// A knock's answer appeared in this chunk.
+    pub answered: bool,
+    /// The input with the answer removed — `None` when there was none, so the
+    /// untouched buffer is forwarded as-is.
+    pub stripped: Option<Vec<u8>>,
+}
+
+/// Finds a knock's answer in a chunk of input.
+///
+/// Stateless per chunk, like [`crate::focus::scan`], and for the same reason:
+/// input is keystrokes, and holding an ESC to see what follows would add
+/// latency to the single most-pressed key in a TUI. An answer split across
+/// two reads is forwarded rather than held and therefore missed — which
+/// degrades to "never armed". The local side sends the answer in one small
+/// write, so a split is a rarity worth that trade.
+pub fn scan_input(chunk: &[u8]) -> InputScan {
+    let mut answered = false;
+    let mut stripped: Option<Vec<u8>> = None;
+    let mut copied = 0;
+    let mut index = 0;
+
+    while index + ANSWER.len() <= chunk.len() {
+        if &chunk[index..index + ANSWER.len()] == ANSWER {
+            let out = stripped.get_or_insert_with(|| Vec::with_capacity(chunk.len()));
+            out.extend_from_slice(&chunk[copied..index]);
+            answered = true;
+            index += ANSWER.len();
+            copied = index;
+        } else {
+            index += 1;
+        }
+    }
+
+    if let Some(out) = stripped.as_mut() {
+        out.extend_from_slice(&chunk[copied..]);
+    }
+    InputScan { answered, stripped }
+}
+
 /// What a chunk of the agent's output turned out to contain.
 pub struct OutputScan {
     /// The output with whisper bytes removed — `None` when the chunk was
@@ -395,6 +440,36 @@ mod tests {
         let scan = scanner.scan(&bytes);
         assert_eq!(scan.frames, vec![WhisperFrame::Knock, WhisperFrame::Bye]);
         assert_eq!(scan.forwarded.unwrap(), b"");
+    }
+
+    #[test]
+    fn the_answer_constant_is_the_encoded_answer() {
+        assert_eq!(ANSWER, encode(&WhisperFrame::Answer).as_slice());
+    }
+
+    #[test]
+    fn input_without_an_answer_is_left_alone() {
+        let scan = scan_input(b"ls -la\r");
+        assert!(!scan.answered);
+        assert!(scan.stripped.is_none());
+    }
+
+    #[test]
+    fn the_answer_is_taken_out_of_the_input() {
+        let mut bytes = b"a".to_vec();
+        bytes.extend_from_slice(&encode(&WhisperFrame::Answer));
+        bytes.extend_from_slice(b"b");
+        let scan = scan_input(&bytes);
+        assert!(scan.answered);
+        assert_eq!(scan.stripped.unwrap(), b"ab");
+    }
+
+    #[test]
+    fn an_answer_split_across_reads_is_forwarded_not_held() {
+        let encoded = encode(&WhisperFrame::Answer);
+        let first = scan_input(&encoded[..4]);
+        assert!(!first.answered);
+        assert!(first.stripped.is_none());
     }
 
     #[test]
