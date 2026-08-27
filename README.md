@@ -83,6 +83,31 @@ reports back out of the agent's input - [ADR-0007](./docs/adr/0007-wrapper-enabl
 covers what that costs and why.) If the daemon is missing, wedged, or killed,
 the agent keeps running - observability never interrupts your session.
 
+## Remote agents over SSH
+
+An agent running on another machine can be a first-class citizen of your
+desktop. Run `amon ssh build-box` — wrapping ssh like any other program —
+and inside that session run agents as usual; with amon installed on both
+ends, the remote agent takes over the session's row in your bar, your
+panel, and `amon status`, with its own name, directory, branch, and state.
+Sounds fire on your desktop when it blocks or finishes unwatched, and
+`Super+number` lands on the ssh window it lives in. Hooks report on the
+remote host exactly as they do locally.
+
+Nothing is required of the transport beyond an interactive session — plain
+OpenSSH, Tailscale SSH, and jump-host chains all work, with no port
+forwarding and no configuration. The remote wrapper sends one invisible
+~20-byte probe when a session begins, and stays byte-silent unless an amon
+on your side answers it; only then do events travel, as escape sequences
+your wrapper strips back out before your terminal sees them
+([ADR-0017](./docs/adr/0017-agent-events-ride-the-terminal-stream.md)).
+The agent's lifetime is the session's: close the connection and the agent
+ends, exactly like closing a local terminal window
+([ADR-0018](./docs/adr/0018-a-remote-agents-lifetime-is-its-ssh-session.md)).
+Two known limits: tmux on the remote end swallows the events unless its
+`allow-passthrough` is on, and mosh drops them entirely — either way the
+session simply behaves as it does today.
+
 ## Subscribing
 
 The daemon speaks newline-delimited JSON over `$XDG_RUNTIME_DIR/amon/amond.sock`.
@@ -143,6 +168,14 @@ false` (see Settings). Uninstalling is `amon remove --all`, then deleting
 Building from source instead: `just install` does the same install from this
 repository (see Building above), and `just uninstall` reverses it,
 integrations first so nothing is left pointing at a binary that is gone.
+
+The same install command works on an Apple Silicon Mac, for the remote end
+of an SSH session: the wrapper, the daemon, and the CLI — `amon status`,
+`amon setup` for agent hooks and aliases (written to `~/.zshrc` there),
+`amon doctor` — with no desktop surface, since the desktop is Omarchy's
+([ADR-0019](./docs/adr/0019-macos-is-a-headless-target.md)). A remote Mac
+agent's chimes and indicators happen on the Omarchy desktop watching it.
+Intel Macs build from source.
 
 ## Command line reference
 
