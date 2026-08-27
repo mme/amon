@@ -117,9 +117,21 @@ impl Sandbox {
     }
 
     /// Starts an agent and leaves it running.
+    ///
+    /// stdin is a terminal rather than a pipe, because amon runs an agent bare
+    /// when it has a terminal on neither side (ADR-0016) — piping all three
+    /// here would step every one of these agents aside and leave the tests
+    /// that wait for a row waiting forever. stdout and stderr stay piped: the
+    /// tests read them, and one terminal is enough to be wrapped.
+    ///
+    /// The controller end is deliberately never closed. It has to outlive the
+    /// child or the terminal hangs up underneath it, and a `Child` has nowhere
+    /// to park it; one leaked descriptor per agent is nothing in a test
+    /// process that nextest gives its own process anyway.
     pub fn spawn_agent(&self, argv: &[&str]) -> Child {
+        let (stdin, _controller) = open_terminal_stdin();
         self.command(argv)
-            .stdin(Stdio::piped())
+            .stdin(stdin)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -325,7 +337,31 @@ pub fn path_str(path: &Path) -> String {
 ///
 /// This split is the whole point: amon can see a terminal on one side and
 /// still owe the other side nothing but the agent's bytes.
-pub fn run_with_terminal_stdin(sandbox: &Sandbox, argv: &[&str]) -> Vec<u8> {
+/// Returns the whole `Output`, not just stdout: a terminal is also what makes
+/// amon wrap rather than step aside (ADR-0016), so the tests that assert how
+/// the wrapper reports an agent's exit or signal death come through here too.
+pub fn run_with_terminal_stdin(sandbox: &Sandbox, argv: &[&str]) -> std::process::Output {
+    // The child owns the terminal end as its stdin; the controller end stays
+    // open here so the pty does not hang up under it.
+    let (stdin, controller) = open_terminal_stdin();
+    let output = sandbox
+        .command(argv)
+        .stdin(stdin)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .expect("amon runs");
+    unsafe { libc::close(controller) };
+    output
+}
+
+/// A fresh pty: the terminal end packaged as a child's stdin, and the raw
+/// controller end, which the caller keeps open for as long as the child runs.
+///
+/// Public because a test that builds its own `Command` — non-UTF-8 argv, or
+/// running a shim directly — still needs amon to see a terminal, or it takes
+/// the bare path and stops testing the wrapper.
+pub fn open_terminal_stdin() -> (Stdio, std::os::fd::RawFd) {
     use std::os::fd::{FromRawFd, RawFd};
 
     let (mut controller, mut terminal): (RawFd, RawFd) = (0, 0);
@@ -339,19 +375,7 @@ pub fn run_with_terminal_stdin(sandbox: &Sandbox, argv: &[&str]) -> Vec<u8> {
         )
     };
     assert_eq!(opened, 0, "openpty");
-
-    // The child owns the terminal end as its stdin; the controller end stays
-    // open here so the pty does not hang up under it.
-    let stdin = unsafe { Stdio::from_raw_fd(terminal) };
-    let output = sandbox
-        .command(argv)
-        .stdin(stdin)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .expect("amon runs");
-    unsafe { libc::close(controller) };
-    output.stdout
+    (unsafe { Stdio::from_raw_fd(terminal) }, controller)
 }
 
 /// An agent running behind amon on a real PTY, driven the way a terminal

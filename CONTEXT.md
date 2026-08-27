@@ -9,7 +9,10 @@ agents and notifies subscribers. Detection and install machinery is lifted from
 
 **Wrapper**:
 The `amon` process that spawns one agent inside a PTY, passes its I/O through
-unmodified, and observes it.
+unmodified, and observes it. In two contexts it steps aside instead — `exec`s
+the agent and wraps nothing: inside a herdr pane, where herdr is the detection
+authority, and where it has a terminal on neither side, which means there is no
+window for a row to lead to (ADR-0016).
 _Avoid_: launcher, runner
 
 **Daemon**:

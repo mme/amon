@@ -52,6 +52,10 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
         .split_first()
         .ok_or_else(|| std::io::Error::other("no agent command given"))?;
 
+    // Two contexts where wrapping is the wrong move. The response to both is
+    // the same — step aside and let the agent be itself — so both end in
+    // `exec_bare`.
+
     // Inside a herdr pane, amon steps aside entirely. The user's alias still
     // expands `claude` to `amon claude` there, but wrapping would be the
     // worst of both worlds: herdr sees an unrecognized `amon` process and
@@ -60,27 +64,18 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     // Run bare instead: herdr detects the agent natively, and the daemon's
     // herdr module carries it onto the bar with the client's window — one
     // detection authority per context (docs/research/herdr-live-integration.md).
-    //
-    // exec, not spawn: the agent takes this process over, so signals, exit
-    // codes, and the terminal behave exactly as if amon was never typed. If
-    // the PATH lookup lands on an amon shim, the shim strips its own
-    // directory before re-invoking amon, so the bounce terminates at the
-    // real agent.
     if std::env::var_os(HERDR_ENV).is_some_and(|value| value == "1") {
-        use std::os::unix::process::CommandExt;
-        let mut bare = std::process::Command::new(program);
-        bare.args(args);
-        // An outer wrapper's routing must not follow the agent in here.
-        // herdr started from inside a wrapped agent hands `AMON_*` down to
-        // its server and every pane, and an agent that believes it is
-        // wrapped reports its state to a wrapper that is watching something
-        // else entirely — one agent's hooks driving another agent's row.
-        bare.env_remove(protocol_env::AMON_ENV);
-        bare.env_remove(protocol_env::AGENT_ID);
-        bare.env_remove(protocol_env::SOCKET_PATH);
-        // Only reached when exec itself failed — agent missing or not
-        // executable, the same failure spawning it under a PTY would hit.
-        return Err(bare.exec());
+        return Err(exec_bare(program, args));
+    }
+
+    // With a terminal on neither side there is no window to jump to, so a row
+    // would be a line you cannot act on. That is what an agent started by
+    // another agent looks like — one agent running `codex` in the background
+    // reaches amon through the same alias a person would — and equally what a
+    // cron job, a CI step, or a systemd unit looks like. All of them run, none
+    // of them are tracked (ADR-0016).
+    if !tty::attached_to_terminal() {
+        return Err(exec_bare(program, args));
     }
 
     let agent_id = new_agent_id();
@@ -471,6 +466,32 @@ fn wait_for_agent(child: &mut Box<dyn portable_pty::Child + Send + Sync>) -> Age
         Ok(status) => AgentExit::Code(status.exit_code() as i32),
         Err(_) => AgentExit::Code(1),
     }
+}
+
+/// Hands this process over to the agent, wrapping nothing.
+///
+/// `exec`, not spawn: the agent takes this process over, so signals, exit
+/// codes, and the terminal behave exactly as if amon was never typed. If the
+/// PATH lookup lands on an amon shim, the shim strips its own directory before
+/// re-invoking amon, so the bounce terminates at the real agent.
+///
+/// Returns only when `exec` itself failed — agent missing or not executable,
+/// the same failure spawning it under a PTY would hit.
+fn exec_bare(program: &std::ffi::OsStr, args: &[std::ffi::OsString]) -> std::io::Error {
+    use std::os::unix::process::CommandExt;
+    let mut bare = std::process::Command::new(program);
+    bare.args(args);
+    // An outer wrapper's routing must not follow the agent in, and both
+    // callers can be reached from inside a wrapped agent: herdr started from
+    // one hands `AMON_*` down to its server and every pane, and an agent
+    // started by another agent inherits them directly. Left in place, an agent
+    // that believes it is wrapped reports its state to a wrapper that is
+    // watching something else entirely — one agent's hooks driving another
+    // agent's row.
+    bare.env_remove(protocol_env::AMON_ENV);
+    bare.env_remove(protocol_env::AGENT_ID);
+    bare.env_remove(protocol_env::SOCKET_PATH);
+    bare.exec()
 }
 
 /// The agent's display label: the program's file name, lossily decoded. Only
