@@ -41,12 +41,47 @@ pub enum AgentExit {
     Signal(i32),
 }
 
+/// Set by herdr in every pane process it manages. Its contract, not ours —
+/// the exact name and value herdr documents for integrations.
+const HERDR_ENV: &str = "HERDR_ENV";
+
 /// Runs the agent to completion and returns how it ended.
 pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     let (program, args) = launch
         .argv
         .split_first()
         .ok_or_else(|| std::io::Error::other("no agent command given"))?;
+
+    // Inside a herdr pane, amon steps aside entirely. The user's alias still
+    // expands `claude` to `amon claude` there, but wrapping would be the
+    // worst of both worlds: herdr sees an unrecognized `amon` process and
+    // shows no agent, while the wrapper's window walk climbs pane shell →
+    // herdr server → init and registers a row with nowhere to jump to.
+    // Run bare instead: herdr detects the agent natively, and the daemon's
+    // herdr module carries it onto the bar with the client's window — one
+    // detection authority per context (docs/research/herdr-live-integration.md).
+    //
+    // exec, not spawn: the agent takes this process over, so signals, exit
+    // codes, and the terminal behave exactly as if amon was never typed. If
+    // the PATH lookup lands on an amon shim, the shim strips its own
+    // directory before re-invoking amon, so the bounce terminates at the
+    // real agent.
+    if std::env::var_os(HERDR_ENV).is_some_and(|value| value == "1") {
+        use std::os::unix::process::CommandExt;
+        let mut bare = std::process::Command::new(program);
+        bare.args(args);
+        // An outer wrapper's routing must not follow the agent in here.
+        // herdr started from inside a wrapped agent hands `AMON_*` down to
+        // its server and every pane, and an agent that believes it is
+        // wrapped reports its state to a wrapper that is watching something
+        // else entirely — one agent's hooks driving another agent's row.
+        bare.env_remove(protocol_env::AMON_ENV);
+        bare.env_remove(protocol_env::AGENT_ID);
+        bare.env_remove(protocol_env::SOCKET_PATH);
+        // Only reached when exec itself failed — agent missing or not
+        // executable, the same failure spawning it under a PTY would hit.
+        return Err(bare.exec());
+    }
 
     let agent_id = new_agent_id();
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
