@@ -48,3 +48,29 @@ jobs:
         run: |
           cargo nextest run --workspace --status-level fail
           cargo test --workspace --doc
+
+  # The same suite on Apple Silicon, where the release ships a second binary.
+  # Format and lint stay on the Linux job — style has no platform — but the
+  # build and every test run here too, so a Mac-only breakage is turned away
+  # at the PR instead of surfacing at release time.
+  test-macos:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+
+      # The e2e fake agents report through sockets with socat, absent on the
+      # macOS runner image the same way it is absent on ubuntu's — and pipe
+      # through `timeout`, which macOS does not ship at all; coreutils
+      # provides it as gtimeout, and the test harness knows to look.
+      - name: Install socat and coreutils
+        run: brew install socat coreutils
+
+      - name: Test
+        # --no-fail-fast here, unlike the Linux job: this platform's failures
+        # are rarer and best seen all at once rather than one per run.
+        run: |
+          cargo nextest run --workspace --status-level fail --no-fail-fast
+          cargo test --workspace --doc

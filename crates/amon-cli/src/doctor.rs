@@ -129,20 +129,28 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!("aliases:");
-    // What bash will actually read, symlinked rc included — a diagnostic
+    // What the shell will actually read, symlinked rc included — a diagnostic
     // reporting "none" while aliases are active would point the wrong way.
+    let rc = alias::shell_config();
+    // The row's label is the rc file itself — bashrc on Linux, zshrc on a
+    // Mac — so the report names the file it audited.
+    let label = rc
+        .as_deref()
+        .and_then(|path| path.file_name())
+        .map(|name| name.to_string_lossy().trim_start_matches('.').to_string())
+        .unwrap_or_else(|| "shell rc".into());
     let aliases = alias::present();
     if aliases.is_empty() {
-        let file = alias::shell_config()
+        let file = rc
             .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "~/.bashrc".into());
-        print_line("bashrc", &format!("none in {file}"), "");
+            .unwrap_or_else(|| "the shell config".into());
+        print_line(&label, &format!("none in {file}"), "");
     } else {
         for line in aliases {
-            print_line("bashrc", &line, "");
+            print_line(&label, &line, "");
         }
         if let Some(note) = alias::stranded() {
-            print_line("bashrc", &note, "");
+            print_line(&label, &note, "");
         }
     }
 

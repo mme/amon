@@ -17,6 +17,8 @@ use std::time::Duration;
 
 use amon_protocol::{AgentEntry, AgentPatch, Hello, Method, Request, Role, PROTOCOL_VERSION};
 
+use crate::whisper;
+
 const FIRST_RETRY: Duration = Duration::from_millis(100);
 const MAX_RETRY: Duration = Duration::from_secs(30);
 /// How often a connected link proves itself.
@@ -48,6 +50,50 @@ const IO_TIMEOUT: Duration = Duration::from_secs(2);
 pub enum Message {
     Register(Box<AgentEntry>),
     Update(Box<AgentPatch>),
+    /// A knock's answer arrived on the input stream: whispering may begin.
+    WhisperArmed,
+}
+
+/// The whisper tee: the link's own traffic, mirrored into the outbox once a
+/// listener has proven itself. Before that — and always, when the wrapper
+/// was built without an outbox — every call is silence.
+///
+/// The tee sits beside the daemon connection, not behind it: a wrapper whose
+/// own daemon is missing still whispers, because the listener that matters is
+/// on the far side of the terminal stream.
+struct Tee {
+    outbox: Option<whisper::Outbox>,
+}
+
+impl Tee {
+    fn event(&self, method: Method) {
+        if let Some(outbox) = self.outbox.as_ref().filter(|outbox| outbox.armed()) {
+            outbox.enqueue(whisper::encode(&whisper::WhisperFrame::Event(Box::new(
+                method,
+            ))));
+        }
+    }
+
+    /// The answer arrived. Everything said before it is gone, so the held
+    /// entry goes out first, as a snapshot the far side can anchor to.
+    fn armed(&self, entry: Option<&AgentEntry>) {
+        let Some(outbox) = self.outbox.as_ref() else {
+            return;
+        };
+        outbox.arm();
+        if let Some(entry) = entry {
+            self.event(Method::AgentRegister(entry.clone()));
+        }
+    }
+
+    /// A quiet wake: the whispered heartbeat, mirroring the link's own
+    /// re-register-as-heartbeat. Wakes are at most 30 seconds apart, inside
+    /// the far side's revert window.
+    fn heartbeat(&self, entry: Option<&AgentEntry>) {
+        if let Some(entry) = entry {
+            self.event(Method::AgentRegister(entry.clone()));
+        }
+    }
 }
 
 /// Handle held by the rest of the wrapper. Sending never blocks and never
@@ -59,10 +105,24 @@ pub struct DaemonLink {
 }
 
 impl DaemonLink {
-    pub fn spawn(version: String) -> Self {
+    /// `whisper`: where to mirror this link's traffic for a listener on the
+    /// far side of the terminal stream — `None` outside an ssh session.
+    pub fn spawn(version: String, whisper: Option<whisper::Outbox>) -> Self {
         let (tx, rx) = mpsc::channel();
-        std::thread::spawn(move || run(rx, version));
+        std::thread::spawn(move || run(rx, version, Tee { outbox: whisper }));
         Self { tx }
+    }
+
+    pub fn whisper_armed(&self) {
+        let _ = self.tx.send(Message::WhisperArmed);
+    }
+
+    /// A link whose far end is the test: no thread, no socket, every message
+    /// readable from the returned receiver.
+    #[cfg(test)]
+    pub(crate) fn test() -> (Self, mpsc::Receiver<Message>) {
+        let (tx, rx) = mpsc::channel();
+        (Self { tx }, rx)
     }
 
     pub fn register(&self, entry: AgentEntry) {
@@ -74,7 +134,7 @@ impl DaemonLink {
     }
 }
 
-fn run(rx: mpsc::Receiver<Message>, version: String) {
+fn run(rx: mpsc::Receiver<Message>, version: String, tee: Tee) {
     let mut entry: Option<AgentEntry> = None;
     let mut connection: Option<Connection> = None;
     let mut retry = FIRST_RETRY;
@@ -90,6 +150,7 @@ fn run(rx: mpsc::Receiver<Message>, version: String) {
         match rx.recv_timeout(wait) {
             Ok(Message::Register(new_entry)) => {
                 entry = Some(*new_entry);
+                tee.heartbeat(entry.as_ref());
                 if let Some(link) = connection.as_mut() {
                     if let Some(entry) = entry.as_ref() {
                         if link.send(Method::AgentRegister(entry.clone())).is_err() {
@@ -104,6 +165,7 @@ fn run(rx: mpsc::Receiver<Message>, version: String) {
                     .map(|entry| patch.apply(entry))
                     .unwrap_or(false);
                 if changed {
+                    tee.event(Method::AgentUpdate((*patch).clone()));
                     if let Some(link) = connection.as_mut() {
                         if link.send(Method::AgentUpdate(*patch)).is_err() {
                             connection = None;
@@ -111,7 +173,11 @@ fn run(rx: mpsc::Receiver<Message>, version: String) {
                     }
                 }
             }
+            Ok(Message::WhisperArmed) => {
+                tee.armed(entry.as_ref());
+            }
             Err(RecvTimeoutError::Timeout) => {
+                tee.heartbeat(entry.as_ref());
                 // Nothing to say. While connected that is the heartbeat: send
                 // the entry we hold, which either goes through — proving the
                 // daemon is there and restoring us if it had forgotten — or
@@ -196,5 +262,99 @@ impl Connection {
             ));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use amon_protocol::AgentState;
+
+    fn entry() -> AgentEntry {
+        AgentEntry {
+            id: "a1".into(),
+            agent: "claude".into(),
+            state: AgentState::Working,
+            state_since: 1,
+            cwd: "/work".into(),
+            pid: 42,
+            args: vec!["claude".into()],
+            hostname: "far".into(),
+            started_at: 1,
+            title: None,
+            agent_session_id: None,
+            agent_session_path: None,
+            window: None,
+            workspace: None,
+            branch: None,
+            focused: None,
+            seen: None,
+        }
+    }
+
+    #[test]
+    fn nothing_is_whispered_before_the_answer() {
+        let outbox = whisper::Outbox::default();
+        let tee = Tee {
+            outbox: Some(outbox.clone()),
+        };
+        let held = entry();
+        tee.heartbeat(Some(&held));
+        tee.event(Method::AgentUpdate(AgentPatch::new("a1")));
+        assert!(outbox.drain().is_empty());
+    }
+
+    #[test]
+    fn arming_whispers_the_held_entry() {
+        let outbox = whisper::Outbox::default();
+        let tee = Tee {
+            outbox: Some(outbox.clone()),
+        };
+        tee.armed(Some(&entry()));
+        let queued = outbox.drain();
+        assert_eq!(queued.len(), 1, "the snapshot register, nothing else");
+        let expected = whisper::encode(&whisper::WhisperFrame::Event(Box::new(
+            Method::AgentRegister(entry()),
+        )));
+        assert_eq!(queued[0], expected);
+    }
+
+    #[test]
+    fn an_armed_tee_whispers_updates_and_heartbeats() {
+        let outbox = whisper::Outbox::default();
+        let tee = Tee {
+            outbox: Some(outbox.clone()),
+        };
+        tee.armed(None);
+        tee.event(Method::AgentUpdate(AgentPatch::new("a1")));
+        tee.heartbeat(Some(&entry()));
+        assert_eq!(outbox.drain().len(), 2);
+    }
+
+    #[test]
+    fn a_wrapper_without_an_outbox_stays_silent() {
+        let tee = Tee { outbox: None };
+        tee.armed(Some(&entry()));
+        tee.heartbeat(Some(&entry()));
+        // Nothing to assert against — the absence of a panic and of any
+        // queue is the behavior.
+    }
+
+    #[test]
+    fn the_outbox_hands_back_what_was_queued_in_order() {
+        let outbox = whisper::Outbox::default();
+        outbox.enqueue(b"one".to_vec());
+        outbox.enqueue(b"two".to_vec());
+        assert_eq!(outbox.drain(), vec![b"one".to_vec(), b"two".to_vec()]);
+        assert!(outbox.drain().is_empty(), "drained means gone");
+    }
+
+    #[test]
+    fn arming_is_visible_across_clones() {
+        let outbox = whisper::Outbox::default();
+        let clone = outbox.clone();
+        assert!(!clone.armed());
+        outbox.arm();
+        assert!(clone.armed());
     }
 }

@@ -27,12 +27,41 @@ fn the_tarball_is_published_under_the_name_the_installer_fetches() {
         "publish.yml builds the tarball under the agreed name"
     );
     assert!(
-        INSTALLER.contains("amon-$TAG-x86_64-linux.tar.gz"),
-        "install.sh downloads the tarball under the agreed name"
+        INSTALLER.contains("x86_64-linux"),
+        "install.sh selects the linux tarball under the agreed name"
+    );
+    assert!(
+        INSTALLER.contains("amon-$TAG-$SUFFIX.tar.gz"),
+        "install.sh downloads the tarball it selected"
     );
     assert!(
         INSTALLER.contains("/releases/download/$TAG/"),
         "and fetches it from the GitHub Release the publish created"
+    );
+}
+
+/// The Apple Silicon tarball crosses the same gap under its own name.
+///
+/// A second platform is a second chance for the silent failure the test
+/// above exists for, so the darwin name is held to the same contract: what
+/// `publish-macos` uploads is what install.sh selects on `Darwin/arm64`.
+#[test]
+fn the_darwin_tarball_is_published_under_the_name_the_installer_fetches() {
+    assert!(
+        PUBLISH.contains("amon-v${VERSION}-aarch64-darwin.tar.gz"),
+        "publish.yml builds the darwin tarball under the agreed name"
+    );
+    assert!(
+        PUBLISH.contains("gh release upload"),
+        "and attaches it to the release the linux job created"
+    );
+    assert!(
+        INSTALLER.contains("aarch64-darwin"),
+        "install.sh selects the darwin tarball under the agreed name"
+    );
+    assert!(
+        INSTALLER.contains("Darwin/arm64"),
+        "and only on Apple Silicon — an Intel Mac is turned away"
     );
 }
 
@@ -54,6 +83,10 @@ fn the_installer_verifies_the_checksum_the_publish_writes() {
     assert!(
         INSTALLER.contains("sha256sum -c"),
         "and refuses on mismatch"
+    );
+    assert!(
+        INSTALLER.contains("shasum -a 256 -c"),
+        "with the tool a Mac actually ships, reading the same format"
     );
 }
 

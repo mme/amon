@@ -46,14 +46,29 @@ impl Sandbox {
         std::fs::create_dir_all(&bin).expect("bin dir");
         // curl is here for the daemon's release check, which stays dormant in
         // tests unless AMON_UPDATE_URL points it at a mock — never the network.
-        for tool in [
-            "sh", "sleep", "cat", "socat", "timeout", "kill", "env", "curl",
-        ] {
-            for system in ["/usr/bin", "/bin"] {
-                let source = Path::new(system).join(tool);
-                if source.exists() {
-                    let _ = std::os::unix::fs::symlink(&source, bin.join(tool));
-                    break;
+        //
+        // A tool may answer to a different name per platform — brew's
+        // coreutils installs GNU timeout as `gtimeout` — and brew itself
+        // lives outside the system directories, so both the search path and
+        // the source name vary. The symlink always carries the portable name.
+        let tools: &[(&str, &[&str])] = &[
+            ("sh", &["sh"]),
+            ("sleep", &["sleep"]),
+            ("cat", &["cat"]),
+            ("socat", &["socat"]),
+            ("timeout", &["timeout", "gtimeout"]),
+            ("kill", &["kill"]),
+            ("env", &["env"]),
+            ("curl", &["curl"]),
+        ];
+        for (name, sources) in tools {
+            'linked: for system in ["/usr/bin", "/bin", "/opt/homebrew/bin", "/usr/local/bin"] {
+                for source_name in *sources {
+                    let source = Path::new(system).join(source_name);
+                    if source.exists() {
+                        let _ = std::os::unix::fs::symlink(&source, bin.join(name));
+                        break 'linked;
+                    }
                 }
             }
         }
@@ -320,12 +335,14 @@ pub fn run_with_terminal_stdin(sandbox: &Sandbox, argv: &[&str]) -> Vec<u8> {
 
     let (mut controller, mut terminal): (RawFd, RawFd) = (0, 0);
     let opened = unsafe {
+        // `null_mut` for the termios and winsize slots: macOS declares them
+        // `*mut`, Linux `*const`, and only `*mut` coerces to both.
         libc::openpty(
             &mut controller,
             &mut terminal,
             std::ptr::null_mut(),
-            std::ptr::null(),
-            std::ptr::null(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
         )
     };
     assert_eq!(opened, 0, "openpty");
