@@ -1,0 +1,11 @@
+[package]
+name = "amon-hypr"
+description = "Hyprland window resolution and following, shared by the wrapper and the daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde_json = { workspace = true }
