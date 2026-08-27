@@ -40,6 +40,9 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("daemon:");
     let socket = amon_protocol::paths::daemon_socket();
+    // Asked once, read twice: the daemon's own settings say both whether
+    // the config file took effect and whether it is lighting the desk.
+    let daemon_config = probe_config();
     match probe_daemon(version) {
         DaemonProbe::Running(running) => {
             print_line(
@@ -52,7 +55,7 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
             // configuration (ADR-0012), and this is the report the docs
             // promise. Only the error's first line — TOML errors span
             // several, and the row is a status, not a stack trace.
-            match probe_config() {
+            match daemon_config.as_ref().map(|result| &result.error) {
                 Some(Some(error)) => print_line(
                     "config",
                     &format!(
@@ -131,20 +134,36 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("devices:");
     match amon_daemon::devices::discover() {
         Some(found) => {
-            if udev::accessible(&found.node) {
-                print_line(
-                    "micro2",
-                    "connected (the daemon lights it)",
-                    &found.node.display().to_string(),
-                );
-            } else {
+            // "the daemon lights it" is a claim about the daemon, so it is
+            // only made when one answered and its settings agree. A device
+            // switched off in config earns neither that claim nor the
+            // /dev/uinput warning, for actions it will never run.
+            let enabled = daemon_config
+                .as_ref()
+                .map(|result| result.config.devices.micro2.enabled);
+            let node = found.node.display().to_string();
+            if !udev::accessible(&found.node) {
                 print_line(
                     "micro2",
                     "connected, not accessible (amon setup adds the udev rule)",
-                    &found.node.display().to_string(),
+                    &node,
                 );
+            } else {
+                match enabled {
+                    Some(true) => print_line("micro2", "connected (the daemon lights it)", &node),
+                    Some(false) => print_line(
+                        "micro2",
+                        "connected, left alone ([devices.micro2] enabled = false)",
+                        &node,
+                    ),
+                    None => print_line(
+                        "micro2",
+                        "connected (a daemon will light it once running)",
+                        &node,
+                    ),
+                }
             }
-            if !udev::accessible(std::path::Path::new("/dev/uinput")) {
+            if enabled != Some(false) && !udev::accessible(std::path::Path::new("/dev/uinput")) {
                 print_line(
                     "input",
                     "no /dev/uinput access — key and scroll actions stay inert (amon setup)",
@@ -218,11 +237,11 @@ enum DaemonProbe {
     NotRunning,
 }
 
-/// Asks the running daemon for its configuration state: `Some(Some(error))`
-/// when the file on disk is not what the daemon runs on, `Some(None)` when
-/// all is well, `None` when the daemon could not answer (its own row already
-/// says so) — or is too old to know the field, which deserializes as absent.
-fn probe_config() -> Option<Option<String>> {
+/// Asks the running daemon what it is configured with: the settings it is
+/// actually running on, and why the file on disk is not them when it is
+/// not. `None` when the daemon could not answer (its own row already says
+/// so) — or is too old to know the method, which deserializes as absent.
+fn probe_config() -> Option<amon_protocol::ConfigResult> {
     let stream = UnixStream::connect(amon_protocol::paths::daemon_socket()).ok()?;
     let timeout = Some(std::time::Duration::from_secs(2));
     let _ = stream.set_read_timeout(timeout);
@@ -233,8 +252,7 @@ fn probe_config() -> Option<Option<String>> {
     let mut line = String::new();
     BufReader::new(&stream).read_line(&mut line).ok()?;
     let response: Response = serde_json::from_str(&line).ok()?;
-    let result: amon_protocol::ConfigResult = serde_json::from_value(response.result?).ok()?;
-    Some(result.error)
+    serde_json::from_value(response.result?).ok()
 }
 
 /// Asks a *running* daemon for its version. Deliberately not connect-or-spawn:
