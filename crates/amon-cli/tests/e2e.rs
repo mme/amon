@@ -2603,6 +2603,11 @@ fn a_quiet_agent_comes_back_after_the_daemon_dies() {
 ///
 /// Unreachability is simulated by unlinking the socket, which is the same
 /// position Drop is in when it cannot connect.
+///
+/// Linux only: both this test's pid lookup and the sweep it verifies read
+/// `/proc`, which macOS does not have — there, an unreachable daemon can
+/// outlive its sandbox, which on an ephemeral CI runner costs nothing.
+#[cfg(target_os = "linux")]
 #[test]
 fn a_sandbox_leaves_no_daemon_running() {
     let socket;
@@ -2630,6 +2635,7 @@ fn a_sandbox_leaves_no_daemon_running() {
 }
 
 /// The pid of the daemon serving `runtime`, if one is running.
+#[cfg(target_os = "linux")]
 fn daemon_pid_for(runtime: &std::path::Path) -> Option<i32> {
     use std::os::unix::ffi::OsStrExt;
     let wanted = runtime.as_os_str().as_bytes();
