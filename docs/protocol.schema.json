@@ -283,6 +283,15 @@
             "glyphs": {}
           }
         },
+        "devices": {
+          "$ref": "#/$defs/DevicesConfig",
+          "default": {
+            "micro2": {
+              "colors": {},
+              "enabled": true
+            }
+          }
+        },
         "sound": {
           "$ref": "#/$defs/SoundConfig",
           "default": {
@@ -293,6 +302,49 @@
           "$ref": "#/$defs/UpdatesConfig",
           "default": {
             "check": true
+          }
+        }
+      },
+      "type": "object"
+    },
+    "DeviceColors": {
+      "description": "Which color stands for each agent state on the device.",
+      "properties": {
+        "blocked": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "done": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "idle": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "working": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "DevicesConfig": {
+      "description": "Physical status devices on the desk (ADR-0016). Today that is the Work\nLouder Creator Micro 2; the shape leaves room for its siblings.",
+      "properties": {
+        "micro2": {
+          "$ref": "#/$defs/Micro2Config",
+          "default": {
+            "colors": {},
+            "enabled": true
           }
         }
       },
@@ -529,6 +581,44 @@
         "socket",
         "pane"
       ],
+      "type": "object"
+    },
+    "Micro2Config": {
+      "description": "The Creator Micro 2: six agent keys lit by agent state, a ring showing\nthe fleet's most urgent state, and every other control mapped to an\naction. Everything here is optional; absent means the tuned default.",
+      "properties": {
+        "brightness": {
+          "description": "0.0–1.0, applied to keys and ring alike.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "colors": {
+          "$ref": "#/$defs/DeviceColors",
+          "default": {},
+          "description": "Per-state key colors, `#RRGGBB`. Defaults are the Codex palette."
+        },
+        "enabled": {
+          "default": true,
+          "description": "On unless turned off. With no device connected this configures\nnothing; the daemon only acts when one appears.",
+          "type": "boolean"
+        },
+        "keys": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Macro-key overrides: keys are the seven macro keys in reading\norder (`macro_1`..`macro_4` upper row, `macro_5`..`macro_7` lower),\nvalues are actions (`none`, `panel`, `workspace:N`, `key:<spec>`,\n`exec:<command>`). The agent keys, encoder, and joystick have fixed\nroles and are not remappable.",
+          "type": "object"
+        },
+        "ring": {
+          "description": "Whether the ambient ring shows the fleet's most urgent state.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
       "type": "object"
     },
     "ReportSession": {

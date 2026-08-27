@@ -141,7 +141,7 @@ impl From<MethodError> for Error {
 
 /// What a client reads from the daemon: either an answer to something it asked,
 /// or an event it subscribed to.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ServerFrame {
     Response(Response),
     /// Boxed because an event carries a whole [`crate::AgentEntry`] and a
