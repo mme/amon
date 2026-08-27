@@ -95,7 +95,7 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
 
     let agent_label = agent_label(program);
     let agent = amon_detect::parse_agent_label(&agent_label);
-    link.register(AgentEntry {
+    let entry = AgentEntry {
         id: agent_id.clone(),
         agent: agent_label,
         state: AgentState::Unknown,
@@ -119,7 +119,8 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
         branch: branch::read(&cwd),
         focused: None,
         seen: None,
-    });
+    };
+    link.register(entry.clone());
 
     // Kept before `Setup` takes ownership of `cwd`; the watcher outlives this
     // scope and needs its own copy.
@@ -132,6 +133,7 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
             cwd,
             cols,
             rows,
+            entry,
         },
         link,
         inbox,

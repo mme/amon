@@ -65,6 +65,14 @@ impl DaemonLink {
         Self { tx }
     }
 
+    /// A link whose far end is the test: no thread, no socket, every message
+    /// readable from the returned receiver.
+    #[cfg(test)]
+    pub(crate) fn test() -> (Self, mpsc::Receiver<Message>) {
+        let (tx, rx) = mpsc::channel();
+        (Self { tx }, rx)
+    }
+
     pub fn register(&self, entry: AgentEntry) {
         let _ = self.tx.send(Message::Register(Box::new(entry)));
     }
