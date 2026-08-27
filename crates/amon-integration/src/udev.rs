@@ -18,13 +18,13 @@ pub const RULES_PATH: &str = "/etc/udev/rules.d/70-amon-devices.rules";
 /// uinput node amon's virtual keyboard and scroll wheel need. Product ids,
 /// not the whole vendor: `303a` is Espressif's shared VID, and a vendor
 /// wildcard would hand raw HID access to every ESP32 gadget on the desk.
-/// Tags, not mode changes — access follows the login seat the way the rest
-/// of the desktop does.
+/// One line per face that exists — `8297` is the wired product and `8298`
+/// the Bluetooth one, so a wired `8298` or a Bluetooth `8297` would be a
+/// rule matching nothing. Tags, not mode changes — access follows the
+/// login seat the way the rest of the desktop does.
 pub const RULES: &str = r#"# amon: desk devices (Work Louder Creator Micro 2) and the virtual input device.
 # Installed by `amon setup`; remove with: sudo rm /etc/udev/rules.d/70-amon-devices.rules
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="8297", TAG+="uaccess"
-KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="8298", TAG+="uaccess"
-KERNEL=="hidraw*", SUBSYSTEM=="hidraw", KERNELS=="0005:303A:8297.*", TAG+="uaccess"
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", KERNELS=="0005:303A:8298.*", TAG+="uaccess"
 KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"
 "#;
