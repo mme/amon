@@ -11,7 +11,7 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use amon_protocol::{env as protocol_env, AgentEntry, AgentState};
+use amon_protocol::{env as protocol_env, AgentEntry, AgentState, Method};
 
 mod branch;
 mod daemon_link;
@@ -23,7 +23,7 @@ mod tty;
 #[allow(dead_code)]
 mod whisper;
 
-pub use observer::Signal;
+pub use observer::{RemoteReport, Signal};
 
 /// How the agent was invoked.
 pub struct Launch {
@@ -282,11 +282,46 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
                 };
                 // The user's terminal comes first, always. Observation is a
                 // copy taken afterwards; it can neither delay nor alter this.
-                if screen.agent_output(&buffer[..read]).is_err() {
+                let Ok(handled) = screen.agent_output(&buffer[..read]) else {
                     break;
-                }
+                };
                 drop(screen);
-                let _ = signals.send(Signal::Output(buffer[..read].to_vec()));
+                let observed = handled.observed.unwrap_or_else(|| buffer[..read].to_vec());
+                let _ = signals.send(Signal::Output(observed));
+
+                for frame in handled.frames {
+                    match frame {
+                        // A wrapper on the far side asked whether an amon is
+                        // listening. It is; the answer goes down the input
+                        // stream, where that wrapper strips it back out.
+                        whisper::WhisperFrame::Knock => {
+                            if let Ok(mut writer) = pty_writer.lock() {
+                                let answer = whisper::encode(&whisper::WhisperFrame::Answer);
+                                let _ = writer.write_all(&answer);
+                                let _ = writer.flush();
+                            }
+                        }
+                        whisper::WhisperFrame::Event(method) => match *method {
+                            Method::AgentRegister(entry) => {
+                                let _ = signals
+                                    .send(Signal::Remote(RemoteReport::Register(Box::new(entry))));
+                            }
+                            Method::AgentUpdate(patch) => {
+                                let _ = signals
+                                    .send(Signal::Remote(RemoteReport::Update(Box::new(patch))));
+                            }
+                            // Whispers carry registry traffic; anything else
+                            // is a newer amon's business, not ours.
+                            _ => {}
+                        },
+                        whisper::WhisperFrame::Bye => {
+                            let _ = signals.send(Signal::Remote(RemoteReport::Bye));
+                        }
+                        // An answer belongs on the input stream; one in the
+                        // output is noise from something echoing.
+                        whisper::WhisperFrame::Answer => {}
+                    }
+                }
             }
         }
     }
@@ -322,6 +357,18 @@ struct Screen {
     /// Whether focus reporting is amon's business at all: piped output gets
     /// none of it, and neither does a terminal amon has already restored.
     tracking: bool,
+    /// Whispered frames are taken out of the stream here, before the
+    /// terminal, the mode scanner, or the shadow sees a byte of them.
+    whispers: whisper::OutputScanner,
+}
+
+/// What one chunk of agent output amounted to, after the whisper scan.
+struct OutputHandled {
+    /// The bytes the terminal received — `None` when the chunk went through
+    /// untouched, so the caller can forward its own buffer without a copy.
+    observed: Option<Vec<u8>>,
+    /// Whisper frames completed by this chunk, in order.
+    frames: Vec<whisper::WhisperFrame>,
 }
 
 impl Screen {
@@ -331,6 +378,7 @@ impl Screen {
             scanner: focus::ModeScanner::default(),
             focus,
             tracking: on_a_terminal,
+            whispers: whisper::OutputScanner::default(),
         }
     }
 
@@ -345,9 +393,13 @@ impl Screen {
     /// The scan happens first so that the flags governing the agent's input
     /// are already correct by the time the terminal could act on the bytes —
     /// it costs a pass over the chunk, never a syscall.
-    fn agent_output(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+    fn agent_output(&mut self, bytes: &[u8]) -> std::io::Result<OutputHandled> {
+        // Whispers come out first: the terminal, the mode scanner, and the
+        // shadow all see the same stream, and none of them sees a whisper.
+        let scan = self.whispers.scan(bytes);
+        let visible: &[u8] = scan.forwarded.as_deref().unwrap_or(bytes);
         if self.tracking {
-            let change = self.scanner.feed(bytes);
+            let change = self.scanner.feed(visible);
             self.focus
                 .agent_wants
                 .store(change.agent_wants, Ordering::Relaxed);
@@ -360,8 +412,12 @@ impl Screen {
                 self.focus.reassert.store(true, Ordering::Relaxed);
             }
         }
-        self.stdout.write_all(bytes)?;
-        self.stdout.flush()
+        self.stdout.write_all(visible)?;
+        self.stdout.flush()?;
+        Ok(OutputHandled {
+            observed: scan.forwarded,
+            frames: scan.frames,
+        })
     }
 
     /// Puts focus reporting back if the agent turned it off — but only between

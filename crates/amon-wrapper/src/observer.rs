@@ -15,7 +15,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 use amon_detect::{detect_agent_with_osc, Agent};
-use amon_protocol::{AgentPatch, AgentState};
+use amon_protocol::{AgentEntry, AgentPatch, AgentState};
 use amon_term::{ShadowTerminal, TerminalId, TerminalState};
 
 use crate::daemon_link::DaemonLink;
@@ -62,7 +62,17 @@ pub enum Signal {
     /// The branch the agent's directory is on changed, or first became known.
     /// `None` means it is on no branch: outside a repository, or detached.
     Branch(Option<String>),
+    /// A whispered report from a wrapper on the far side of this session's
+    /// stream: a remote agent claiming this row.
+    Remote(RemoteReport),
     AgentExited,
+}
+
+/// Registry traffic that arrived as a whisper, plus the goodbye.
+pub enum RemoteReport {
+    Register(Box<AgentEntry>),
+    Update(Box<AgentPatch>),
+    Bye,
 }
 
 pub struct Observer {
@@ -276,6 +286,7 @@ impl Observer {
                     self.publish();
                 }
             }
+            Signal::Remote(_) => {}
             Signal::AgentExited => {
                 self.dirty = true;
             }
