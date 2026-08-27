@@ -467,11 +467,22 @@ pub fn act(
     }
 }
 
+/// Retries the virtual device when it is missing. `amon setup` can grant
+/// /dev/uinput access while a device is already attached, and a key that
+/// stayed dead until the next replug would read as setup having failed. A
+/// denied open fails immediately, so the retry costs a keypress nothing.
+fn reopen_synth(synth: &mut Option<VirtualInput>) {
+    if synth.is_none() {
+        *synth = VirtualInput::open().ok();
+    }
+}
+
 fn run_action(action: &Action, scroll_direction: Option<i32>, synth: &mut Option<VirtualInput>) {
     match action {
         Action::None => {}
         Action::Panel => actions::toggle_panel(),
         Action::Scroll => {
+            reopen_synth(synth);
             if let (Some(direction), Some(device)) = (scroll_direction, synth.as_mut()) {
                 let _ = device.scroll(direction);
             }
@@ -480,6 +491,7 @@ fn run_action(action: &Action, scroll_direction: Option<i32>, synth: &mut Option
             actions::hyprctl(&format!("hl.dsp.focus({{ workspace = \"{n}\" }})"))
         }
         Action::Key(chord) => {
+            reopen_synth(synth);
             if let Some(device) = synth.as_mut() {
                 let _ = device.tap(chord);
             }
