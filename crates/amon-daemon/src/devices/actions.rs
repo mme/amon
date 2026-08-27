@@ -272,6 +272,23 @@ pub fn hyprctl(dispatch: &str) {
     );
 }
 
+/// Runs amon's own CLI. Reaching an agent is amon's sequence to own — the
+/// window, and the pane inside it when the agent lives in a herdr session —
+/// so the device asks for it by name rather than reimplementing it against
+/// the compositor. `current_exe` first: a daemon started from a build
+/// directory must not shell out to whatever `amon` happens to be on PATH.
+pub fn amon(arguments: &[&str]) {
+    let binary = std::env::current_exe().unwrap_or_else(|_| "amon".into());
+    reap(
+        Command::new(binary)
+            .args(arguments)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn(),
+    );
+}
+
 /// One window rectangle, for the joystick's edge guard.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rect {
