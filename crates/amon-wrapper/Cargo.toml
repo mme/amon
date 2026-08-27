@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 amon-detect = { workspace = true }
+amon-hypr = { workspace = true }
 amon-protocol = { workspace = true }
 amon-term = { workspace = true }
 libc = { workspace = true }
