@@ -109,6 +109,44 @@ pub fn scan_input(chunk: &[u8]) -> InputScan {
     InputScan { answered, stripped }
 }
 
+/// Whispers waiting to ride the stream, and whether anyone is listening.
+///
+/// Queued rather than written, because the only safe place to write is
+/// between the agent's own sequences — `Screen` drains this at boundaries,
+/// the way it re-asserts focus reporting. Armed is set when a knock's answer
+/// arrives, and read wherever emission must stay silent without one.
+#[derive(Clone, Default)]
+pub struct Outbox {
+    queue: std::sync::Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+    armed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Outbox {
+    pub fn enqueue(&self, bytes: Vec<u8>) {
+        let mut queue = self
+            .queue
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        queue.push(bytes);
+    }
+
+    pub fn drain(&self) -> Vec<Vec<u8>> {
+        let mut queue = self
+            .queue
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::mem::take(&mut *queue)
+    }
+
+    pub fn arm(&self) {
+        self.armed.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn armed(&self) -> bool {
+        self.armed.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
 /// What a chunk of the agent's output turned out to contain.
 pub struct OutputScan {
     /// The output with whisper bytes removed — `None` when the chunk was
