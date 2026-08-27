@@ -19,6 +19,7 @@ use amon_protocol::{
 };
 
 mod config;
+pub mod devices;
 mod herdr;
 mod manifests;
 mod registry;
@@ -66,6 +67,8 @@ pub fn run(version: String) -> std::io::Result<()> {
         move |config| registry.broadcast_config(config.clone())
     });
     updates::check_periodically(registry.clone(), config.clone(), version.clone());
+    // Desk devices light up from the same registry the bar reads.
+    let devices = devices::start(registry.clone(), config.clone());
     let shutdown = Arc::new(AtomicBool::new(false));
     // Shared with the herdr watcher: projected entries and socket
     // connections draw registry ids from one counter, because the registry
@@ -96,6 +99,10 @@ pub fn run(version: String) -> std::io::Result<()> {
             registry.disconnect(connection);
         });
     }
+
+    // Devices first: a daemon that leaves colors burning on the desk has
+    // not shut down, it has abandoned its post.
+    devices.stop();
 
     // Remove the socket file only if it is still this daemon's. During a
     // takeover the successor unlinks the path and binds its own socket there;
