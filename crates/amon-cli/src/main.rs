@@ -91,7 +91,12 @@ enum Command {
     /// rather than on whatever was focused there last
     Focus {
         /// Workspace number, e.g. `3`
-        workspace: u32,
+        #[arg(required_unless_present = "agent")]
+        workspace: Option<u32>,
+        /// Go straight to one agent by its registry id, wherever it is —
+        /// what the agent panel calls when you pick a row
+        #[arg(long, conflicts_with = "workspace")]
+        agent: Option<String>,
     },
     /// Integration, daemon, widget, audio, and alias health in one report
     Doctor,
@@ -177,7 +182,12 @@ fn main() -> ExitCode {
             }
         }
         Command::Remove { target, all } => run_remove(target.as_deref(), all),
-        Command::Focus { workspace } => focus::run(workspace),
+        Command::Focus { workspace, agent } => match (agent, workspace) {
+            (Some(id), _) => focus::agent(&id),
+            // clap's `required_unless_present` guarantees one of the two.
+            (None, Some(workspace)) => focus::run(workspace),
+            (None, None) => Ok(()),
+        },
         Command::Doctor => doctor::run(VERSION),
         Command::Daemon => run_daemon(),
         Command::Hook(report) => run_hook(report),
