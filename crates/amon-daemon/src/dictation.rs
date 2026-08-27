@@ -93,6 +93,119 @@ fn player_command() -> Vec<String> {
     .to_vec()
 }
 
+// ---------------------------------------------------------------------------
+// Hold-to-talk: what the dictate button's edges mean.
+// ---------------------------------------------------------------------------
+
+/// What a press or release decided to do about recording.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DictateCommand {
+    Start,
+    Stop,
+    /// Stop, and have voxtype press Enter after the text lands.
+    StopSubmit,
+}
+
+impl DictateCommand {
+    /// The exact CLI, verified against voxtype 0.7.5: `stop` cannot carry
+    /// `--auto-submit`, so a submitting stop goes through `toggle`, which
+    /// can — the caller guards that toggle with a recording check so it can
+    /// only ever stop.
+    pub fn line(self) -> &'static str {
+        match self {
+            DictateCommand::Start => "voxtype record start",
+            DictateCommand::Stop => "voxtype record stop",
+            DictateCommand::StopSubmit => "voxtype record toggle --auto-submit",
+        }
+    }
+}
+
+/// The press length that separates a tap from a hold. QMK's tapping term —
+/// the same judgment about the same fingers — defaults to 200ms; a little
+/// above that keeps a deliberate tap from reading as a hold, and nothing
+/// here waits on it: only the release consults it.
+const DEFAULT_HOLD: Duration = Duration::from_millis(250);
+
+/// The threshold the config asks for, or the tuned default. The protocol
+/// deliberately carries options, not defaults (its own doctrine): the
+/// consumer owns the numbers.
+pub fn hold_of(config: &amon_protocol::Micro2Config) -> Duration {
+    config
+        .dictation
+        .hold_ms
+        .map_or(DEFAULT_HOLD, Duration::from_millis)
+}
+
+/// Whether a hold's end should press Enter. On unless turned off: "dictate,
+/// let go, and it sends" is the point of holding.
+pub fn auto_submit_of(config: &amon_protocol::Micro2Config) -> bool {
+    config.dictation.auto_submit.unwrap_or(true)
+}
+
+/// The dictate button's state between edges. Tap and hold both start
+/// recording on the press — nothing waits on the threshold — and the time
+/// until release decides what the release means: nothing (a tap; recording
+/// runs until the next tap stops it) or stop-and-submit (a hold ends).
+#[derive(Debug, Default)]
+pub struct HoldToTalk {
+    /// When this button last started a recording, and is still down.
+    pressed_at: Option<Instant>,
+}
+
+impl HoldToTalk {
+    /// A press: stop when recording (the second tap of a toggle), start
+    /// otherwise.
+    pub fn on_press(&mut self, now: Instant, recording: bool) -> DictateCommand {
+        if recording {
+            self.pressed_at = None;
+            DictateCommand::Stop
+        } else {
+            self.pressed_at = Some(now);
+            DictateCommand::Start
+        }
+    }
+
+    /// A release: `None` for a tap, the configured stop for a hold. Only a
+    /// press that started a recording arms this — the release of a
+    /// toggle-stopping tap says nothing.
+    pub fn on_release(
+        &mut self,
+        now: Instant,
+        hold: Duration,
+        auto_submit: bool,
+    ) -> Option<DictateCommand> {
+        let pressed_at = self.pressed_at.take()?;
+        if now.duration_since(pressed_at) < hold {
+            return None;
+        }
+        Some(if auto_submit {
+            DictateCommand::StopSubmit
+        } else {
+            DictateCommand::Stop
+        })
+    }
+
+    /// The stop for a release that can never arrive — the device unplugged,
+    /// the module disabled, the daemon going down, all mid-hold. `None`
+    /// when no press is armed: a tap's recording was deliberately left
+    /// running and is voxtype's to finish.
+    fn abort(&mut self) -> Option<DictateCommand> {
+        self.pressed_at.take().map(|_| DictateCommand::Stop)
+    }
+}
+
+/// The device loop drops its `HoldToTalk` on every way out; a held button
+/// must not leave the microphone live until voxtype's duration cap. Plain
+/// stop, never submit — nobody chose to end this recording. (`record stop`
+/// is idempotent, so a recording that already ended costs a no-op signal.)
+impl Drop for HoldToTalk {
+    fn drop(&mut self) {
+        if self.abort().is_some() {
+            crate::devices::actions::exec(DictateCommand::Stop.line());
+        }
+    }
+}
+
 /// The one silent stream, and the process holding it.
 ///
 /// The player command is injected so the lifecycle is testable without an
@@ -267,6 +380,106 @@ mod tests {
         let second = pid_of(&duck).expect("a replacement is held");
         assert_ne!(second, first);
         duck.apply(false);
+    }
+
+    const HOLD: Duration = Duration::from_millis(250);
+
+    #[test]
+    fn a_tap_starts_recording_and_leaves_it_running() {
+        let mut button = HoldToTalk::default();
+        let pressed = Instant::now();
+        assert_eq!(button.on_press(pressed, false), DictateCommand::Start);
+        let released = pressed + Duration::from_millis(120);
+        assert_eq!(
+            button.on_release(released, HOLD, true),
+            None,
+            "a tap's release means nothing — the recording is a toggle now"
+        );
+    }
+
+    #[test]
+    fn a_second_tap_stops_without_submitting() {
+        let mut button = HoldToTalk::default();
+        let pressed = Instant::now();
+        assert_eq!(button.on_press(pressed, true), DictateCommand::Stop);
+        assert_eq!(
+            button.on_release(pressed + Duration::from_millis(80), HOLD, true),
+            None,
+            "the stopping tap's release is not a hold ending"
+        );
+    }
+
+    #[test]
+    fn a_hold_is_push_to_talk() {
+        let mut button = HoldToTalk::default();
+        let pressed = Instant::now();
+        assert_eq!(button.on_press(pressed, false), DictateCommand::Start);
+        assert_eq!(
+            button.on_release(pressed + HOLD, HOLD, true),
+            Some(DictateCommand::StopSubmit),
+            "the threshold itself already counts as holding"
+        );
+    }
+
+    #[test]
+    fn auto_submit_off_makes_a_hold_end_plainly() {
+        let mut button = HoldToTalk::default();
+        let pressed = Instant::now();
+        button.on_press(pressed, false);
+        assert_eq!(
+            button.on_release(pressed + Duration::from_secs(2), HOLD, false),
+            Some(DictateCommand::Stop)
+        );
+    }
+
+    #[test]
+    fn an_abandoned_hold_stops_plainly() {
+        // The device vanishing, the module being disabled, the daemon going
+        // down — a release that can never arrive must not leave the
+        // microphone live until voxtype's cap.
+        let mut button = HoldToTalk::default();
+        button.on_press(Instant::now(), false);
+        assert_eq!(button.abort(), Some(DictateCommand::Stop));
+        assert_eq!(button.abort(), None, "aborting is once");
+
+        let mut released = HoldToTalk::default();
+        let pressed = Instant::now();
+        released.on_press(pressed, false);
+        released.on_release(pressed + Duration::from_millis(10), HOLD, true);
+        assert_eq!(
+            released.abort(),
+            None,
+            "a tap already let go — its recording is deliberate"
+        );
+    }
+
+    #[test]
+    fn a_stray_release_says_nothing() {
+        let mut button = HoldToTalk::default();
+        assert_eq!(button.on_release(Instant::now(), HOLD, true), None);
+    }
+
+    #[test]
+    fn commands_spell_the_voxtype_cli() {
+        assert_eq!(DictateCommand::Start.line(), "voxtype record start");
+        assert_eq!(DictateCommand::Stop.line(), "voxtype record stop");
+        assert_eq!(
+            DictateCommand::StopSubmit.line(),
+            "voxtype record toggle --auto-submit"
+        );
+    }
+
+    #[test]
+    fn hold_and_submit_come_from_the_config_with_tuned_defaults() {
+        let config: amon_protocol::Config =
+            toml::from_str("[devices.micro2.dictation]\nhold_ms = 400\nauto_submit = false")
+                .expect("parses");
+        assert_eq!(hold_of(&config.devices.micro2), Duration::from_millis(400));
+        assert!(!auto_submit_of(&config.devices.micro2));
+
+        let absent = amon_protocol::Micro2Config::default();
+        assert_eq!(hold_of(&absent), Duration::from_millis(250));
+        assert!(auto_submit_of(&absent), "a hold submits unless told not to");
     }
 
     #[test]

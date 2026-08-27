@@ -25,6 +25,10 @@ pub enum Action {
     Key(Vec<u16>),
     /// Run a command, through sh so the config line can be a pipeline.
     Exec(String),
+    /// Dictation with press/release semantics: tap toggles, hold is
+    /// push-to-talk. Not expressible as an exec — only the daemon sees
+    /// both edges of the press, and the timing between them is the mode.
+    Dictate,
 }
 
 impl Action {
@@ -33,6 +37,7 @@ impl Action {
         match text {
             "none" | "" => Action::None,
             "panel" => Action::Panel,
+            "dictate" => Action::Dictate,
             _ => {
                 if let Some(rest) = text.strip_prefix("workspace:") {
                     match rest.trim().parse() {
@@ -433,6 +438,10 @@ mod tests {
             Action::parse("exec:voxtype record toggle"),
             Action::Exec("voxtype record toggle".into())
         );
+        // Dictation is its own word, not an exec: the press/release timing
+        // is what distinguishes tap-toggle from hold-to-talk, and only the
+        // daemon sees both edges.
+        assert_eq!(Action::parse("dictate"), Action::Dictate);
     }
 
     #[test]

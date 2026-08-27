@@ -288,6 +288,7 @@
           "default": {
             "micro2": {
               "colors": {},
+              "dictation": {},
               "enabled": true
             }
           }
@@ -345,8 +346,31 @@
           "$ref": "#/$defs/Micro2Config",
           "default": {
             "colors": {},
+            "dictation": {},
             "enabled": true
           }
+        }
+      },
+      "type": "object"
+    },
+    "DictationConfig": {
+      "description": "How the `dictate` action reads its button. Recording always starts on\nthe press; these decide what the release means.",
+      "properties": {
+        "auto_submit": {
+          "description": "Whether ending a hold also presses Enter once the text has landed —\ndictate a message, let go, and it sends itself. Only holds submit;\na tap-stopped recording never does.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "hold_ms": {
+          "description": "Milliseconds a press must last to count as holding: a shorter press\nis a tap (recording runs until the next tap), a longer one is\npush-to-talk (recording stops on release). Absent means the tuned\ndefault.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -599,6 +623,11 @@
           "$ref": "#/$defs/DeviceColors",
           "default": {},
           "description": "Per-state key colors, `#RRGGBB`. Defaults are the Codex palette."
+        },
+        "dictation": {
+          "$ref": "#/$defs/DictationConfig",
+          "default": {},
+          "description": "How the `dictate` action reads the button."
         },
         "enabled": {
           "default": true,

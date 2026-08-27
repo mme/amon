@@ -290,6 +290,10 @@ pub fn all_off_rgbcfg(id: u32) -> String {
 pub enum DeviceInput {
     AgentKey(usize),
     Control(String),
+    /// A control let go. Only dictation listens — for everything else the
+    /// press already acted — but the decode is uniform: what a release
+    /// means is the action's business, not the wire's.
+    ControlRelease(String),
     EncoderCw,
     EncoderCc,
     /// The raw stream; the device loop latches it into single
@@ -325,16 +329,20 @@ pub fn decode_notification(message: &serde_json::Value) -> Option<DeviceInput> {
             match key {
                 "ENC_CW" => Some(DeviceInput::EncoderCw),
                 "ENC_CC" => Some(DeviceInput::EncoderCc),
-                _ if act != 1 => None,
                 _ => {
                     if let Some(slot) = key
                         .strip_prefix("AG0")
                         .and_then(|n| n.parse::<usize>().ok())
                         .filter(|n| *n < 6)
                     {
-                        Some(DeviceInput::AgentKey(slot))
-                    } else {
+                        // A tap acts on the press; the release says nothing.
+                        (act == 1).then_some(DeviceInput::AgentKey(slot))
+                    } else if act == 1 {
                         Some(DeviceInput::Control(key.to_string()))
+                    } else if act == 0 {
+                        Some(DeviceInput::ControlRelease(key.to_string()))
+                    } else {
+                        None
                     }
                 }
             }
@@ -400,7 +408,7 @@ pub fn action_for(control: &str, config: &Micro2Config) -> Action {
         "macro_2" => "none",
         "macro_3" => "key:Up",
         "macro_4" => "key:Escape",
-        "macro_5" => "exec:voxtype record toggle",
+        "macro_5" => "dictate",
         "macro_6" => "key:Down",
         "macro_7" => "key:Enter",
         _ => "none",
@@ -415,6 +423,7 @@ pub fn act(
     agents: &[AgentEntry],
     config: &Micro2Config,
     synth: &mut Option<VirtualInput>,
+    dictate: &mut crate::dictation::HoldToTalk,
 ) {
     match input {
         DeviceInput::AgentKey(slot) => {
@@ -436,6 +445,12 @@ pub fn act(
                 return;
             }
             let action = action_for(key, config);
+            if action == Action::Dictate {
+                let command =
+                    dictate.on_press(Instant::now(), crate::dictation::microphone_live_now());
+                actions::exec(command.line());
+                return;
+            }
             run_action(&action, None, synth);
         }
         // The knob, like its click, is the panel's while the panel is up —
@@ -450,6 +465,29 @@ pub fn act(
         DeviceInput::EncoderCc => {
             if !actions::panel_call("encoderMove", "1") {
                 run_action(&Action::Scroll, Some(-1), synth)
+            }
+        }
+        DeviceInput::ControlRelease(key) => {
+            if action_for(key, config) != Action::Dictate {
+                return;
+            }
+            let ended = dictate.on_release(
+                Instant::now(),
+                crate::dictation::hold_of(config),
+                crate::dictation::auto_submit_of(config),
+            );
+            // Guarded: the submitting stop goes through `voxtype record
+            // toggle`, and a toggle against a recording that already ended
+            // on its own (voxtype's duration cap) would *start* one. Only a
+            // live microphone makes the release mean anything. The window
+            // between this check and the toggle is the same client-side
+            // race voxtype's own `toggle` runs on (Omarchy's F9 bind
+            // included) — milliseconds, and not closable from outside
+            // voxtype; a mis-read is one tap away from corrected.
+            if let Some(command) = ended {
+                if crate::dictation::microphone_live_now() {
+                    actions::exec(command.line());
+                }
             }
         }
         // Raw joystick readings never reach here: the device loop latches
@@ -497,6 +535,9 @@ fn run_action(action: &Action, scroll_direction: Option<i32>, synth: &mut Option
             }
         }
         Action::Exec(command) => actions::exec(command),
+        // Dictation needs the press/release pair, which `act` handles before
+        // ever reaching here; a bare Dictate with no edge means nothing.
+        Action::Dictate => {}
     }
 }
 
@@ -562,6 +603,7 @@ pub fn run(
     use std::os::fd::AsRawFd;
 
     let mut synth = VirtualInput::open().ok();
+    let mut dictate = crate::dictation::HoldToTalk::default();
     let mut agents: Vec<AgentEntry> = Vec::new();
     let mut shown: Option<Lighting> = None;
     let mut request_id: u32 = 1;
@@ -726,7 +768,7 @@ pub fn run(
                     other => other,
                 };
                 if config.enabled {
-                    act(&input, &agents, &config, &mut synth);
+                    act(&input, &agents, &config, &mut synth, &mut dictate);
                 }
             }
         }
@@ -862,7 +904,20 @@ mod tests {
 
         let release: serde_json::Value =
             serde_json::from_str(r#"{"m":"v.oai.hid","p":{"k":"AG02","act":0}}"#).unwrap();
-        assert_eq!(decode_notification(&release), None, "releases are silent");
+        assert_eq!(
+            decode_notification(&release),
+            None,
+            "agent-key releases are silent — a tap acts on the press"
+        );
+
+        // Macro-key releases are events: hold-to-talk lives in the time
+        // between the edges, so the release must come through.
+        let macro_release: serde_json::Value =
+            serde_json::from_str(r#"{"m":"v.oai.hid","p":{"k":"ACT10","act":0}}"#).unwrap();
+        assert_eq!(
+            decode_notification(&macro_release),
+            Some(DeviceInput::ControlRelease("ACT10".into()))
+        );
 
         let detent: serde_json::Value =
             serde_json::from_str(r#"{"m":"v.oai.hid","p":{"k":"ENC_CW","act":2}}"#).unwrap();
@@ -912,10 +967,9 @@ mod tests {
         assert_eq!(action_for("ACT07", &config), Action::None);
         assert_eq!(action_for("ACT08", &config), Action::Key(vec![103]));
         assert_eq!(action_for("ACT09", &config), Action::Key(vec![1]));
-        assert_eq!(
-            action_for("ACT10", &config),
-            Action::Exec("voxtype record toggle".into())
-        );
+        // Dictation graduated from an exec to its own word so the button
+        // has press/release semantics: tap toggles, hold is push-to-talk.
+        assert_eq!(action_for("ACT10", &config), Action::Dictate);
         assert_eq!(action_for("ACT11", &config), Action::Key(vec![108]));
         assert_eq!(action_for("ACT12", &config), Action::Key(vec![28]));
     }

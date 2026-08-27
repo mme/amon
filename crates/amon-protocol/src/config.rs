@@ -146,6 +146,8 @@ pub struct Micro2Config {
     pub ring: Option<bool>,
     /// Per-state key colors, `#RRGGBB`. Defaults are the Codex palette.
     pub colors: DeviceColors,
+    /// How the `dictate` action reads the button.
+    pub dictation: DictationConfig,
     /// Macro-key overrides: keys are the seven macro keys in reading
     /// order (`macro_1`..`macro_4` upper row, `macro_5`..`macro_7` lower),
     /// values are actions (`none`, `panel`, `workspace:N`, `key:<spec>`,
@@ -162,9 +164,28 @@ impl Default for Micro2Config {
             brightness: None,
             ring: None,
             colors: DeviceColors::default(),
+            dictation: DictationConfig::default(),
             keys: Default::default(),
         }
     }
+}
+
+/// How the `dictate` action reads its button. Recording always starts on
+/// the press; these decide what the release means.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct DictationConfig {
+    /// Milliseconds a press must last to count as holding: a shorter press
+    /// is a tap (recording runs until the next tap), a longer one is
+    /// push-to-talk (recording stops on release). Absent means the tuned
+    /// default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hold_ms: Option<u64>,
+    /// Whether ending a hold also presses Enter once the text has landed —
+    /// dictate a message, let go, and it sends itself. Only holds submit;
+    /// a tap-stopped recording never does.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_submit: Option<bool>,
 }
 
 /// Which color stands for each agent state on the device.
