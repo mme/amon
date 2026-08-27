@@ -99,12 +99,20 @@ const STARTER: &str = r##"# amon
 [devices.micro2.keys]
 # The seven macro keys in reading order (macro_1-4 upper row, macro_5-7
 # lower), any action: "none", "panel", "workspace:N", "key:<chord>"
-# (e.g. "key:super+shift+f"), or "exec:<command>". The defaults:
+# (e.g. "key:super+shift+f"), "exec:<command>", or "dictate". The defaults:
 # macro_1 = "panel"
 # macro_2 = "none"
 # macro_3 = "key:Up"
 # macro_4 = "key:Escape"
-# macro_5 = "exec:voxtype record toggle"   # dictation
+# macro_5 = "dictate"
 # macro_6 = "key:Down"
 # macro_7 = "key:Enter"
+
+[devices.micro2.dictation]
+# The dictate button reads two ways, and recording starts on the press
+# either way: a tap toggles (tap again to stop), a hold is push-to-talk —
+# recording stops when you let go, and voxtype presses Enter for you once
+# the text has landed. The defaults:
+# hold_ms = 250        # a press this long counts as holding
+# auto_submit = true   # a hold's end sends Enter; taps never do
 "##;
