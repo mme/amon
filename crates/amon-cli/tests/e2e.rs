@@ -1359,12 +1359,12 @@ fn a_truncated_amon_block_is_never_rewritten() {
     sandbox.fake_agent("claude", "#!/bin/sh\n");
     agent_is_installed(&sandbox, ".claude");
     let damaged = "# >>> amon >>>\nalias claude='amon claude'\nexport THEIRS=1\n";
-    std::fs::write(sandbox.home_path(".bashrc"), damaged).expect("damaged rc");
+    std::fs::write(sandbox.home_path(shell_rc_name()), damaged).expect("damaged rc");
 
     let output = sandbox.run(&["setup", "claude"]);
 
     assert_eq!(
-        std::fs::read_to_string(sandbox.home_path(".bashrc")).expect("still there"),
+        std::fs::read_to_string(sandbox.home_path(shell_rc_name())).expect("still there"),
         damaged,
         "a file amon cannot parse is a file amon does not touch"
     );
@@ -1425,7 +1425,7 @@ fn setup_all_covers_detected_agents_and_the_widget() {
         "{stdout}"
     );
     assert!(
-        bashrc(&sandbox).contains("alias claude='amon claude'"),
+        shell_rc(&sandbox).contains("alias claude='amon claude'"),
         "--all aliases by default"
     );
     let calls = std::fs::read_to_string(&record).expect("omarchy invoked");
@@ -1704,7 +1704,7 @@ fn remove_all_takes_everything_back() {
         "the widget goes too"
     );
     assert!(
-        !bashrc(&sandbox).contains("alias claude"),
+        !shell_rc(&sandbox).contains("alias claude"),
         "no alias may outlive the hooks it pointed at"
     );
 }
@@ -1804,7 +1804,7 @@ fn duck_alone_installs_only_the_ducking() {
     assert!(output.status.success(), "{output:?}");
     assert!(sandbox.config_path(DUCKING_CONF).exists());
     assert!(
-        !bashrc(&sandbox).contains("alias claude"),
+        !shell_rc(&sandbox).contains("alias claude"),
         "--duck is about audio, not about agents"
     );
 }
@@ -2045,7 +2045,7 @@ fn setup_upgrade_with_nothing_installed_points_at_setup() {
         "the way forward is named: {stdout}"
     );
     assert!(
-        !bashrc(&sandbox).contains("alias claude"),
+        !shell_rc(&sandbox).contains("alias claude"),
         "a detected but never-set-up agent stays untouched"
     );
 }
@@ -2110,7 +2110,7 @@ fn setup_upgrade_keeps_the_no_alias_choice() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("✓ claude — hooks installed"), "{stdout}");
     assert!(
-        !bashrc(&sandbox).contains("alias claude"),
+        !shell_rc(&sandbox).contains("alias claude"),
         "--upgrade must not alias what setup was told not to"
     );
 }
@@ -2125,8 +2125,8 @@ fn remove_all_does_not_claim_unaliased_for_a_stranded_block() {
     assert!(sandbox.run(&["setup", "claude"]).status.success());
     // Migrate the bashrc into a dotfiles checkout, block and all.
     let theirs = sandbox.runtime_path("dotfiles-bashrc");
-    std::fs::rename(sandbox.home_path(".bashrc"), &theirs).expect("migrate");
-    std::os::unix::fs::symlink(&theirs, sandbox.home_path(".bashrc")).expect("link");
+    std::fs::rename(sandbox.home_path(shell_rc_name()), &theirs).expect("migrate");
+    std::os::unix::fs::symlink(&theirs, sandbox.home_path(shell_rc_name())).expect("link");
 
     let output = sandbox.run(&["remove", "--all"]);
 
@@ -2157,8 +2157,8 @@ fn removing_one_agent_points_out_a_stranded_block() {
     agent_is_installed(&sandbox, ".claude");
     assert!(sandbox.run(&["setup", "claude"]).status.success());
     let theirs = sandbox.runtime_path("dotfiles-bashrc");
-    std::fs::rename(sandbox.home_path(".bashrc"), &theirs).expect("migrate");
-    std::os::unix::fs::symlink(&theirs, sandbox.home_path(".bashrc")).expect("link");
+    std::fs::rename(sandbox.home_path(shell_rc_name()), &theirs).expect("migrate");
+    std::os::unix::fs::symlink(&theirs, sandbox.home_path(shell_rc_name())).expect("link");
 
     let output = sandbox.run(&["remove", "claude"]);
 
@@ -2184,8 +2184,8 @@ fn doctor_reports_aliases_bash_actually_reads() {
     agent_is_installed(&sandbox, ".claude");
     assert!(sandbox.run(&["setup", "claude"]).status.success());
     let theirs = sandbox.runtime_path("dotfiles-bashrc");
-    std::fs::rename(sandbox.home_path(".bashrc"), &theirs).expect("migrate");
-    std::os::unix::fs::symlink(&theirs, sandbox.home_path(".bashrc")).expect("link");
+    std::fs::rename(sandbox.home_path(shell_rc_name()), &theirs).expect("migrate");
+    std::os::unix::fs::symlink(&theirs, sandbox.home_path(shell_rc_name())).expect("link");
 
     let stdout = read_to_string(&sandbox.run(&["doctor"]).stdout[..]);
 
@@ -2209,8 +2209,8 @@ fn remove_all_with_only_a_stranded_block_is_not_nothing() {
     agent_is_installed(&sandbox, ".claude");
     assert!(sandbox.run(&["setup", "claude"]).status.success());
     let theirs = sandbox.runtime_path("dotfiles-bashrc");
-    std::fs::rename(sandbox.home_path(".bashrc"), &theirs).expect("migrate");
-    std::os::unix::fs::symlink(&theirs, sandbox.home_path(".bashrc")).expect("link");
+    std::fs::rename(sandbox.home_path(shell_rc_name()), &theirs).expect("migrate");
+    std::os::unix::fs::symlink(&theirs, sandbox.home_path(shell_rc_name())).expect("link");
     std::fs::remove_dir_all(sandbox.home_path(".claude")).expect("orphan everything");
 
     let output = sandbox.run(&["remove", "--all"]);
@@ -2267,9 +2267,9 @@ fn remove_all_sweeps_up_an_orphaned_alias() {
 
     assert!(output.status.success(), "{output:?}");
     assert!(
-        !bashrc(&sandbox).contains("alias claude"),
+        !shell_rc(&sandbox).contains("alias claude"),
         "an orphaned alias must not survive remove --all: {}",
-        bashrc(&sandbox)
+        shell_rc(&sandbox)
     );
 }
 
@@ -2283,7 +2283,7 @@ fn a_symlinked_bashrc_is_reported_not_claimed_aliased() {
     agent_is_installed(&sandbox, ".claude");
     let theirs = sandbox.runtime_path("dotfiles-bashrc");
     std::fs::write(&theirs, "# theirs\n").expect("their file");
-    std::os::unix::fs::symlink(&theirs, sandbox.home_path(".bashrc")).expect("link");
+    std::os::unix::fs::symlink(&theirs, sandbox.home_path(shell_rc_name())).expect("link");
 
     let output = sandbox.run(&["setup", "--all"]);
 
@@ -2345,7 +2345,7 @@ fn the_setup_screen_quits_without_changes() {
     session.wait();
 
     assert!(
-        !bashrc(&sandbox).contains("alias claude"),
+        !shell_rc(&sandbox).contains("alias claude"),
         "quitting must change nothing"
     );
 }
@@ -2370,7 +2370,7 @@ fn the_setup_screen_applies_the_preselection_on_enter() {
         "the apply reports itself: {text}"
     );
     assert!(
-        bashrc(&sandbox).contains("alias claude='amon claude'"),
+        shell_rc(&sandbox).contains("alias claude='amon claude'"),
         "interactive setup always aliases"
     );
 }
@@ -2383,7 +2383,7 @@ fn the_setup_screen_removes_what_gets_unchecked() {
     sandbox.fake_agent("claude", "#!/bin/sh\n");
     agent_is_installed(&sandbox, ".claude");
     assert!(sandbox.run(&["setup", "claude"]).status.success());
-    assert!(bashrc(&sandbox).contains("alias claude"));
+    assert!(shell_rc(&sandbox).contains("alias claude"));
 
     let mut session = harness::PtySession::start(&sandbox, &["setup"]);
     session.wait_for_output(b"installed");
@@ -2396,7 +2396,7 @@ fn the_setup_screen_removes_what_gets_unchecked() {
         "unchecking removes: {text}"
     );
     assert!(
-        !bashrc(&sandbox).contains("alias claude"),
+        !shell_rc(&sandbox).contains("alias claude"),
         "the alias goes with the hooks"
     );
 }
@@ -2446,8 +2446,18 @@ fn agent_is_installed(sandbox: &Sandbox, config: &str) {
     std::fs::create_dir_all(sandbox.home_path(config)).expect("agent config dir");
 }
 
-fn bashrc(sandbox: &Sandbox) -> String {
-    std::fs::read_to_string(sandbox.home_path(".bashrc")).unwrap_or_default()
+/// The shell rc amon edits on this platform — bashrc on Linux, zshrc on a
+/// Mac — so these tests read the file the binary actually wrote.
+fn shell_rc_name() -> &'static str {
+    if cfg!(target_os = "macos") {
+        ".zshrc"
+    } else {
+        ".bashrc"
+    }
+}
+
+fn shell_rc(sandbox: &Sandbox) -> String {
+    std::fs::read_to_string(sandbox.home_path(shell_rc_name())).unwrap_or_default()
 }
 
 #[test]
@@ -2458,7 +2468,7 @@ fn installing_an_agent_aliases_its_own_name() {
     let output = sandbox.run(&["setup", "claude"]);
 
     assert!(output.status.success(), "{output:?}");
-    let rc = bashrc(&sandbox);
+    let rc = shell_rc(&sandbox);
     assert!(
         rc.contains("alias claude='amon claude'"),
         "typing claude has to run it under amon: {rc}"
@@ -2473,7 +2483,7 @@ fn aliasing_can_be_declined() {
     sandbox.run(&["setup", "claude", "--no-alias"]);
 
     assert!(
-        !sandbox.home_path(".bashrc").exists(),
+        !sandbox.home_path(shell_rc_name()).exists(),
         "the shell config is not touched at all"
     );
 }
@@ -2486,7 +2496,7 @@ fn reinstalling_does_not_repeat_the_block() {
     sandbox.run(&["setup", "claude"]);
     sandbox.run(&["setup", "claude"]);
 
-    let rc = bashrc(&sandbox);
+    let rc = shell_rc(&sandbox);
     assert_eq!(rc.matches("# >>> amon >>>").count(), 1, "{rc}");
     assert_eq!(rc.matches("alias claude=").count(), 1, "{rc}");
 }
@@ -2500,7 +2510,7 @@ fn a_second_agent_joins_the_same_block() {
     sandbox.run(&["setup", "claude"]);
     sandbox.run(&["setup", "codex"]);
 
-    let rc = bashrc(&sandbox);
+    let rc = shell_rc(&sandbox);
     assert_eq!(
         rc.matches("# >>> amon >>>").count(),
         1,
@@ -2521,7 +2531,7 @@ fn uninstalling_one_agent_leaves_the_others_alias_alone() {
     let output = sandbox.run(&["remove", "claude"]);
 
     assert!(output.status.success(), "{output:?}");
-    let rc = bashrc(&sandbox);
+    let rc = shell_rc(&sandbox);
     assert!(!rc.contains("alias claude="), "its own line goes: {rc}");
     assert!(
         rc.contains("alias codex='amon codex'"),
@@ -2533,13 +2543,17 @@ fn uninstalling_one_agent_leaves_the_others_alias_alone() {
 fn uninstalling_the_last_agent_takes_the_block_with_it() {
     let sandbox = Sandbox::new();
     agent_is_installed(&sandbox, ".claude");
-    std::fs::write(sandbox.home_path(".bashrc"), "# theirs\nexport EDITOR=hx\n").expect("write");
+    std::fs::write(
+        sandbox.home_path(shell_rc_name()),
+        "# theirs\nexport EDITOR=hx\n",
+    )
+    .expect("write");
     sandbox.run(&["setup", "claude"]);
 
     sandbox.run(&["remove", "claude"]);
 
     assert_eq!(
-        bashrc(&sandbox),
+        shell_rc(&sandbox),
         "# theirs\nexport EDITOR=hx\n",
         "the file goes back to exactly what it was"
     );
@@ -2553,7 +2567,7 @@ fn a_symlinked_shell_config_is_not_followed() {
     agent_is_installed(&sandbox, ".claude");
     let real = sandbox.home_path("dotfiles-bashrc");
     std::fs::write(&real, "# theirs\n").expect("write");
-    std::os::unix::fs::symlink(&real, sandbox.home_path(".bashrc")).expect("symlink");
+    std::os::unix::fs::symlink(&real, sandbox.home_path(shell_rc_name())).expect("symlink");
 
     let output = sandbox.run(&["setup", "claude"]);
 
