@@ -86,6 +86,27 @@ pub struct AgentEntry {
     /// place instead of leaving every consumer to invent the same rule.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seen: Option<bool>,
+    /// Set when this agent runs inside a herdr session rather than under an
+    /// amon wrapper.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub herdr: Option<HerdrInfo>,
+}
+
+/// Where a herdr-hosted agent lives inside herdr. Present exactly on entries
+/// the daemon's herdr module projects; wrapped agents never carry it. The
+/// socket travels with the entry so a consumer that wants to act on the agent
+/// (the focus hop) does not re-derive herdr's path rules.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HerdrInfo {
+    /// Absolute path of the session's JSON API socket.
+    pub socket: String,
+    /// Session name; absent for herdr's default session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+    /// The pane currently hosting the agent (`w1:p1`) — what `agent.focus`
+    /// takes. Pane ids change when panes move across herdr workspaces, so the
+    /// daemon refreshes this and consumers must not cache it.
+    pub pane: String,
 }
 
 impl AgentEntry {

@@ -117,6 +117,7 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
         branch: branch::read(&cwd),
         focused: None,
         seen: None,
+        herdr: None,
     });
 
     // Kept before `Setup` takes ownership of `cwd`; the watcher outlives this

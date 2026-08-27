@@ -44,6 +44,17 @@
             "null"
           ]
         },
+        "herdr": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HerdrInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Set when this agent runs inside a herdr session rather than under an\namon wrapper."
+        },
         "hostname": {
           "type": "string"
         },
@@ -492,6 +503,31 @@
         "role",
         "protocol",
         "version"
+      ],
+      "type": "object"
+    },
+    "HerdrInfo": {
+      "description": "Where a herdr-hosted agent lives inside herdr. Present exactly on entries\nthe daemon's herdr module projects; wrapped agents never carry it. The\nsocket travels with the entry so a consumer that wants to act on the agent\n(the focus hop) does not re-derive herdr's path rules.",
+      "properties": {
+        "pane": {
+          "description": "The pane currently hosting the agent (`w1:p1`) — what `agent.focus`\ntakes. Pane ids change when panes move across herdr workspaces, so the\ndaemon refreshes this and consumers must not cache it.",
+          "type": "string"
+        },
+        "session": {
+          "description": "Session name; absent for herdr's default session.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "socket": {
+          "description": "Absolute path of the session's JSON API socket.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "socket",
+        "pane"
       ],
       "type": "object"
     },
