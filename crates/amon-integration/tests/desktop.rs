@@ -615,6 +615,43 @@ fn the_window_takes_the_pane_size_every_time_it_opens() {
     }
 }
 
+/// Getting to an agent goes through `amon focus`, from everywhere.
+///
+/// Reaching an agent is one operation with more than one part: the window it
+/// is in, and — when it lives in a herdr pane — the pane inside that window.
+/// The panel used to dispatch the compositor itself, which was a second
+/// implementation of the jump, and it arrived at the right window with the
+/// wrong pane in front of it. Nothing failed; you simply landed next to the
+/// agent you asked for.
+///
+/// So: no widget names an agent's window to the compositor. `address:0x` is
+/// how an agent window is named, and only amon may say it. The panel's own
+/// pop-out window is matched by title, which is why the check is this
+/// specific rather than a ban on `hyprctl`; the bar's workspace fallback is
+/// a place, not an agent, and stays.
+#[test]
+fn every_way_to_an_agent_goes_through_amon_focus() {
+    const PANEL: &str = include_str!("../src/assets/omarchy/AgentPanel.qml");
+    const WORKSPACES: &str = include_str!("../src/assets/omarchy/Workspaces.qml");
+
+    assert!(
+        PANEL.contains(r#"["amon", "focus", "--agent""#),
+        "the panel asks amon to go to the agent it picked"
+    );
+    for (name, source) in [
+        ("AgentPanel.qml", PANEL),
+        ("AgentStates.qml", AGENT_STATES),
+        ("AgentsView.qml", AGENTS_VIEW),
+        ("Workspaces.qml", WORKSPACES),
+    ] {
+        assert!(
+            !source.contains("address:0x"),
+            "{name} names an agent's window to the compositor itself; that is \
+             a second way to reach an agent, and it will forget the herdr pane"
+        );
+    }
+}
+
 /// The pane and `amon status` round ages the same way.
 ///
 /// The rule now exists twice — once in Rust for the CLI, once in QML because

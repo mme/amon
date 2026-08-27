@@ -198,16 +198,19 @@ Item {
     return "dismissed"
   }
 
-  // Going to the agent a row names. The daemon hands out the compositor's own
-  // token for the window; it is passed back untouched rather than parsed, which
-  // is the whole contract on that field. Absent off a supported compositor, so
-  // a row without one simply does nothing rather than dispatching nonsense.
+  // Going to the agent a row names — through `amon focus`, never by
+  // dispatching the compositor here. Getting to an agent is one operation with
+  // more than one part: the window, and, for an agent living in a herdr pane,
+  // the pane inside it. amon owns that sequence, so a panel that reached for
+  // hyprctl itself would arrive at the right window and the wrong pane.
+  //
+  // A row without a window is one the compositor never placed (over ssh, in a
+  // multiplexer); it simply does nothing.
   //
   // The modal closes on the way — you asked to be somewhere else.
   function goTo(entry) {
-    if (!entry || !entry.window) return
-    goToAgent.command = ["hyprctl", "dispatch",
-                         "hl.dsp.focus({ window = \"address:0x" + entry.window + "\" })"]
+    if (!entry || !entry.window || !entry.id) return
+    goToAgent.command = ["amon", "focus", "--agent", String(entry.id)]
     goToAgent.running = true
     if (root.opened) root.dismiss()
   }

@@ -1,10 +1,12 @@
-//! `amon focus <workspace>` — go to a workspace and land on its agent.
+//! `amon focus` — go to an agent: a workspace's neediest, or a named one.
 //!
-//! Both ways of reaching a workspace route through here: the Super+N bindings
-//! `amon setup` installs, and the bar widget's click. One implementation means
-//! they cannot disagree about where you end up, and one ranking decides it —
-//! [`AgentEntry::attention`], the same order the bar draws and `amon status`
-//! sorts by.
+//! **Every way of reaching an agent routes through here**: the Super+N
+//! bindings `amon setup` installs, the bar widget's click, and the agent
+//! panel's pick. One implementation means they cannot disagree about where
+//! you end up, and one ranking decides it — [`AgentEntry::attention`], the
+//! same order the bar draws and `amon status` sorts by. A caller that
+//! dispatched the compositor itself would be a second implementation, and
+//! the one that forgot the herdr pane hop is exactly how that goes wrong.
 //!
 //! **One dispatch, never two.** Focusing a window switches to its workspace on
 //! the way, so resolving the agent *first* and then issuing a single focus
@@ -43,10 +45,8 @@ const DISPATCHED: &str = "ok";
 pub fn run(workspace: u32) -> Result<(), Box<dyn std::error::Error>> {
     // Resolved before anything is dispatched — see the module note on why the
     // order is the whole point.
-    if let Some(address) = agent_window_on(workspace) {
-        if dispatch(&format!(
-            "hl.dsp.focus({{ window = \"address:0x{address}\" }})"
-        ))? {
+    if let Some(agent) = agent_on(workspace) {
+        if go_to(&agent)? {
             return Ok(());
         }
         // The agent was there when the daemon answered and its window is not
@@ -57,13 +57,52 @@ pub fn run(workspace: u32) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// The window of the agent on `workspace` that most wants a human.
+/// `amon focus --agent <id>` — go to one named agent, wherever it is.
+///
+/// What the panel calls once you pick a row. There is no workspace fallback
+/// here: you asked for an agent, not a place, so an agent that has gone in
+/// the meantime means the screen stays where it is rather than moving
+/// somewhere you did not ask for.
+pub fn agent(id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(agent) = agent_with_id(id) {
+        go_to(&agent)?;
+    }
+    Ok(())
+}
+
+/// Takes the user to `agent`, reporting whether the compositor went.
+///
+/// The one place amon moves anyone to an agent — see the module note. Both
+/// halves of the jump live here so no caller can do one without the other.
+fn go_to(agent: &AgentEntry) -> Result<bool, Box<dyn std::error::Error>> {
+    // Checked here rather than trusted from the caller: this interpolates
+    // into a Lua expression, and the token arrives over a socket.
+    let Some(address) = agent.window.as_deref().filter(|window| is_address(window)) else {
+        return Ok(false);
+    };
+    if !dispatch(&format!(
+        "hl.dsp.focus({{ window = \"address:0x{address}\" }})"
+    ))? {
+        return Ok(false);
+    }
+    // Inside herdr the window is only half the jump: every agent in a session
+    // shares the herdr client's terminal, and the pane this one lives in
+    // still has to come to the front. Only after the window actually moved —
+    // the hop marks the agent seen, and an agent nobody was taken to has not
+    // been seen.
+    if let Some(herdr) = &agent.herdr {
+        herdr_hop(herdr);
+    }
+    Ok(true)
+}
+
+/// The agent on `workspace` that most wants a human, window and all.
 ///
 /// `None` for every reason that is not "there is one to jump to": no daemon,
 /// a slow one, no agent there, none that wants anything, or one the compositor
 /// never gave a window (over ssh, inside a multiplexer). All of them mean the
 /// same thing to the caller — go to the workspace and let Hyprland choose.
-fn agent_window_on(workspace: u32) -> Option<String> {
+fn agent_on(workspace: u32) -> Option<AgentEntry> {
     let mut client = Client::connect_running(RESOLVE_TIMEOUT).ok()?;
     let result = client.request(Method::Status).ok()??;
     let status: StatusResult = serde_json::from_value(result).ok()?;
@@ -79,7 +118,43 @@ fn agent_window_on(workspace: u32) -> Option<String> {
         // same rank: of two agents equally blocked, the one that has been
         // waiting longer is the one to land on.
         .min_by_key(|agent| (agent.attention(), agent.state_since))
-        .and_then(|agent: AgentEntry| agent.window)
+}
+
+/// One agent by its registry id, if it is still connected.
+fn agent_with_id(id: &str) -> Option<AgentEntry> {
+    let mut client = Client::connect_running(RESOLVE_TIMEOUT).ok()?;
+    let result = client.request(Method::Status).ok()??;
+    let status: StatusResult = serde_json::from_value(result).ok()?;
+    status.agents.into_iter().find(|agent| agent.id == id)
+}
+
+/// One `agent.focus` at herdr, then done — best-effort and bounded, because
+/// this sits between a keypress and the screen settling. Every failure mode
+/// leaves the user exactly where the window dispatch put them, which is
+/// already the right window.
+fn herdr_hop(info: &amon_protocol::HerdrInfo) {
+    use std::io::{BufRead, BufReader, Write};
+
+    let Ok(stream) = std::os::unix::net::UnixStream::connect(&info.socket) else {
+        return;
+    };
+    let _ = stream.set_read_timeout(Some(RESOLVE_TIMEOUT));
+    let _ = stream.set_write_timeout(Some(RESOLVE_TIMEOUT));
+    let Ok(mut writer) = stream.try_clone() else {
+        return;
+    };
+    let line = serde_json::json!({
+        "id": "amon-focus",
+        "method": "agent.focus",
+        "params": {"target": info.pane},
+    });
+    if writeln!(writer, "{line}").is_err() {
+        return;
+    }
+    // Read the reply so the request is not torn down mid-parse; what it says
+    // changes nothing we could do better.
+    let mut reply = String::new();
+    let _ = BufReader::new(stream).read_line(&mut reply);
 }
 
 /// Whether a window token is one this is willing to paste into a Lua
@@ -104,4 +179,49 @@ fn dispatch(expression: &str) -> Result<bool, Box<dyn std::error::Error>> {
         .arg(expression)
         .output()?;
     Ok(String::from_utf8_lossy(&output.stdout).trim() == DISPATCHED)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixListener;
+
+    #[test]
+    fn the_hop_sends_one_agent_focus_for_the_entrys_pane() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("herdr.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        let served = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            let request: serde_json::Value = serde_json::from_str(&line).unwrap();
+            let mut stream = stream;
+            let _ = writeln!(stream, r#"{{"id":"r","result":{{"type":"agent_focus"}}}}"#);
+            request
+        });
+
+        herdr_hop(&amon_protocol::HerdrInfo {
+            socket: socket.to_string_lossy().into_owned(),
+            session: None,
+            pane: "w1:p2".into(),
+        });
+
+        let request = served.join().unwrap();
+        assert_eq!(request["method"], "agent.focus");
+        assert_eq!(request["params"]["target"], "w1:p2");
+    }
+
+    #[test]
+    fn a_dead_socket_is_silently_nothing() {
+        // The user asked for a workspace switch; herdr being gone must not
+        // turn that into an error or a hang.
+        herdr_hop(&amon_protocol::HerdrInfo {
+            socket: "/nonexistent/herdr.sock".into(),
+            session: None,
+            pane: "w1:p1".into(),
+        });
+    }
 }
