@@ -62,11 +62,15 @@ jobs:
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
 
       # The e2e fake agents report through sockets with socat, absent on the
-      # macOS runner image the same way it is absent on ubuntu's.
-      - name: Install socat
-        run: brew install socat
+      # macOS runner image the same way it is absent on ubuntu's — and pipe
+      # through `timeout`, which macOS does not ship at all; coreutils
+      # provides it as gtimeout, and the test harness knows to look.
+      - name: Install socat and coreutils
+        run: brew install socat coreutils
 
       - name: Test
+        # --no-fail-fast here, unlike the Linux job: this platform's failures
+        # are rarer and best seen all at once rather than one per run.
         run: |
-          cargo nextest run --workspace --status-level fail
+          cargo nextest run --workspace --status-level fail --no-fail-fast
           cargo test --workspace --doc

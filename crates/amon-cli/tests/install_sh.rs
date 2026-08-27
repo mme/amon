@@ -6,6 +6,12 @@
 //! three URLs the script knows (the /releases/latest redirect, the tarball,
 //! the sha256 sidecar), into a scratch HOME. AMON_BASE_URL exists in the
 //! script solely to point it here.
+//!
+//! Linux only: the harness leans on util-linux — `setsid`, `script -qec` —
+//! and `sha256sum`, none of which a Mac ships in that shape. The installer's
+//! Darwin branch is a `case` held by the release-contract tests, and the
+//! platform-refusal tests below exercise it here by faking `uname`.
+#![cfg(target_os = "linux")]
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
