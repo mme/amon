@@ -133,39 +133,40 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
             naming::wear_comm(&name);
         }
     }
+    let entry = AgentEntry {
+        id: agent_id.clone(),
+        agent: agent_label,
+        state: AgentState::Unknown,
+        state_since: now_millis(),
+        cwd: cwd.to_string_lossy().into_owned(),
+        pid: agent_pid,
+        args: launch
+            .argv
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect(),
+        hostname: hostname(),
+        started_at: now_millis(),
+        agent_session_id: None,
+        agent_session_path: None,
+        // Nothing has been rendered yet; the observer fills this in once the
+        // agent has drawn a screen worth reading.
+        activity: None,
+        window: None,
+        position: None,
+        workspace: None,
+        // Resolved before the agent is registered, so a row never appears
+        // without its Project and branch and then acquires them a second
+        // later.
+        branch: location.branch.clone(),
+        project: location.project.clone(),
+        subpath: location.subpath.clone(),
+        focused: None,
+        seen: None,
+        runtime: None,
+    };
     if runtime_pane.is_none() {
-        link.register(AgentEntry {
-            id: agent_id.clone(),
-            agent: agent_label,
-            state: AgentState::Unknown,
-            state_since: now_millis(),
-            cwd: cwd.to_string_lossy().into_owned(),
-            pid: agent_pid,
-            args: launch
-                .argv
-                .iter()
-                .map(|arg| arg.to_string_lossy().into_owned())
-                .collect(),
-            hostname: hostname(),
-            started_at: now_millis(),
-            agent_session_id: None,
-            agent_session_path: None,
-            // Nothing has been rendered yet; the observer fills this in once the
-            // agent has drawn a screen worth reading.
-            activity: None,
-            window: None,
-            position: None,
-            workspace: None,
-            // Resolved before the agent is registered, so a row never appears
-            // without its Project and branch and then acquires them a second
-            // later.
-            branch: location.branch.clone(),
-            project: location.project.clone(),
-            subpath: location.subpath.clone(),
-            focused: None,
-            seen: None,
-            runtime: None,
-        });
+        link.register(entry.clone());
     }
 
     let focus_shared = focus::Shared::default();
@@ -177,6 +178,7 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
             cols,
             rows,
             runtime_pane: runtime_pane.map(|(kind, pane)| (kind.to_string(), pane)),
+            entry,
         },
         link,
         inbox,
