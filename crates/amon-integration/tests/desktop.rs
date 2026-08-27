@@ -424,6 +424,7 @@ fn order_in_rust() -> Vec<String> {
         branch: None,
         focused: None,
         seen,
+        herdr: None,
     };
     let mut agents = [
         at(amon_protocol::AgentState::Idle, Some(true)),

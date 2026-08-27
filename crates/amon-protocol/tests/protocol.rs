@@ -4,8 +4,8 @@
 //! from quietly breaking a long-running wrapper talking to an upgraded daemon.
 
 use amon_protocol::{
-    AgentEntry, AgentPatch, AgentState, ErrorCode, Event, Hello, Method, Request, Response, Role,
-    ServerFrame, PROTOCOL_VERSION,
+    AgentEntry, AgentPatch, AgentState, ErrorCode, Event, Hello, HerdrInfo, Method, Request,
+    Response, Role, ServerFrame, PROTOCOL_VERSION,
 };
 
 fn entry() -> AgentEntry {
@@ -27,6 +27,7 @@ fn entry() -> AgentEntry {
         branch: None,
         focused: None,
         seen: None,
+        herdr: None,
     }
 }
 
@@ -302,4 +303,29 @@ fn only_an_agent_at_rest_is_not_worth_a_jump() {
     assert!(!at(AgentState::Idle, Some(true)).wants_attention());
     assert!(!at(AgentState::Idle, None).wants_attention());
     assert!(!at(AgentState::Unknown, None).wants_attention());
+}
+
+#[test]
+fn a_herdr_entry_round_trips_and_a_plain_one_stays_bare() {
+    let with_herdr = AgentEntry {
+        id: "herdr:default:term_1".into(),
+        herdr: Some(HerdrInfo {
+            socket: "/home/mme/.config/herdr/herdr.sock".into(),
+            session: None,
+            pane: "w1:p2".into(),
+        }),
+        ..entry()
+    };
+    let json = serde_json::to_value(&with_herdr).unwrap();
+    assert_eq!(json["herdr"]["pane"], "w1:p2");
+    // The default session is absence, not an empty string, so consumers have
+    // one spelling to check.
+    assert!(json["herdr"].get("session").is_none());
+    let back: AgentEntry = serde_json::from_value(json).unwrap();
+    assert_eq!(back, with_herdr);
+
+    // Absent from the wire when not set, so a consumer that predates the
+    // field sees nothing new.
+    let json = serde_json::to_value(entry()).unwrap();
+    assert!(json.get("herdr").is_none());
 }
