@@ -23,12 +23,20 @@ SHARE_DIR="$HOME/.local/share/amon"
 
 OS="$(uname -s)"
 ARCH="$(uname -m)"
-[ "$OS" = "Linux" ] || { echo "amon runs on Linux (this is $OS)" >&2; exit 1; }
-[ "$ARCH" = "x86_64" ] || {
-  echo "prebuilt amon is x86_64 only (this is $ARCH)." >&2
-  echo "build from source instead: https://github.com/mme/amon#building" >&2
-  exit 1
-}
+case "$OS/$ARCH" in
+  Linux/x86_64) SUFFIX="x86_64-linux" ;;
+  Darwin/arm64) SUFFIX="aarch64-darwin" ;;
+  Darwin/*)
+    echo "prebuilt amon for Mac is Apple Silicon only (this is $ARCH)." >&2
+    echo "build from source instead: https://github.com/mme/amon#building" >&2
+    exit 1
+    ;;
+  *)
+    echo "prebuilt amon supports x86_64 Linux and Apple Silicon Macs (this is $OS/$ARCH)." >&2
+    echo "build from source instead: https://github.com/mme/amon#building" >&2
+    exit 1
+    ;;
+esac
 
 TAG="${AMON_VERSION:-}"
 if [ -z "$TAG" ]; then
@@ -53,14 +61,20 @@ if [ -x "$BIN_DIR/amon" ]; then
   PREVIOUS="$("$BIN_DIR/amon" --version 2>/dev/null | cut -d' ' -f2)" || true
 fi
 
-TARBALL="amon-$TAG-x86_64-linux.tar.gz"
+TARBALL="amon-$TAG-$SUFFIX.tar.gz"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 echo "downloading amon $TAG"
 curl -fsSL "$REPO_URL/releases/download/$TAG/$TARBALL" -o "$TMP/$TARBALL"
 curl -fsSL "$REPO_URL/releases/download/$TAG/$TARBALL.sha256" -o "$TMP/$TARBALL.sha256"
-(cd "$TMP" && sha256sum -c --quiet "$TARBALL.sha256" >/dev/null 2>&1) || {
+# sha256sum on Linux; macOS ships shasum instead, reading the same format.
+if command -v sha256sum >/dev/null 2>&1; then
+  CHECK="sha256sum -c --quiet"
+else
+  CHECK="shasum -a 256 -c --quiet"
+fi
+(cd "$TMP" && $CHECK "$TARBALL.sha256" >/dev/null 2>&1) || {
   echo "checksum mismatch: refusing to install" >&2
   exit 1
 }
@@ -84,7 +98,14 @@ else
 fi
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
-  *) echo "note: $BIN_DIR is not on PATH in this shell" ;;
+  *)
+    echo "note: $BIN_DIR is not on PATH in this shell"
+    # Omarchy puts it there for every login shell; a Mac does not, so say
+    # what to add — print it, never edit anyone's zshrc.
+    if [ "$OS" = "Darwin" ]; then
+      echo "  add to ~/.zshrc:  export PATH=\"\$HOME/.local/bin:\$PATH\""
+    fi
+    ;;
 esac
 
 if [ "$UPGRADING" = 1 ]; then
