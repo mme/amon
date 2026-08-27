@@ -19,6 +19,7 @@ use amon_protocol::{
 };
 
 mod config;
+mod herdr;
 mod manifests;
 mod registry;
 mod sound;
@@ -66,7 +67,17 @@ pub fn run(version: String) -> std::io::Result<()> {
     });
     updates::check_periodically(registry.clone(), config.clone(), version.clone());
     let shutdown = Arc::new(AtomicBool::new(false));
-    let next_connection = AtomicU64::new(0);
+    // Shared with the herdr watcher: projected entries and socket
+    // connections draw registry ids from one counter, because the registry
+    // keys ownership by connection id and two allocators would collide.
+    let next_connection = Arc::new(AtomicU64::new(0));
+
+    // Agents inside herdr sessions surface through the same registry as
+    // wrapped ones. AMON_HERDR=0 exists for tests: an e2e daemon on a
+    // machine with a live herdr must not see the developer's real agents.
+    if std::env::var_os("AMON_HERDR").is_none_or(|value| value != "0") {
+        herdr::spawn(registry.clone(), next_connection.clone());
+    }
 
     for stream in listener.incoming() {
         if shutdown.load(Ordering::Relaxed) {

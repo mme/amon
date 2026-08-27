@@ -80,6 +80,16 @@ impl Sandbox {
         // a test drive the developer's real desktop, so PATH holds only the
         // sandbox: planted stubs first, then the symlinked tool bin.
         command.env("PATH", self.sandbox_path());
+        // The daemon a test spawns inherits this: it must not adopt agents
+        // from a herdr session the developer happens to have open.
+        command.env("AMON_HERDR", "0");
+        // A developer running the tests from a terminal that is itself
+        // wrapped by amon carries these; a test's agent would inherit them
+        // and look wrapped when it is not.
+        command.env_remove("AMON_ENV");
+        command.env_remove("AMON_AGENT_ID");
+        command.env_remove("AMON_SOCKET_PATH");
+        command.env_remove("HERDR_ENV");
         command
     }
 
@@ -377,6 +387,14 @@ impl PtySession {
         // A compositor lookup would reach past the sandbox to the developer's
         // own desktop, and these tests are about focus, not windows.
         command.env_remove("HYPRLAND_INSTANCE_SIGNATURE");
+        // Same reasons as `Sandbox::command`: no adopting the developer's
+        // live herdr session, and no inheriting the wrapper's marks from a
+        // terminal that is itself running under amon.
+        command.env("AMON_HERDR", "0");
+        command.env_remove("AMON_ENV");
+        command.env_remove("AMON_AGENT_ID");
+        command.env_remove("AMON_SOCKET_PATH");
+        command.env_remove("HERDR_ENV");
         let child = pty.slave.spawn_command(command).expect("spawn");
         drop(pty.slave);
 
