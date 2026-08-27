@@ -1987,6 +1987,11 @@ fn a_symlinked_shell_config_is_not_followed() {
 
 /// A `hyprctl` that records the expression it was told to dispatch and answers
 /// the way the real one does — `ok` on stdout, and exit 0 either way.
+///
+/// This helper and the focus tests below are Linux only, like `amon focus`
+/// itself: off Linux the subcommand answers with an error and never
+/// dispatches anything (ADR-0019).
+#[cfg(target_os = "linux")]
 fn fake_hyprctl(sandbox: &Sandbox, record: &std::path::Path, reply: &str) {
     sandbox.fake_agent(
         "hyprctl",
@@ -2021,6 +2026,7 @@ fn register_agent(
     client
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn focus_switches_the_workspace_when_no_agent_wants_you() {
     // The behaviour the Super+N binding replaced, and what every failure here
@@ -2040,6 +2046,7 @@ fn focus_switches_the_workspace_when_no_agent_wants_you() {
     assert_eq!(dispatched.lines().count(), 1, "and only once: {dispatched}");
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn focus_lands_on_the_agent_that_wants_you_most() {
     // Two agents on one workspace: one still working, one finished and not yet
@@ -2068,6 +2075,7 @@ fn focus_lands_on_the_agent_that_wants_you_most() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn focus_leaves_an_agent_at_rest_alone() {
     // An idle agent that has been seen asks for nothing. Stealing the focus
@@ -2089,6 +2097,7 @@ fn focus_leaves_an_agent_at_rest_alone() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn focus_still_switches_when_the_window_has_gone() {
     // The agent was there when the daemon answered and its window is not there
