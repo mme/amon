@@ -177,7 +177,70 @@ pub fn interactive() -> Result<(), Box<dyn std::error::Error>> {
         actions.push(Action::SetupPanel);
         actions.push(Action::SetupBindings);
     }
-    apply(&actions)
+    let result = apply(&actions);
+    offer_udev_rule(true);
+    result
+}
+
+/// The one root step a desk device can need (ADR-0016): a udev rule so the
+/// seated user may open the device node and `/dev/uinput`. Interactive runs
+/// offer to install it with the user's own sudo — the rule is shown in full
+/// first, and declining is a fine answer. Non-interactive runs print the
+/// command instead; a script must never be surprised by a password prompt.
+///
+/// Silent when there is nothing to say: no device connected, or everything
+/// already accessible (the Work Louder Input app installs equivalent rules,
+/// and a machine that has run it needs nothing from us).
+fn offer_udev_rule(interactive: bool) {
+    let Some(found) = amon_daemon::devices::discover() else {
+        return;
+    };
+    let device_ok = amon_integration::udev::accessible(&found.node);
+    let uinput_ok = amon_integration::udev::accessible(std::path::Path::new("/dev/uinput"));
+    if device_ok && uinput_ok {
+        return;
+    }
+
+    println!();
+    if device_ok {
+        println!("a Creator Micro 2 is connected; key and scroll actions also need /dev/uinput.");
+    } else {
+        println!("a Creator Micro 2 is connected, but amon may not open it.");
+    }
+    println!("one udev rule fixes that — it grants the logged-in seat access and nothing else:");
+    println!();
+    for line in amon_integration::udev::RULES.lines() {
+        println!("    {line}");
+    }
+    println!();
+
+    if !interactive {
+        println!("install it with:");
+        println!("    {}", amon_integration::udev::install_command());
+        return;
+    }
+
+    print!("install it now with sudo? [y/N] ");
+    let _ = io::stdout().flush();
+    let mut answer = String::new();
+    let _ = io::stdin().read_line(&mut answer);
+    if !matches!(answer.trim(), "y" | "Y" | "yes") {
+        println!("skipped — install it later with:");
+        println!("    {}", amon_integration::udev::install_command());
+        return;
+    }
+    let status = std::process::Command::new("sh")
+        .args(["-c", &amon_integration::udev::install_command()])
+        .status();
+    match status {
+        Ok(status) if status.success() => {
+            println!("✓ udev rule installed — the device lights within moments");
+        }
+        _ => {
+            println!("✗ the rule did not install; run it yourself:");
+            println!("    {}", amon_integration::udev::install_command());
+        }
+    }
 }
 
 /// `amon setup --all`: every Detected Agent plus the widget, no screen. Purely
@@ -206,7 +269,9 @@ pub fn all(no_alias: bool, duck: bool) -> Result<(), Box<dyn std::error::Error>>
         print_empty_state();
         return Ok(());
     }
-    apply(&actions)
+    let result = apply(&actions);
+    offer_udev_rule(false);
+    result
 }
 
 /// `amon setup --upgrade`: after a binary swap, bring everything a previous
