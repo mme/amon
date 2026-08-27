@@ -500,16 +500,14 @@ fn run_action(action: &Action, scroll_direction: Option<i32>, synth: &mut Option
     }
 }
 
-/// Focus the agent the way the panel's Enter does: by window when the
-/// compositor gave us one, by workspace otherwise.
+/// Focus the agent the way the panel's Enter does — through `amon focus`,
+/// never by dispatching the compositor from here. Reaching an agent is one
+/// operation with more than one part: the window, and, for an agent living
+/// in a herdr pane, the pane inside it. amon owns that sequence, so a key
+/// that reached for hyprctl itself would land on the right window and the
+/// wrong pane.
 fn focus_agent(agent: &AgentEntry) {
-    if let Some(window) = agent.window.as_deref().filter(|w| !w.is_empty()) {
-        actions::hyprctl(&format!(
-            "hl.dsp.focus({{ window = \"address:0x{window}\" }})"
-        ));
-    } else if let Some(workspace) = agent.workspace.as_deref() {
-        actions::hyprctl(&format!("hl.dsp.focus({{ workspace = \"{workspace}\" }})"));
-    }
+    actions::amon(&["focus", "--agent", &agent.id]);
 }
 
 // ---------------------------------------------------------------------------
@@ -767,6 +765,7 @@ mod tests {
             branch: None,
             focused: None,
             seen,
+            herdr: None,
         }
     }
 
