@@ -320,12 +320,14 @@ pub fn run_with_terminal_stdin(sandbox: &Sandbox, argv: &[&str]) -> Vec<u8> {
 
     let (mut controller, mut terminal): (RawFd, RawFd) = (0, 0);
     let opened = unsafe {
+        // `null_mut` for the termios and winsize slots: macOS declares them
+        // `*mut`, Linux `*const`, and only `*mut` coerces to both.
         libc::openpty(
             &mut controller,
             &mut terminal,
             std::ptr::null_mut(),
-            std::ptr::null(),
-            std::ptr::null(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
         )
     };
     assert_eq!(opened, 0, "openpty");

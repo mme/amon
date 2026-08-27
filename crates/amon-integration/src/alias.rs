@@ -41,11 +41,18 @@ fn home() -> Option<PathBuf> {
 
 /// The shell config amon writes into.
 ///
-/// Bash only, because it is Omarchy's default and the only shell installed
-/// there. A line written for a shell the user does not run would be worse than
-/// saying plainly that amon wrote none.
+/// The platform's default shell and no other: bash on Linux, because it is
+/// Omarchy's default and the only shell installed there; zsh on macOS, its
+/// default since Catalina. The alias syntax is the same in both, and both
+/// expand aliases only in interactive shells. A line written for a shell the
+/// user does not run would be worse than saying plainly that amon wrote none.
 pub fn shell_config() -> Option<PathBuf> {
-    home().map(|home| home.join(".bashrc"))
+    let file = if cfg!(target_os = "macos") {
+        ".zshrc"
+    } else {
+        ".bashrc"
+    };
+    home().map(|home| home.join(file))
 }
 
 fn missing_home() -> io::Error {

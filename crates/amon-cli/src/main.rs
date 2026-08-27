@@ -18,6 +18,7 @@ use amon_protocol::{
 use clap::{Parser, Subcommand};
 
 mod doctor;
+#[cfg(target_os = "linux")]
 mod focus;
 mod setup;
 mod starter;
@@ -89,6 +90,9 @@ enum Command {
     },
     /// Go to a workspace, landing on the agent that needs your attention
     /// rather than on whatever was focused there last
+    // Hidden off Linux rather than removed: dropping the variant would make
+    // clap read `amon focus 3` as an agent named `focus` to wrap.
+    #[cfg_attr(not(target_os = "linux"), command(hide = true))]
     Focus {
         /// Workspace number, e.g. `3`
         workspace: u32,
@@ -177,7 +181,12 @@ fn main() -> ExitCode {
             }
         }
         Command::Remove { target, all } => run_remove(target.as_deref(), all),
+        #[cfg(target_os = "linux")]
         Command::Focus { workspace } => focus::run(workspace),
+        #[cfg(not(target_os = "linux"))]
+        Command::Focus { workspace: _ } => {
+            Err("amon focus needs a compositor to jump through; there is none here".into())
+        }
         Command::Doctor => doctor::run(VERSION),
         Command::Daemon => run_daemon(),
         Command::Hook(report) => run_hook(report),
@@ -525,6 +534,7 @@ impl Client {
     /// keybinding, where a daemon launch would be a visible stall before the
     /// workspace changes, and where no daemon just means no agents to find —
     /// which is a plain workspace switch, not an error.
+    #[cfg(target_os = "linux")]
     pub(crate) fn connect_running(
         timeout: std::time::Duration,
     ) -> Result<Self, Box<dyn std::error::Error>> {
