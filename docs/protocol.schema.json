@@ -295,6 +295,7 @@
         "sound": {
           "$ref": "#/$defs/SoundConfig",
           "default": {
+            "duck_while_dictating": true,
             "enabled": true
           }
         },
@@ -909,6 +910,11 @@
             "string",
             "null"
           ]
+        },
+        "duck_while_dictating": {
+          "default": true,
+          "description": "Duck other audio while voxtype is recording, the way notifications do.\n\nOn by default, for the same reason the sounds are: it only ever helps,\nand a setting nobody knows exists helps nobody. It needs the ducking\ndrop-in (`amon setup --duck`) to have any effect — without it nothing\nchanges — and it composes with rather than replaces voxtype's own\n`pause_media`, which pauses MPRIS players for transcription accuracy;\nducked audio still reaches the microphone.",
+          "type": "boolean"
         },
         "enabled": {
           "default": true,

@@ -113,7 +113,8 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("audio:");
     if ducking::available() {
-        match ducking::status() {
+        let dropin = ducking::status();
+        match dropin {
             InstallState::Current => {
                 print_line("ducking", "installed (music dips under notifications)", "")
             }
@@ -124,6 +125,16 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
             ),
             InstallState::NotInstalled => {
                 print_line("ducking", "not installed (amon setup --duck)", "")
+            }
+        }
+        // Only what the daemon actually runs with counts (ADR-0012); with no
+        // daemon to ask, no row — the daemon section already says why.
+        if let Some(result) = &daemon_config {
+            let state_file = amon_daemon::dictation_state_path().is_some_and(|path| path.exists());
+            if let Some(row) =
+                dictation_row(result.config.sound.duck_while_dictating, dropin, state_file)
+            {
+                print_line("dictation", row, "");
             }
         }
     } else {
@@ -307,10 +318,58 @@ fn describe_state(state: InstallState, installed: &str, expected: &str) -> Strin
     }
 }
 
+/// The dictation-ducking row of the audio section, `None` when the setting
+/// was turned off — what someone opted out of deserves no line. When it is
+/// on, the row says the one thing that decides whether it works: the drop-in
+/// (stale still ducks), then voxtype's state file, and only then "working".
+fn dictation_row(
+    duck_while_dictating: bool,
+    dropin: InstallState,
+    state_file_present: bool,
+) -> Option<&'static str> {
+    if !duck_while_dictating {
+        return None;
+    }
+    Some(match (dropin, state_file_present) {
+        (InstallState::NotInstalled, _) => {
+            "duck_while_dictating is on, but nothing ducks without the drop-in (amon setup --duck)"
+        }
+        (_, false) => "duck_while_dictating is on, but no voxtype state file — is voxtype running?",
+        (_, true) => "music ducks while dictation records",
+    })
+}
+
 fn print_line(label: &str, state: &str, path: &str) {
     if path.is_empty() {
         println!("  {label:<12} {state}");
     } else {
         println!("  {label:<12} {state:<24} {path}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dictation_row_speaks_only_when_the_setting_is_on() {
+        assert_eq!(dictation_row(false, InstallState::Current, true), None);
+        assert_eq!(
+            dictation_row(true, InstallState::NotInstalled, true),
+            Some("duck_while_dictating is on, but nothing ducks without the drop-in (amon setup --duck)")
+        );
+        assert_eq!(
+            dictation_row(true, InstallState::Current, false),
+            Some("duck_while_dictating is on, but no voxtype state file — is voxtype running?")
+        );
+        assert_eq!(
+            dictation_row(true, InstallState::Current, true),
+            Some("music ducks while dictation records")
+        );
+        // A stale drop-in still ducks; the ducking row already says "stale".
+        assert_eq!(
+            dictation_row(true, InstallState::Outdated, true),
+            Some("music ducks while dictation records")
+        );
     }
 }

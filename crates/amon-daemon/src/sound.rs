@@ -27,13 +27,13 @@ static BLOCKED: &[u8] = include_bytes!("../assets/sounds/request.mp3");
 /// packages. herdr's fallback chain (paplay, ffplay, mpg123, mpv) was
 /// carried for machines amon does not target; a machine without pw-play
 /// reads as "no player" and stays quiet, the same stance as everywhere else.
-const PLAYER: &str = "pw-play";
+pub(crate) const PLAYER: &str = "pw-play";
 
 /// The stream declares itself a notification. That is what lets the ducking
 /// drop-in (`amon setup --duck`) route it onto the Notification bus, above
 /// the music; without the drop-in the tag is inert. A test holds this role
 /// to the one the drop-in ranks.
-const ROLE: &str = r#"{ media.role = "Notification" }"#;
+pub(crate) const ROLE: &str = r#"{ media.role = "Notification" }"#;
 
 fn arguments(file: &str) -> Vec<String> {
     vec!["-P".into(), ROLE.into(), file.into()]

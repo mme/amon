@@ -83,6 +83,15 @@ pub struct SoundConfig {
     /// Played when an agent starts waiting for a human.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blocked: Option<String>,
+    /// Duck other audio while voxtype is recording, the way notifications do.
+    ///
+    /// On by default, for the same reason the sounds are: it only ever helps,
+    /// and a setting nobody knows exists helps nobody. It needs the ducking
+    /// drop-in (`amon setup --duck`) to have any effect — without it nothing
+    /// changes — and it composes with rather than replaces voxtype's own
+    /// `pause_media`, which pauses MPRIS players for transcription accuracy;
+    /// ducked audio still reaches the microphone.
+    pub duck_while_dictating: bool,
 }
 
 impl Default for SoundConfig {
@@ -91,6 +100,7 @@ impl Default for SoundConfig {
             enabled: true,
             done: None,
             blocked: None,
+            duck_while_dictating: true,
         }
     }
 }
@@ -169,4 +179,16 @@ pub struct DeviceColors {
     pub done: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub idle: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dictation_ducking_is_on_by_default() {
+        // Like the sounds themselves: a setting nobody knows exists helps
+        // nobody, and without the drop-in installed it is inert anyway.
+        assert!(SoundConfig::default().duck_while_dictating);
+    }
 }
