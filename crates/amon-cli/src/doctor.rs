@@ -8,7 +8,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 
-use amon_integration::{alias, desktop, ducking, shims, DesktopTarget, InstallState};
+use amon_integration::{alias, desktop, ducking, shims, udev, DesktopTarget, InstallState};
 use amon_protocol::{Hello, HelloResult, Method, Request, Response, Role, PROTOCOL_VERSION};
 
 pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -125,6 +125,34 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
         }
     } else {
         print_line("ducking", "no wireplumber on PATH — nothing to duck", "");
+    }
+
+    println!();
+    println!("devices:");
+    match amon_daemon::devices::discover() {
+        Some(found) => {
+            if udev::accessible(&found.node) {
+                print_line(
+                    "micro2",
+                    "connected (the daemon lights it)",
+                    &found.node.display().to_string(),
+                );
+            } else {
+                print_line(
+                    "micro2",
+                    "connected, not accessible (amon setup adds the udev rule)",
+                    &found.node.display().to_string(),
+                );
+            }
+            if !udev::accessible(std::path::Path::new("/dev/uinput")) {
+                print_line(
+                    "input",
+                    "no /dev/uinput access — key and scroll actions stay inert (amon setup)",
+                    "",
+                );
+            }
+        }
+        None => print_line("micro2", "not connected", ""),
     }
 
     println!();
