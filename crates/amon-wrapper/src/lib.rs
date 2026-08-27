@@ -21,6 +21,8 @@ mod hypr;
 mod naming;
 mod observer;
 mod tty;
+#[allow(dead_code)]
+mod whisper;
 
 pub use observer::Signal;
 
