@@ -50,4 +50,11 @@ pub mod env {
     pub const AGENT_ID: &str = "AMON_AGENT_ID";
     /// Value of [`AMON_ENV`] when amon is wrapping the process.
     pub const AMON_ENV_VALUE: &str = "1";
+    /// The pid of the wrapper that spawned this process.
+    ///
+    /// Not for hooks — for the shims, which need to tell "amon is the process
+    /// that just called me" from "amon is somewhere above me". Every variable
+    /// here descends the whole process tree, so presence alone cannot carry
+    /// that distinction and a pid to compare against `$PPID` can (ADR-0016).
+    pub const WRAPPER_PID: &str = "AMON_WRAPPER_PID";
 }

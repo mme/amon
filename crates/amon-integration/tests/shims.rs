@@ -19,9 +19,19 @@ struct Home;
 
 impl Home {
     fn new() -> Self {
+        Self::named("amon-shims")
+    }
+
+    /// A home whose own path carries glob characters, which the shim has to
+    /// treat as literal text rather than as a pattern.
+    fn globbish() -> Self {
+        Self::named("amon-shims[1]")
+    }
+
+    fn named(prefix: &str) -> Self {
         static NEXT: AtomicU32 = AtomicU32::new(0);
         let root = std::env::temp_dir().join(format!(
-            "amon-shims{}-{}",
+            "{prefix}{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
@@ -58,7 +68,7 @@ fn a_shim_is_installed_for_each_of_an_agents_names() {
 fn the_shim_stops_itself_recursing_and_double_wrapping() {
     // Both guards, because they stop different things. Stripping the directory
     // is what keeps `amon claude` from finding this same file again forever;
-    // the AMON_AGENT_ID check is what keeps two amon processes off one agent
+    // the AMON_WRAPPER_PID check is what keeps two amon processes off one agent
     // when amon was invoked directly.
     let home = Home::new();
     shims::install(CLAUDE).expect("install");
@@ -69,13 +79,80 @@ fn the_shim_stops_itself_recursing_and_double_wrapping() {
         body.contains(dir.to_str().expect("utf-8")),
         "the shim must know its own directory to strip it: {body}"
     );
-    assert!(body.contains("AMON_AGENT_ID"), "{body}");
-    let guard = body.find("AMON_AGENT_ID").expect("guard");
+    assert!(body.contains("AMON_WRAPPER_PID"), "{body}");
+    // Against the caller, not merely present: the marks reach every descendant
+    // of a wrapped agent, and one of those is an agent to wrap, not amon's own
+    // child (ADR-0016).
+    assert!(
+        body.contains("$PPID"),
+        "the guard must compare the pid of whoever called this shim: {body}"
+    );
+    let guard = body.find("AMON_WRAPPER_PID").expect("guard");
     let wrap = body.rfind("exec ").expect("the wrapping exec");
     assert!(
         guard < wrap,
         "the already-wrapped check must come before wrapping again: {body}"
     );
+}
+
+#[test]
+fn a_shim_strips_a_directory_whose_path_looks_like_a_pattern() {
+    // `${PATH//:$dir:/:}` expands the directory into a *pattern*, not into
+    // literal text. A home with glob characters in it — `[1]` matching the one
+    // character `1` — therefore never matches its own path, the shim directory
+    // survives on PATH, and the `exec` below finds this same file again. Not a
+    // wrong agent: a process that execs itself forever and never starts one.
+    //
+    // Driven through the already-inside-amon branch, so the shim execs the
+    // agent directly and what it resolves to is the whole answer.
+    let _home = Home::globbish();
+    shims::install(CLAUDE).expect("install");
+
+    let dir = shims::dir().expect("dir");
+    let bin = dir.parent().expect("share dir").join("bin");
+    std::fs::create_dir_all(&bin).expect("bin");
+    let real = bin.join("claude");
+    std::fs::write(&real, "#!/bin/sh\necho \"reached the agent\"\n").expect("write");
+    make_executable(&real);
+
+    let mut child = std::process::Command::new(dir.join("claude"))
+        .env("PATH", format!("{}:{}", dir.display(), bin.display()))
+        // Makes the guard fire: the shim's parent is this test process.
+        .env("AMON_WRAPPER_PID", std::process::id().to_string())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("the shim runs");
+
+    // Bounded, because the failure being guarded against is an exec loop that
+    // never returns on its own.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while std::time::Instant::now() < deadline {
+        if child.try_wait().expect("wait").is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    let finished = child.try_wait().expect("wait").is_some();
+    let _ = child.kill();
+    let output = child.wait_with_output().expect("output");
+
+    assert!(
+        finished,
+        "the shim never reached an agent — it is execing itself: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("reached the agent"),
+        "the real agent must be what the stripped PATH resolves to: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+fn make_executable(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut permissions = std::fs::metadata(path).expect("stat").permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(path, permissions).expect("chmod");
 }
 
 #[test]

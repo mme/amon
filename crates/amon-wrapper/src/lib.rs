@@ -103,6 +103,11 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     // What lets the agent's hooks find their way back to this wrapper.
     command.env(protocol_env::AMON_ENV, protocol_env::AMON_ENV_VALUE);
     command.env(protocol_env::AGENT_ID, &agent_id);
+    // Which of this agent's descendants is the one amon actually spawned. The
+    // lookup below can land on a shim, and only the shim amon itself called
+    // may step aside; one reached from deeper in the tree has an agent of its
+    // own to wrap (ADR-0016).
+    command.env(protocol_env::WRAPPER_PID, std::process::id().to_string());
     if let Some(socket) = hook_socket.as_ref() {
         command.env(protocol_env::SOCKET_PATH, socket.path());
     }
@@ -491,6 +496,10 @@ fn exec_bare(program: &std::ffi::OsStr, args: &[std::ffi::OsString]) -> std::io:
     bare.env_remove(protocol_env::AMON_ENV);
     bare.env_remove(protocol_env::AGENT_ID);
     bare.env_remove(protocol_env::SOCKET_PATH);
+    // Goes with them: a wrapper pid left behind names a process that is not
+    // this agent's wrapper, and on a long-lived machine that number will
+    // eventually belong to something else entirely.
+    bare.env_remove(protocol_env::WRAPPER_PID);
     bare.exec()
 }
 

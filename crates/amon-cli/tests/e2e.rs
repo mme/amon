@@ -2471,23 +2471,69 @@ fn a_shim_actually_runs_the_agent_under_amon() {
 #[test]
 fn a_shim_called_from_inside_amon_does_not_wrap_twice() {
     // `amon claude` typed in a terminal whose PATH carries the shim dir: amon
-    // spawns `claude`, the lookup finds the shim, and without the guard that
+    // spawns `claude`, the lookup finds this shim, and without the guard that
     // would put a second amon around the same agent.
+    //
+    // Proven by parentage rather than by simulation: with one wrapper the
+    // agent's parent is the amon we started, and a second wrapper in between
+    // would show up here as some other pid.
     let sandbox = Sandbox::new();
     sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
-    sandbox.fake_agent(
-        "claude",
-        "#!/bin/sh\necho \"depth: ${AMON_AGENT_ID:-none}\"\n",
-    );
+    sandbox.fake_agent("claude", "#!/bin/bash\necho \"ppid: $PPID\"\n");
     agent_is_installed(&sandbox, ".claude");
     sandbox.run(&["setup", "claude"]);
 
     let shim = shim_path(&sandbox, "claude");
+    let (stdin, controller) = harness::open_terminal_stdin();
+    let mut command = sandbox.command(&["claude"]);
+    command
+        .stdin(stdin)
+        .stdout(std::process::Stdio::piped())
+        // The shim dir ahead of the rest, exactly as the session PATH has it,
+        // which is what makes amon's own lookup land here.
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                shim.parent().expect("dir").display(),
+                sandbox.sandbox_path()
+            ),
+        );
+    let child = command.spawn().expect("amon spawns");
+    let amon = child.id();
+    let output = child.wait_with_output().expect("amon runs");
+    unsafe { libc::close(controller) };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(&format!("ppid: {amon}")),
+        "the agent hangs off the amon we started, with nothing in between: \
+         {stdout} (amon was {amon})"
+    );
+}
+
+#[test]
+fn a_shim_reached_from_inside_an_agent_still_wraps() {
+    // A wrapped agent starting another agent with no shell in the way: the
+    // marks amon left for *its own* child have come down the process tree, but
+    // amon is not this shim's caller. The inner agent is an agent in its own
+    // right and gets its own wrapper — the guard above must not fire on a mark
+    // that merely drifted down from an ancestor (ADR-0016).
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
+    sandbox.fake_agent("claude", "#!/bin/sh\necho \"id: ${AMON_AGENT_ID:-none}\"\n");
+    agent_is_installed(&sandbox, ".claude");
+    sandbox.run(&["setup", "claude"]);
+
+    let shim = shim_path(&sandbox, "claude");
+    let (stdin, controller) = harness::open_terminal_stdin();
     let output = std::process::Command::new(&shim)
+        .stdin(stdin)
         .env("XDG_RUNTIME_DIR", sandbox.runtime_path(""))
         .env("XDG_STATE_HOME", sandbox.runtime_path("state"))
         .env("HOME", sandbox.home_path(""))
         .env("XDG_CONFIG_HOME", sandbox.home_path(".config"))
+        .env("AMON_HERDR", "0")
         .env(
             "PATH",
             format!(
@@ -2496,15 +2542,26 @@ fn a_shim_called_from_inside_amon_does_not_wrap_twice() {
                 sandbox.sandbox_path()
             ),
         )
-        // Standing in for "amon is already wrapping this".
-        .env("AMON_AGENT_ID", "pretend-wrapper")
+        // An outer agent's marks, inherited the way any descendant inherits
+        // them. Zero rather than any real-looking number: no process has it as
+        // a parent, so this cannot come out a match by accident — pid 1 can,
+        // where the test binary is itself a container's init.
+        .env("AMON_ENV", "1")
+        .env("AMON_AGENT_ID", "outer-agent")
+        .env("AMON_SOCKET_PATH", "/nonexistent/outer.sock")
+        .env("AMON_WRAPPER_PID", "0")
         .output()
         .expect("the shim runs");
+    unsafe { libc::close(controller) };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("depth: pretend-wrapper"),
-        "the agent ran directly, keeping the id it was given: {stdout}"
+        !stdout.contains("id: outer-agent"),
+        "the inner agent must not answer to the outer agent's id: {stdout}"
+    );
+    assert!(
+        stdout.contains("id: ") && !stdout.contains("id: none"),
+        "it must be wrapped, with an id of its own: {stdout}"
     );
 }
 

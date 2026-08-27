@@ -62,11 +62,11 @@ the check depend on an implementation detail of the agent that spawned it.
 ## Consequences
 
 **An outer wrapper's routing must not follow the agent in.** A bare agent that
-still has `AMON_ENV`, `AMON_AGENT_ID` and `AMON_SOCKET_PATH` in its environment
-reports its state to a wrapper watching something else entirely — one agent's
-hooks driving another agent's row. The step-aside path scrubs all three. This is
-the same scrub the herdr bypass has always needed for the same reason, which is
-why both go through one `exec_bare`.
+still has `AMON_ENV`, `AMON_AGENT_ID`, `AMON_SOCKET_PATH` or `AMON_WRAPPER_PID`
+in its environment reports its state to a wrapper watching something else
+entirely — one agent's hooks driving another agent's row. The step-aside path
+scrubs all four. This is the same scrub the herdr bypass has always needed for
+the same reason, which is why both go through one `exec_bare`.
 
 **This is a policy, not a special case for subprocess agents.** A headless
 `amon claude -p …` in your own script loses its row too. That follows from what
@@ -86,18 +86,25 @@ loudly so much as stopped having a subject. It opens a pty for stdin instead.
 That the test harness had to change is the honest signal that this is a
 behaviour change and not a bug fix.
 
-**The Shim decides before the wrapper ever sees the agent, and it decides
-differently.** An agent reached through the PATH shim rather than through the
-alias never arrives here at all: the shim `exec`s the real agent the moment it
-sees `AMON_AGENT_ID` (ADR-0013). That is right for the case it was written for
-— amon spawning its own child, which must not be wrapped twice — and it cannot
-tell that case apart from one where the variable merely came down from an
-ancestor. So an agent that a wrapped agent starts *without* a shell keeps the
-outer wrapper's `AMON_ENV`, `AMON_AGENT_ID` and `AMON_SOCKET_PATH`, and its
-hooks can still report into the outer agent's row.
+**The Shim had to learn the same distinction, and a mark could not teach it.**
+An agent reached through the PATH shim rather than through the alias never
+arrives at the check above: the shim used to `exec` the real agent the moment it
+saw `AMON_AGENT_ID` (ADR-0013). That was right for the case it was written for —
+amon spawning its own child, which must not be wrapped twice — and could not be
+told apart from one where the variable had merely come down from an ancestor. An
+agent that a wrapped agent started *without* a shell was therefore left
+unwrapped while still answering to the outer agent's id and socket, so its hooks
+drove the outer agent's row: the very fault this ADR exists to remove, arriving
+through the other door.
 
-Nothing here makes that worse and nothing here fixes it. Telling "amon is my
-parent" from "amon is somewhere above me" needs a mechanism the shim does not
-have — the variable alone cannot carry the distinction — and that is its own
-change. Worth knowing that the alias door and the shim door do not currently
-answer this question the same way.
+Presence cannot carry the distinction, because every `AMON_` variable reaches
+every descendant; a pid can. The wrapper also stamps `AMON_WRAPPER_PID` with its
+own process id, and the shim steps aside only when that equals its `$PPID` —
+when amon is literally the process that called it. Anything deeper in the tree
+is an agent in its own right and goes through amon, which either wraps it or
+steps aside by the rule above, scrubbing the outer marks on the way out.
+
+Stale pids are the residual risk, and a small one: it takes the original amon
+being gone *and* its number reused by the exact process that calls a shim, and
+the result is one agent running unwrapped — which is what happened in every one
+of these cases before. Not worth more machinery than that.

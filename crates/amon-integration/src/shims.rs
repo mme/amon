@@ -54,11 +54,19 @@ pub fn dir() -> Option<PathBuf> {
 /// that will not start, and it is the same guard `amon.lua` makes before it
 /// rebinds the workspace keys.
 ///
-/// The `AMON_AGENT_ID` check is what stops it wrapping twice. Stripping alone
-/// terminates the loop but still puts two amon processes around one agent when
-/// amon was invoked directly — `amon claude` typed in a terminal whose `PATH`
-/// carries this directory. That variable is set by the wrapper for its own
-/// child, so seeing it means "amon is already here": run the agent itself.
+/// The `AMON_WRAPPER_PID` check is what stops it wrapping twice. Stripping
+/// alone terminates the loop but still puts two amon processes around one agent
+/// when amon was invoked directly — `amon claude` typed in a terminal whose
+/// `PATH` carries this directory. The wrapper stamps its own pid for the child
+/// it spawns, so a value equal to `$PPID` means "amon is the one calling me":
+/// run the agent itself.
+///
+/// It compares the pid rather than testing for a mark, because a mark cannot
+/// answer the question. Every `AMON_` variable is inherited by the agent's own
+/// descendants, so an agent started by a wrapped agent carries them too and a
+/// presence check reads it as amon's own child — leaving it unwrapped and still
+/// answering to the outer agent's id and socket, which is one agent's hooks
+/// driving another agent's row (ADR-0016).
 fn shim(command: &str, directory: &str, amon: &str) -> String {
     format!(
         r#"#!/bin/bash
@@ -74,16 +82,27 @@ fn shim(command: &str, directory: &str, amon: &str) -> String {
 # literally: bash splits ${{var//pattern/replacement}} at the first slash it
 # parses, and a path is full of them — inlining one silently rewrites PATH into
 # nonsense. Expansion happens after that split, so a variable is safe.
+#
+# The quotes around the pattern are what make it a string rather than a glob.
+# Unquoted, a home containing [ ] * or ? turns into a pattern that does not
+# match its own path: the directory stays on PATH and the exec below finds this
+# same file, forever.
 dir={directory}
 PATH=":$PATH:"
-PATH="${{PATH//:$dir:/:}}"
+PATH="${{PATH//":$dir:"/:}}"
 PATH="${{PATH#:}}"
 PATH="${{PATH%:}}"
 export PATH
 
-# Already inside amon: the wrapper sets this for its own child, so another
-# layer would register the same agent twice.
-if [[ -n ${{AMON_AGENT_ID:-}} ]]; then
+# Already inside amon: the wrapper stamps its own pid for the child it spawns,
+# so this matches only when amon is the process that called this shim. Another
+# layer there would register the same agent twice.
+#
+# The pid rather than the presence of a mark: every AMON_ variable descends the
+# whole process tree, so an agent started by a wrapped agent inherits them too
+# and would look like amon's own child. It is not — it is an agent of its own,
+# and it gets wrapped below (ADR-0016).
+if [[ -n ${{AMON_WRAPPER_PID:-}} && ${{AMON_WRAPPER_PID}} == "$PPID" ]]; then
   exec {command} "$@"
 fi
 
