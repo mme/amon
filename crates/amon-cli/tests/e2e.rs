@@ -2725,3 +2725,50 @@ fn doctor_reports_a_config_file_that_does_not_parse() {
         "the kept-last-good state is reported: {stdout}"
     );
 }
+
+#[test]
+fn a_remote_agents_entry_crosses_the_terminal_stream() {
+    // Two worlds: `local` is the desktop, `remote` stands in for the far
+    // host — its own runtime, its own daemon. The outer wrapper's PTY plays
+    // the part of ssh, which is honest casting: ssh's whole contribution to
+    // the design is "carries terminal bytes".
+    let local = Sandbox::new();
+    let remote = Sandbox::new();
+
+    // The outer wrapper runs a shell that starts an inner amon with SSH_TTY
+    // set (so it knocks) and the remote runtime (so it reports to the remote
+    // daemon), then outlives it, so the revert is observable.
+    let script = format!(
+        "SSH_TTY=/dev/fake XDG_RUNTIME_DIR={} {} sleep 2; sleep 10",
+        path_str(remote.runtime_dir()),
+        harness::AMON,
+    );
+    let mut child = local.spawn_agent(&["sh", "-c", &script]);
+
+    // Knock, answer, arm, whispered register: the local daemon's row becomes
+    // the inner agent — same row, so exactly one entry, and its agent is the
+    // inner wrapper's ("sleep"), with facts only the far side knows.
+    let agents = local.wait_for_status("the remote agent to take the row", |agents| {
+        agent_named(agents, "sleep").is_some()
+    });
+    assert_eq!(agents.len(), 1, "one session, one row: {agents:#?}");
+    let mirrored = agent_named(&agents, "sleep").expect("mirrored");
+    assert!(!mirrored["hostname"].as_str().unwrap_or("").is_empty());
+    assert_eq!(
+        mirrored["cwd"],
+        serde_json::json!(path_str(&std::env::current_dir().unwrap()))
+    );
+    let row_id = mirrored["id"].clone();
+
+    // The inner agent ends; its wrapper says goodbye; the row reverts to the
+    // outer wrapper's own entry — the same row still.
+    let agents = local.wait_for_status("the row to revert", |agents| {
+        agent_named(agents, "sh").is_some()
+    });
+    assert_eq!(agents.len(), 1, "still one row: {agents:#?}");
+    let own = agent_named(&agents, "sh").expect("reverted");
+    assert_eq!(own["id"], row_id, "the row keeps its identity");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
