@@ -601,7 +601,7 @@ mod tests {
             .into_iter()
             .map(|message| match message {
                 Message::Register(merged) => merged.state_since,
-                Message::Update(_) => panic!("registers only"),
+                _ => panic!("registers only"),
             })
             .collect();
         assert_eq!(clocks.len(), 2);

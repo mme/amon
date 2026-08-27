@@ -20,7 +20,6 @@ mod hook_socket;
 mod hypr;
 mod observer;
 mod tty;
-#[allow(dead_code)]
 mod whisper;
 
 pub use observer::{RemoteReport, Signal};
@@ -58,7 +57,12 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     let (signals, inbox) = mpsc::channel();
     // Bound to this function so the socket file is unlinked however we leave.
     let hook_socket = hook_socket::listen(&agent_id, signals.clone());
-    let link = daemon_link::DaemonLink::spawn(launch.version);
+    // Inside an ssh session, an amon on the near side of the stream may be
+    // listening; the link's traffic is teed into this outbox once one has
+    // answered the knock. Elsewhere the outbox exists and stays inert.
+    let whispering = std::env::var_os("SSH_TTY").is_some();
+    let outbox = whisper::Outbox::default();
+    let link = daemon_link::DaemonLink::spawn(launch.version, whispering.then(|| outbox.clone()));
 
     let pty = portable_pty::native_pty_system()
         .openpty(portable_pty::PtySize {
@@ -126,6 +130,9 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     // scope and needs its own copy.
     let watched_directory = cwd.clone();
     let focus_shared = focus::Shared::default();
+    // The stdin thread arms the whisper through the link when an answer
+    // arrives; cloned here because the observer takes the link itself.
+    let stdin_link = link.clone();
     let observer_thread = observer::spawn(
         observer::Setup {
             agent_id,
@@ -155,10 +162,17 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     let screen = std::sync::Arc::new(std::sync::Mutex::new(Screen::new(
         on_a_terminal,
         focus_shared.clone(),
+        outbox.clone(),
     )));
     if on_a_terminal {
         if let Ok(mut screen) = screen.lock() {
             screen.enable_focus_reports();
+        }
+        // The knock: one discardable probe, only in an ssh session, asking
+        // whether an amon on the near side is listening. No answer, no
+        // second whisper, ever.
+        if whispering {
+            outbox.enqueue(whisper::encode(&whisper::WhisperFrame::Knock));
         }
         // The user typed the command into this view, so they are looking at it
         // now. Any real report from the terminal overrules this immediately;
@@ -191,6 +205,21 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
                 return;
             }
             let chunk = &buffer[..read];
+
+            // In an ssh session, a knock's answer may arrive here — sent by
+            // an amon on the near side, meant for this wrapper, never for
+            // the agent.
+            let answer_scan;
+            let mut chunk = chunk;
+            if whispering {
+                answer_scan = whisper::scan_input(chunk);
+                if answer_scan.answered {
+                    stdin_link.whisper_armed();
+                }
+                if let Some(stripped) = answer_scan.stripped.as_deref() {
+                    chunk = stripped;
+                }
+            }
 
             // Focus reports are amon's unless the agent asked for them itself,
             // in which case they pass through like anything else it enabled
@@ -254,6 +283,7 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
         };
         if let Ok(mut screen) = screen.lock() {
             screen.reassert_focus_reports();
+            screen.flush_whispers();
         }
 
         if resized.swap(false, std::sync::atomic::Ordering::Relaxed) {
@@ -334,6 +364,13 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     // Leave the terminal as the agent left it, and shut the door behind us so
     // the injector cannot reach it afterwards.
     if let Ok(mut screen) = screen.lock() {
+        // The goodbye: best-effort, like everything whispered. If the stream
+        // ended mid-sequence there is no boundary to use, and the far side's
+        // silence timeout says goodbye instead.
+        if outbox.armed() {
+            outbox.enqueue(whisper::encode(&whisper::WhisperFrame::Bye));
+            screen.flush_whispers();
+        }
         screen.finish();
     }
     let _ = signals.send(Signal::AgentExited);
@@ -362,6 +399,8 @@ struct Screen {
     /// Whispered frames are taken out of the stream here, before the
     /// terminal, the mode scanner, or the shadow sees a byte of them.
     whispers: whisper::OutputScanner,
+    /// Whispers of amon's own, waiting for a boundary to ride out on.
+    whisper_out: whisper::Outbox,
 }
 
 /// What one chunk of agent output amounted to, after the whisper scan.
@@ -374,13 +413,14 @@ struct OutputHandled {
 }
 
 impl Screen {
-    fn new(on_a_terminal: bool, focus: focus::Shared) -> Self {
+    fn new(on_a_terminal: bool, focus: focus::Shared, whisper_out: whisper::Outbox) -> Self {
         Self {
             stdout: std::io::stdout(),
             scanner: focus::ModeScanner::default(),
             focus,
             tracking: on_a_terminal,
             whispers: whisper::OutputScanner::default(),
+            whisper_out,
         }
     }
 
@@ -420,6 +460,23 @@ impl Screen {
             observed: scan.forwarded,
             frames: scan.frames,
         })
+    }
+
+    /// Writes queued whispers to the terminal — but only between the agent's
+    /// own sequences, for the same reason `reassert_focus_reports` waits for
+    /// one: amon's bytes must never land inside the agent's.
+    fn flush_whispers(&mut self) {
+        if !self.tracking || !self.scanner.at_boundary() {
+            return;
+        }
+        let queued = self.whisper_out.drain();
+        if queued.is_empty() {
+            return;
+        }
+        for bytes in &queued {
+            let _ = self.stdout.write_all(bytes);
+        }
+        let _ = self.stdout.flush();
     }
 
     /// Puts focus reporting back if the agent turned it off — but only between
