@@ -65,6 +65,12 @@ const STARTER: &str = r##"# amon
 # done = "~/sounds/finished.mp3"
 # blocked = "~/sounds/attention.mp3"
 
+# Duck other audio while dictation records, the way notifications duck it.
+# Needs the ducking drop-in (amon setup --duck); without it, nothing changes.
+#
+# On by default. Uncomment to leave the music alone while dictating:
+# duck_while_dictating = false
+
 [updates]
 # Whether the daemon may look for newer releases: one request against the
 # GitHub release page's redirect, at most daily, with nothing about your
