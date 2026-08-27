@@ -43,7 +43,7 @@ pub struct StatusResult {
     pub agents: Vec<AgentEntry>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ConfigResult {
     pub config: Config,
     /// Why the file on disk is not what `config` says, when it is not: a

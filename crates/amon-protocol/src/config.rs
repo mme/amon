@@ -14,12 +14,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// The whole of the user's configuration.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct Config {
     pub bar: BarConfig,
     pub sound: SoundConfig,
     pub updates: UpdatesConfig,
+    pub devices: DevicesConfig,
 }
 
 /// What the workspace indicators draw, and how fast.
@@ -108,4 +109,64 @@ impl Default for UpdatesConfig {
     fn default() -> Self {
         Self { check: true }
     }
+}
+
+/// Physical status devices on the desk (ADR-0016). Today that is the Work
+/// Louder Creator Micro 2; the shape leaves room for its siblings.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct DevicesConfig {
+    pub micro2: Micro2Config,
+}
+
+/// The Creator Micro 2: six agent keys lit by agent state, a ring showing
+/// the fleet's most urgent state, and every other control mapped to an
+/// action. Everything here is optional; absent means the tuned default.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Micro2Config {
+    /// On unless turned off. With no device connected this configures
+    /// nothing; the daemon only acts when one appears.
+    pub enabled: bool,
+    /// 0.0–1.0, applied to keys and ring alike.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub brightness: Option<f32>,
+    /// Whether the ambient ring shows the fleet's most urgent state.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ring: Option<bool>,
+    /// Per-state key colors, `#RRGGBB`. Defaults are the Codex palette.
+    pub colors: DeviceColors,
+    /// Macro-key overrides: keys are the seven macro keys in reading
+    /// order (`macro_1`..`macro_4` upper row, `macro_5`..`macro_7` lower),
+    /// values are actions (`none`, `panel`, `workspace:N`, `key:<spec>`,
+    /// `exec:<command>`). The agent keys, encoder, and joystick have fixed
+    /// roles and are not remappable.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub keys: std::collections::BTreeMap<String, String>,
+}
+
+impl Default for Micro2Config {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            brightness: None,
+            ring: None,
+            colors: DeviceColors::default(),
+            keys: Default::default(),
+        }
+    }
+}
+
+/// Which color stands for each agent state on the device.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct DeviceColors {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub working: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub done: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idle: Option<String>,
 }
