@@ -1,8 +1,7 @@
 diff --git i/crates/amon-detect/src/vendor/detect/mod.rs w/crates/amon-detect/src/vendor/detect/mod.rs
-index ec499b1..e5e6bc3 100644
 --- i/crates/amon-detect/src/vendor/detect/mod.rs
 +++ w/crates/amon-detect/src/vendor/detect/mod.rs
-@@ -285,7 +285,7 @@ pub fn should_skip_state_update(agent: Option<Agent>, screen_content: &str) -> b
+@@ -318,7 +318,7 @@
      agent.is_some_and(|agent| manifest::should_skip_state_update(agent, screen_content))
  }
  
@@ -11,12 +10,12 @@ index ec499b1..e5e6bc3 100644
      matches!(
          (source, agent_label),
          ("amon:pi", "pi")
-@@ -297,7 +297,7 @@ pub(crate) fn full_lifecycle_hook_authority(source: &str, agent_label: &str) ->
+@@ -330,7 +330,7 @@
      )
  }
  
 -pub(crate) fn session_identity_only_integration(source: &str, agent_label: &str) -> bool {
 +pub fn session_identity_only_integration(source: &str, agent_label: &str) -> bool {
-     (source, agent_label) == ("amon:hermes", "hermes")
- }
- 
+     matches!(
+         (source, agent_label),
+         ("amon:hermes", "hermes") | ("amon:qwen", "qwen") | ("amon:antigravity_cli", "agy")

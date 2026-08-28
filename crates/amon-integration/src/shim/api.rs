@@ -36,13 +36,15 @@ pub mod schema {
         Kilo,
         Hermes,
         Qodercli,
+        Qwen,
         Cursor,
         Mastracode,
+        AntigravityCli,
         Grok,
     }
 
     impl IntegrationTarget {
-        pub const ALL: [Self; 15] = [
+        pub const ALL: [Self; 17] = [
             Self::Pi,
             Self::Omp,
             Self::Claude,
@@ -55,8 +57,10 @@ pub mod schema {
             Self::Kilo,
             Self::Hermes,
             Self::Qodercli,
+            Self::Qwen,
             Self::Cursor,
             Self::Mastracode,
+            Self::AntigravityCli,
             Self::Grok,
         ];
     }

@@ -16,6 +16,8 @@ pub(crate) mod agent_resume;
 #[allow(dead_code)]
 #[path = "vendor/metadata_tokens.rs"]
 pub(crate) mod metadata_tokens;
+#[path = "shim/platform.rs"]
+pub(crate) mod platform;
 // `private_interfaces`: herdr exposes pub(crate) types on pub fields, which is
 // fine inside one crate and harmless here. ADR-0005 keeps the allow out of the
 // vendored file.

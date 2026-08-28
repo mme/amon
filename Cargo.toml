@@ -43,6 +43,15 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 # which 0.9 removed. Bumping this is a re-vendoring decision, not a routine one.
 toml = "0.8"
 
+# Pinned to match herdr, which edits agent config files through its concrete
+# syntax tree so comments and formatting survive a rewrite. Vendored
+# integration code names the crate directly; bumping it is a re-vendoring
+# decision, not a routine one.
+jsonc-parser = { version = "0.33.1", default-features = false, features = [
+    "cst",
+    "serde_json",
+] }
+
 # Detection and terminal emulation are regex/parser heavy: unoptimized builds of
 # these leaves make the shadow terminal noticeably slow in dev without costing
 # meaningful rebuild time, since they change only when re-vendored.
