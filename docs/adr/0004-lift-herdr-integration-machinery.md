@@ -18,8 +18,9 @@ and declared supported, the rest are best-effort.
 
 ## Provenance
 
-Lifted from https://github.com/ogulcancelik/herdr (Apache-2.0) at commit
-`514e4465ee33d4d81682d06ee2934483982a54ed` (2026-07-29): `src/integration/`
-(actions, targets, registry, config_edit, env, version, assets) →
-`crates/amon-integration`. Modifications (renames, protocol methods) are noted
-in per-file headers; see NOTICE.
+Lifted from https://github.com/ogulcancelik/herdr (Apache-2.0):
+`src/integration/` (actions, targets, registry, config_edit, env, version,
+assets) → `crates/amon-integration`. Modifications (renames, protocol methods)
+are noted in per-file headers, which also carry the commit each file came
+from — the pin lives in `scripts/revendor.sh` and moves with it, so it is not
+repeated here; see NOTICE.

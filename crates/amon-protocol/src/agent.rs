@@ -49,9 +49,6 @@ pub struct AgentEntry {
     pub hostname: String,
     /// Unix milliseconds.
     pub started_at: u64,
-    /// Terminal title the agent set, if any.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
     /// Reported by integration hooks; absent when none are installed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_id: Option<String>,
@@ -66,6 +63,21 @@ pub struct AgentEntry {
     /// Display name of the workspace holding [`AgentEntry::window`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
+    /// The Project [`AgentEntry::cwd`] belongs to: the repository it is in,
+    /// named by its root directory. A linked worktree's Project is the
+    /// repository it was cut from, not the worktree's own directory — a
+    /// worktree's path names neither its project nor its branch.
+    ///
+    /// Absent outside a repository, where the directory itself identifies the
+    /// agent and a consumer shows that instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// Where inside its checkout the agent sits, relative to the checkout
+    /// root. Absent at the root, which is the ordinary case, and absent
+    /// wherever [`AgentEntry::project`] is. Relative to the *worktree* for an
+    /// agent in one, because the repository does not contain that path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subpath: Option<String>,
     /// The git branch [`AgentEntry::cwd`] is on, when it is on one.
     ///
     /// Absent outside a repository, and absent on a detached HEAD — which has
@@ -156,29 +168,41 @@ pub struct AgentPatch {
     pub state: Option<AgentState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_since: Option<u64>,
-    /// Two levels deep because "clear the title" has to be expressible: absent
-    /// means leave alone, `null` means clear, a string means set. An older
-    /// daemon reads `null` as absent and merely keeps the stale title.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "present_or_null"
-    )]
-    pub title: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_path: Option<String>,
-    /// Two levels deep, like [`AgentPatch::title`]: a window that closed has
-    /// to be expressible as "no longer known", not merely left stale.
+    /// Two levels deep because "no longer known" has to be expressible:
+    /// absent means leave alone, `null` means clear, a string means set. A
+    /// window that closed has to be able to say so rather than be left stale.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "present_or_null"
     )]
     pub window: Option<Option<String>>,
+    /// Where the agent is working now. An agent can change directory — into a
+    /// worktree, into a sibling checkout — and takes its Project and its
+    /// branch with it, so all four move together or none of them do.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// Two levels deep, like the branch below: an agent that walks out of a
+    /// repository has to be able to say so rather than keep naming the last
+    /// one it was in.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_or_null"
+    )]
+    pub project: Option<Option<String>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_or_null"
+    )]
+    pub subpath: Option<Option<String>>,
     /// Two levels deep, like [`AgentPatch::window`]: checking out a detached
     /// HEAD has to be expressible as "no longer on a branch" rather than
     /// leaving the old name standing.
@@ -235,9 +259,6 @@ impl AgentPatch {
         if let Some(state_since) = self.state_since {
             entry.state_since = state_since;
         }
-        if let Some(title) = &self.title {
-            entry.title = title.clone();
-        }
         if let Some(agent) = &self.agent {
             entry.agent = agent.clone();
         }
@@ -252,6 +273,15 @@ impl AgentPatch {
         }
         if let Some(workspace) = &self.workspace {
             entry.workspace = workspace.clone();
+        }
+        if let Some(cwd) = &self.cwd {
+            entry.cwd = cwd.clone();
+        }
+        if let Some(project) = &self.project {
+            entry.project = project.clone();
+        }
+        if let Some(subpath) = &self.subpath {
+            entry.subpath = subpath.clone();
         }
         if let Some(branch) = &self.branch {
             entry.branch = branch.clone();

@@ -31,8 +31,9 @@ on the agent that needs you rather than on whatever was focused there last -
 blocked first, then finished-but-unseen, then working, never an agent at rest.
 
 `Super+A` opens the agent panel from wherever you are, over whatever you are
-doing: every agent, grouped by the workspace it is on, with what it is doing
-and how long it has been at it. Pick one and Enter puts you in front of it.
+doing: every agent, grouped by the workspace it is on, each row leading with the
+project it is working in and the branch it is on, then what it is doing and how
+long it has been at it. Pick one and Enter puts you in front of it.
 `Super+W` closes the panel while it is open - amon rebinds Omarchy's
 close-window key to ask the panel first, so the window underneath survives.
 
@@ -51,10 +52,17 @@ amon doctor          # integration, daemon, widget, audio, and alias health
 
 ```
 $ amon status
-claude   blocked    4m  3  ~/Projects/amon.sh
-codex    working   12s  1  ~/Projects/scriptcast
-claude   idle       3m  1  ~/Work/api
+3  amon.sh     main           4m  blocked   claude
+1  scriptcast  record-fix    12s  working   codex
+1  api         main           3m  idle      claude
 ```
+
+The workspace, then the project the agent is working in and the branch it is
+on, then how long it has been in that state, the state, and the kind of agent -
+the same fields in the same order the panel uses. A worktree reports the
+repository it was cut from, not its own directory. Agents outside a repository
+show their directory instead, and the branch column disappears when no agent
+can fill it.
 
 ## Screenshot
 
@@ -167,8 +175,11 @@ removes just that piece.
 
 **`amon status [--json]`**
 
-What every connected agent is doing, most urgent first. `--json` prints the
-entries machine-readable instead of as a table.
+What every connected agent is doing, most urgent first: workspace, project,
+branch, age, state, agent kind - the panel's field order, with the workspace
+leading a line here where the panel makes it a heading. A column no agent can
+fill is not printed at all. `--json` prints the entries machine-readable instead
+of as a table.
 
 **`amon focus <workspace>`**
 

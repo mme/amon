@@ -176,7 +176,7 @@ pub fn parse_target(name: &str) -> Option<IntegrationTarget> {
         .find(|target| target_label(*target) == name)
 }
 
-pub fn all_targets() -> [IntegrationTarget; 15] {
+pub fn all_targets() -> [IntegrationTarget; 17] {
     IntegrationTarget::ALL
 }
 

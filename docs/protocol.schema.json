@@ -68,6 +68,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "project": {
+          "description": "The Project [`AgentEntry::cwd`] belongs to: the repository it is in,\nnamed by its root directory. A linked worktree's Project is the\nrepository it was cut from, not the worktree's own directory — a\nworktree's path names neither its project nor its branch.\n\nAbsent outside a repository, where the directory itself identifies the\nagent and a consumer shows that instead.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "seen": {
           "description": "Whether the terminal view has had focus since the current\n[`AgentEntry::state`] began. `Idle` and not seen is \"finished but\nunnoticed\" — an annotation on the state rather than a state of its own,\nwhich is why [`AgentEntry::attention`] exists: to combine the two in one\nplace instead of leaving every consumer to invent the same rule.",
           "type": [
@@ -90,8 +97,8 @@
           "minimum": 0,
           "type": "integer"
         },
-        "title": {
-          "description": "Terminal title the agent set, if any.",
+        "subpath": {
+          "description": "Where inside its checkout the agent sits, relative to the checkout\nroot. Absent at the root, which is the ordinary case, and absent\nwherever [`AgentEntry::project`] is. Relative to the *worktree* for an\nagent in one, because the repository does not contain that path.",
           "type": [
             "string",
             "null"
@@ -153,6 +160,13 @@
             "null"
           ]
         },
+        "cwd": {
+          "description": "Where the agent is working now. An agent can change directory — into a\nworktree, into a sibling checkout — and takes its Project and its\nbranch with it, so all four move together or none of them do.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "focused": {
           "type": [
             "boolean",
@@ -161,6 +175,13 @@
         },
         "id": {
           "type": "string"
+        },
+        "project": {
+          "description": "Two levels deep, like the branch below: an agent that walks out of a\nrepository has to be able to say so rather than keep naming the last\none it was in.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "seen": {
           "type": [
@@ -186,15 +207,14 @@
             "null"
           ]
         },
-        "title": {
-          "description": "Two levels deep because \"clear the title\" has to be expressible: absent\nmeans leave alone, `null` means clear, a string means set. An older\ndaemon reads `null` as absent and merely keeps the stale title.",
+        "subpath": {
           "type": [
             "string",
             "null"
           ]
         },
         "window": {
-          "description": "Two levels deep, like [`AgentPatch::title`]: a window that closed has\nto be expressible as \"no longer known\", not merely left stale.",
+          "description": "Two levels deep because \"no longer known\" has to be expressible:\nabsent means leave alone, `null` means clear, a string means set. A\nwindow that closed has to be able to say so rather than be left stale.",
           "type": [
             "string",
             "null"
@@ -360,7 +380,7 @@
           "type": "object"
         },
         {
-          "description": "An agent's entry changed — state, title, or session identity.",
+          "description": "An agent's entry changed — state, window, or session identity.",
           "properties": {
             "event": {
               "const": "agent_updated",

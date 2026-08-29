@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 amon-protocol = { workspace = true }
+jsonc-parser = { workspace = true }
 portable-pty = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

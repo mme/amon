@@ -336,6 +336,82 @@ fn a_running_agent_is_visible_in_status() {
 }
 
 #[test]
+fn the_project_reaches_status() {
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", WORKING_THEN_IDLE);
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent), "5", "5"]);
+
+    let agents = sandbox.wait_for_status("the agent to register", |agents| {
+        agent_named(agents, "claude").is_some_and(|entry| entry["project"].is_string())
+    });
+    let entry = agent_named(&agents, "claude").expect("registered");
+
+    // The suite runs inside amon's own repository, so there is always a
+    // Project — named for the repository root rather than for whichever
+    // directory the test happens to run in.
+    let project = entry["project"]
+        .as_str()
+        .expect("a Project inside a repository");
+    assert!(!project.is_empty(), "{entry:#?}");
+    let cwd = entry["cwd"].as_str().unwrap_or_default();
+    if let Some(subpath) = entry["subpath"].as_str() {
+        assert!(
+            cwd.ends_with(subpath),
+            "the subpath says where inside its checkout the agent sits: {entry:#?}"
+        );
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Linux only: following an agent means reading `/proc/<pid>/cwd`, and where
+/// that does not exist amon keeps reporting where the agent started.
+#[cfg(target_os = "linux")]
+#[test]
+fn an_agent_that_moves_takes_its_project_with_it() {
+    // The case this exists for: an agent dispatched into a worktree. It
+    // changes directory as a process, so the row has to follow — one that went
+    // on naming where the agent started would be confidently wrong about the
+    // Project and the branch at once, and two agents in two checkouts would
+    // read as the same row.
+    let sandbox = Sandbox::new();
+    let elsewhere = sandbox.runtime_path("a-second-checkout");
+    std::fs::create_dir_all(elsewhere.join(".git")).expect("repository");
+    std::fs::write(elsewhere.join(".git/HEAD"), "ref: refs/heads/moved-here\n").expect("HEAD");
+
+    let agent = sandbox.fake_agent(
+        "claude",
+        &format!("#!/bin/sh\ncd {}\nsleep 10\n", path_str(&elsewhere)),
+    );
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    let agents = sandbox.wait_for_status("the agent to walk into the other checkout", |agents| {
+        agent_named(agents, "claude")
+            .is_some_and(|entry| entry["branch"] == serde_json::json!("moved-here"))
+    });
+    let entry = agent_named(&agents, "claude").expect("registered");
+
+    assert_eq!(
+        entry["project"],
+        serde_json::json!("a-second-checkout"),
+        "the Project moves with the agent: {entry:#?}"
+    );
+    assert_eq!(
+        entry["cwd"],
+        serde_json::json!(path_str(&elsewhere)),
+        "and so does the directory it names: {entry:#?}"
+    );
+    assert!(
+        entry["subpath"].is_null(),
+        "it landed at the checkout root, so nothing qualifies it: {entry:#?}"
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
 fn the_entry_disappears_when_the_agent_exits() {
     let sandbox = Sandbox::new();
     let agent = sandbox.fake_agent("claude", "#!/bin/sh\necho hi\nsleep 1\n");
@@ -1050,6 +1126,7 @@ fn status_says_so_when_nothing_is_running() {
 
 /// Where Omarchy discovers third-party plugins, relative to the config dir.
 const PLUGIN_DIR: &str = "omarchy/plugins/sh.amon.workspaces";
+const PANEL_DIR: &str = "omarchy/plugins/sh.amon.panel";
 
 #[test]
 fn a_truncated_amon_block_is_never_rewritten() {
@@ -1188,10 +1265,173 @@ fn replacing_a_stale_widget_restarts_the_bar() {
         enable < restart,
         "restarting before the enable would reload the old registration: {calls}"
     );
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        String::from_utf8_lossy(&output.stdout)
-            .contains("✓ workspace switcher widget — updated and restarted"),
-        "an update reads as one, so a blinking bar is accounted for: {output:?}"
+        stdout.contains("✓ workspace switcher widget — updated"),
+        "an update reads as one: {output:?}"
+    );
+    assert!(
+        stdout.contains("✓ shell restarted"),
+        "and the blinking bar is accounted for: {output:?}"
+    );
+}
+
+/// A panel already on disk whose QML differs from the one this build ships:
+/// the same "installed but stale on screen" state the widget can be in.
+fn stale_panel_is_installed(sandbox: &Sandbox) {
+    let plugin = sandbox.config_path(PANEL_DIR);
+    std::fs::create_dir_all(&plugin).expect("plugin dir");
+    std::fs::write(
+        plugin.join("manifest.json"),
+        r#"{"schemaVersion":1,"id":"sh.amon.panel","name":"Agents (amon)","version":"0.0.1","kinds":["overlay"],"keepLoaded":true,"entryPoints":{"overlay":"AgentPanel.qml"}}"#,
+    )
+    .expect("manifest");
+    for name in [
+        "AgentPanel.qml",
+        "AgentsView.qml",
+        "AgentStates.qml",
+        "AmonMark.qml",
+    ] {
+        std::fs::write(plugin.join(name), "// an older panel\n").expect("qml");
+    }
+}
+
+#[test]
+fn replacing_a_stale_panel_restarts_the_shell() {
+    // The panel caches like any other plugin: replacing its QML under a
+    // running shell leaves Super+A opening the previous one, however current
+    // the files on disk are. Without the restart, setup reports a tick over a
+    // panel nobody can see — which is exactly how this was found.
+    let sandbox = Sandbox::new();
+    stale_panel_is_installed(&sandbox);
+    let record = sandbox.runtime_path("omarchy-calls");
+    sandbox.fake_agent(
+        "omarchy",
+        &format!("#!/bin/sh\necho \"$*\" >> {}\n", path_str(&record)),
+    );
+
+    let output = sandbox.run(&["setup", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let calls = std::fs::read_to_string(&record).expect("omarchy invoked");
+    let enable = calls
+        .find("plugin enable sh.amon.panel")
+        .expect("the panel is still installed and enabled");
+    let restart = calls
+        .find("restart shell")
+        .expect("and then made the one Super+A opens");
+    assert!(
+        enable < restart,
+        "restarting before the enable would reload the old registration: {calls}"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("✓ Super+A agent panel — updated"),
+        "an update reads as one: {output:?}"
+    );
+    assert!(
+        stdout.contains("✓ shell restarted"),
+        "and the blinking bar is accounted for: {output:?}"
+    );
+}
+
+#[test]
+fn a_run_that_replaces_both_plugins_restarts_the_shell_once() {
+    // One shell hosts both, so the first restart already reloads whatever the
+    // second replaced. Doing it twice takes the bar, the notifications and the
+    // OSD down again for nothing.
+    let sandbox = Sandbox::new();
+    stale_widget_is_installed(&sandbox);
+    stale_panel_is_installed(&sandbox);
+    let record = sandbox.runtime_path("omarchy-calls");
+    sandbox.fake_agent(
+        "omarchy",
+        &format!("#!/bin/sh\necho \"$*\" >> {}\n", path_str(&record)),
+    );
+
+    let output = sandbox.run(&["setup", "--all"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let calls = std::fs::read_to_string(&record).expect("omarchy invoked");
+    assert_eq!(
+        calls.matches("restart shell").count(),
+        1,
+        "one restart covers both plugins: {calls}"
+    );
+
+    // And it has to come after *both* are written. Counting restarts is not
+    // enough: restarting when the first plugin is replaced reloads the new
+    // widget beside the old panel, and the second install then finds a restart
+    // already done and skips its own — one restart, and the panel on screen is
+    // still the previous one.
+    let widget = calls
+        .find("plugin enable sh.amon.workspaces")
+        .expect("the widget is enabled");
+    let panel = calls
+        .find("plugin enable sh.amon.panel")
+        .expect("the panel is enabled");
+    let restart = calls.find("restart shell").expect("the shell is restarted");
+    assert!(
+        restart > widget && restart > panel,
+        "the restart has to follow every plugin it is meant to pick up: {calls}"
+    );
+}
+
+#[test]
+fn a_failed_run_does_not_reload_the_shell() {
+    // The restart is what puts replaced files on screen. After a failure that
+    // would swap a working copy for one this run could not finish writing —
+    // and the shell holds the old one in memory, which is the last piece of
+    // working state there is to protect.
+    let sandbox = Sandbox::new();
+    stale_widget_is_installed(&sandbox);
+    let record = sandbox.runtime_path("omarchy-calls");
+    sandbox.fake_agent(
+        "omarchy",
+        &format!(
+            "#!/bin/sh\necho \"$*\" >> {}\ncase \"$*\" in\n  *\"plugin enable sh.amon.panel\"*) exit 1 ;;\nesac\n",
+            path_str(&record)
+        ),
+    );
+
+    let output = sandbox.run(&["setup", "--all"]);
+
+    let calls = std::fs::read_to_string(&record).unwrap_or_default();
+    assert!(
+        !calls.contains("restart shell"),
+        "a run that failed must not reload the shell into what it wrote: {calls}"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("omarchy restart shell"),
+        "and it has to say how to pick them up once the failure is fixed: {output:?}"
+    );
+}
+
+#[test]
+fn files_replaced_but_not_enabled_still_ask_for_a_restart() {
+    // The failure mode that persists. Installing rewrites the plugin, so the
+    // shell is drawing something that no longer exists on disk — and if
+    // enabling then fails, the next run sees the files as current and has no
+    // reason to restart either. Without an instruction here, the old panel
+    // stays on screen indefinitely while setup reports success.
+    let sandbox = Sandbox::new();
+    stale_panel_is_installed(&sandbox);
+    let record = sandbox.runtime_path("omarchy-calls");
+    sandbox.fake_agent(
+        "omarchy",
+        &format!(
+            "#!/bin/sh\necho \"$*\" >> {}\ncase \"$*\" in\n  *\"plugin enable sh.amon.panel\"*) exit 1 ;;\nesac\n",
+            path_str(&record)
+        ),
+    );
+
+    let output = sandbox.run(&["setup", "--all"]);
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("omarchy restart shell"),
+        "the one plugin whose files were replaced has to be accounted for: {output:?}"
     );
 }
 

@@ -435,6 +435,13 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
     // end: `alias::install` says the same thing per agent, which would be four
     // identical lines in a four-agent run.
     let mut aliased_any = false;
+    // Both plugins live in one shell, and the shell caches every component it
+    // has loaded — so the restart that picks up replaced files has to come
+    // after every one of them is written. Restarting when the first is
+    // replaced would reload the new widget beside the old panel, and once per
+    // plugin would blink the bar twice and race the first restart's startup.
+    // So it is recorded here and done once, after the loop.
+    let mut shell_is_stale = false;
 
     for action in actions {
         match action {
@@ -529,8 +536,16 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                 // drawn one (see `desktop::restart_shell`).
                 let replacing_live_files =
                     desktop::status(DesktopTarget::Omarchy).state == InstallState::Outdated;
-                let result = desktop::install(DesktopTarget::Omarchy)
-                    .and_then(|_| desktop::enable(DesktopTarget::Omarchy));
+                let installed = desktop::install(DesktopTarget::Omarchy);
+                // Recorded against the *install*, not the enable that follows.
+                // Once the files are written the shell is drawing something
+                // that no longer exists on disk, and that stays true whether
+                // or not enabling succeeds — while the next run, seeing the
+                // files as current, would never think to restart again.
+                if installed.is_ok() {
+                    shell_is_stale |= replacing_live_files;
+                }
+                let result = installed.and_then(|_| desktop::enable(DesktopTarget::Omarchy));
                 match result {
                     Ok(_) => report_widget(replacing_live_files),
                     Err(error) => {
@@ -564,12 +579,28 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                 }
             },
             Action::SetupPanel => {
-                // No `clonedFrom`, so it displaces nothing and there is no bar
-                // to restart for: enabling is the whole of it.
-                let result = desktop::install(DesktopTarget::Panel)
-                    .and_then(|_| desktop::enable(DesktopTarget::Panel));
+                // The panel needs the same restart the widget does, and for a
+                // different reason than `clonedFrom`: displacing Omarchy's own
+                // widget is about what the bar draws, but the shell caches
+                // every plugin component it has loaded, so a replaced file is
+                // stale on screen until the shell comes back (see
+                // `desktop::restart_shell`). Reading the state before the
+                // write is what distinguishes a replacement from a first
+                // install, which has nothing cached to be stale.
+                let replacing_live_files =
+                    desktop::status(DesktopTarget::Panel).state == InstallState::Outdated;
+                let installed = desktop::install(DesktopTarget::Panel);
+                // Recorded against the *install*, not the enable that follows.
+                // Once the files are written the shell is drawing something
+                // that no longer exists on disk, and that stays true whether
+                // or not enabling succeeds — while the next run, seeing the
+                // files as current, would never think to restart again.
+                if installed.is_ok() {
+                    shell_is_stale |= replacing_live_files;
+                }
+                let result = installed.and_then(|_| desktop::enable(DesktopTarget::Panel));
                 match result {
-                    Ok(_) => println!("✓ Super+A agent panel — installed and enabled"),
+                    Ok(_) => report_panel(replacing_live_files),
                     Err(error) => {
                         failed = true;
                         println!("✗ Super+A agent panel — {error}");
@@ -655,6 +686,25 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Only when the whole run succeeded. A restart is what puts replaced files
+    // on screen, so restarting after a failure would swap a working copy for
+    // one this run has just admitted it could not finish writing — and the
+    // shell holds the old one in memory until something restarts it, which is
+    // the one piece of working state still worth protecting.
+    if shell_is_stale && !failed {
+        match desktop::restart_shell() {
+            Ok(()) => println!("✓ shell restarted — it draws the new copies now"),
+            Err(_) => {
+                println!("  the shell is still drawing the previous copies; to swap them:");
+                println!("    omarchy restart shell");
+            }
+        }
+    } else if shell_is_stale {
+        println!("  files were replaced but the shell was left alone; once the above");
+        println!("  is fixed, to pick them up:");
+        println!("    omarchy restart shell");
+    }
+
     if aliased_any {
         println!();
         println!(
@@ -678,17 +728,25 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
 /// leaves the widget installed and enabled regardless; only the copy in memory
 /// is old, so it stays a tick and names the one command that finishes the job.
 fn report_widget(replaced_live_files: bool) {
-    if !replaced_live_files {
+    if replaced_live_files {
+        println!("✓ workspace switcher widget — updated");
+    } else {
         println!("✓ workspace switcher widget — installed and enabled");
-        return;
     }
-    match desktop::restart_shell() {
-        Ok(()) => println!("✓ workspace switcher widget — updated and restarted"),
-        Err(_) => {
-            println!("✓ workspace switcher widget — updated");
-            println!("  the bar is still drawing the previous one; to swap it:");
-            println!("    omarchy restart shell");
-        }
+}
+
+/// Says what setting the panel up actually did.
+///
+/// The same accounting as the widget, for the same reason: a replaced file is
+/// installed but not drawn until the shell restarts, and Super+A opening the
+/// previous panel is exactly the kind of "it did nothing" that a tick over an
+/// unexplained restart would hide. The restart itself is reported once, after
+/// every plugin has been written.
+fn report_panel(replaced_live_files: bool) {
+    if replaced_live_files {
+        println!("✓ Super+A agent panel — updated");
+    } else {
+        println!("✓ Super+A agent panel — installed and enabled");
     }
 }
 

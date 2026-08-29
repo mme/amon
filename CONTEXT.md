@@ -21,15 +21,25 @@ Started on demand by any Wrapper if not already running.
 _Avoid_: server, hub
 
 **Agent**:
-An AI coding agent CLI being wrapped (claude, codex, gemini, …). Identified by
-herdr's agent registry.
+One AI coding agent running under a Wrapper. It has a Window, a cwd, and an
+Agent State, and it lives in the Registry exactly as long as its Wrapper's
+connection. Unqualified, "agent" always means this — the running thing, which
+is what every surface counts, sorts, and focuses.
+_Avoid_: session (the agent's own session is a separate thing hooks report),
+instance, process
 
-**Detected Agent**:
-An Agent whose CLI the registry finds on this machine. The set `amon setup`
-offers and `--all` covers; a supported but undetected Agent can still be named
-explicitly.
+**Agent Kind**:
+Which agent CLI an Agent is (claude, codex, gemini, …). Identified by herdr's
+agent registry, and carried as `AgentEntry::agent`. Near-constant across the
+Agents on one machine, so it identifies an Agent only when the Kinds differ.
+_Avoid_: agent type, program, binary
+
+**Detected Agent Kind**:
+An Agent Kind whose CLI the registry finds on this machine. The set `amon
+setup` offers and `--all` covers; a supported but undetected Kind can still be
+named explicitly.
 _Avoid_: available agent, installed agent (installed describes Integrations,
-not Agents)
+not Agents), detected agent (it is a Kind that is detected, not a running one)
 
 **Agent State**:
 The detected condition of a wrapped agent: `Idle` (finished, prompt visible),
@@ -113,6 +123,16 @@ compositor-native token. Mapped by the Wrapper; meaningful only when handed
 back to the compositor (e.g. to focus it). Absent when there is no compositor
 or the mapping is ambiguous — never guessed.
 _Avoid_: client (Hyprland jargon), terminal (that's the emulator)
+
+**Project**:
+The repository an Agent works in, named by its root directory. A linked
+worktree's Project is the repository it was cut from, not the worktree's own
+directory — a worktree's path names neither its project nor its branch, so the
+name comes from the `gitdir:` target rather than the path. Absent outside a
+repository, where the directory itself stands in. What a row leads with, and
+what a Title is checked against before it is worth showing.
+_Avoid_: workspace (the compositor's, and herdr's word for this), repo, root,
+checkout
 
 **Workspace**:
 The compositor workspace currently holding the Window, as a display name.

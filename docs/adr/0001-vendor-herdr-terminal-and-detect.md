@@ -62,12 +62,16 @@ hook filenames also let amon and herdr coexist on one machine.
 
 ## Provenance
 
-Lifted from https://github.com/ogulcancelik/herdr (Apache-2.0) at commit
-`514e4465ee33d4d81682d06ee2934483982a54ed` (2026-07-29): `src/detect/` (engine,
-manifests, updater) → `crates/amon-detect`; `src/terminal/{state,metadata,id,
-title}.rs`, `src/agent_resume.rs`, `src/metadata_tokens.rs` →
+Lifted from https://github.com/ogulcancelik/herdr (Apache-2.0): `src/detect/`
+(engine, manifests, updater) → `crates/amon-detect`; `src/terminal/{state,
+metadata,id,title}.rs`, `src/agent_resume.rs`, `src/metadata_tokens.rs` →
 `crates/amon-term`. `scripts/revendor.sh` is the only thing that writes those
 files; see ADR-0005 and NOTICE.
+
+Which commit they came from is not recorded here. It moves — re-vendoring is a
+normal thing to do — and a decision record that named one would be stating
+yesterday's fact in the present tense. `HERDR_COMMIT` in the script is the pin,
+and every vendored file repeats it in its own header.
 
 ## Consequences
 

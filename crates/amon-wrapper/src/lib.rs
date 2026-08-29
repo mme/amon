@@ -13,9 +13,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use amon_protocol::{env as protocol_env, AgentEntry, AgentState};
 
-mod branch;
 mod daemon_link;
 mod focus;
+mod git;
 mod hook_socket;
 mod hypr;
 mod observer;
@@ -128,13 +128,17 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
 
     let agent_label = agent_label(program);
     let agent = amon_detect::parse_agent_label(&agent_label);
+    let agent_pid = child.process_id().unwrap_or(0);
+    // Where the agent starts. It can walk away from here — into a worktree,
+    // into a sibling checkout — which is what the watcher below follows.
+    let location = git::location(&cwd);
     link.register(AgentEntry {
         id: agent_id.clone(),
         agent: agent_label,
         state: AgentState::Unknown,
         state_since: now_millis(),
         cwd: cwd.to_string_lossy().into_owned(),
-        pid: child.process_id().unwrap_or(0),
+        pid: agent_pid,
         args: launch
             .argv
             .iter()
@@ -142,22 +146,21 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
             .collect(),
         hostname: hostname(),
         started_at: now_millis(),
-        title: None,
         agent_session_id: None,
         agent_session_path: None,
         window: None,
         workspace: None,
-        // Read before the agent is registered, so a row never appears without
-        // its branch and then acquires one a second later.
-        branch: branch::read(&cwd),
+        // Resolved before the agent is registered, so a row never appears
+        // without its Project and branch and then acquires them a second
+        // later.
+        branch: location.branch.clone(),
+        project: location.project.clone(),
+        subpath: location.subpath.clone(),
         focused: None,
         seen: None,
         herdr: None,
     });
 
-    // Kept before `Setup` takes ownership of `cwd`; the watcher outlives this
-    // scope and needs its own copy.
-    let watched_directory = cwd.clone();
     let focus_shared = focus::Shared::default();
     let observer_thread = observer::spawn(
         observer::Setup {
@@ -175,7 +178,7 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     // an agent running in a terminal, so `hypr` is rightly guarded — but a
     // branch is a fact about a directory. `amon claude > log` has a cwd and a
     // branch like any other agent, and its row should say so.
-    branch::watch(watched_directory, signals.clone());
+    git::watch(agent_pid, location, signals.clone());
 
     let raw = tty::RawMode::enter()?;
     // Only a real terminal has focus to report, and only a real terminal may

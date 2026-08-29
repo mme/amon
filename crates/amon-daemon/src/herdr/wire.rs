@@ -29,8 +29,8 @@ pub struct HerdrEvent {
 /// on the wire is ignored, which is what keeps this compatible across herdr
 /// releases.
 ///
-/// Only what herdr's schema marks required is required here. `agent`, `cwd`
-/// and `title` are nullable *and* optional there, and `Option` is what
+/// Only what herdr's schema marks required is required here. `agent` and
+/// `cwd` are nullable *and* optional there, and `Option` is what
 /// accepts both spellings — a bare `String` with `#[serde(default)]` takes a
 /// missing field but fails on an explicit `null`, and a failed record is
 /// dropped by [`agents_from`], which is how a live agent would quietly
@@ -44,8 +44,6 @@ pub struct HerdrAgent {
     pub agent: Option<String>,
     #[serde(default)]
     pub cwd: Option<String>,
-    #[serde(default)]
-    pub title: Option<String>,
     /// herdr's per-agent transition counter. It counts up through one
     /// agent's life, so a value that went *backwards* is a different agent
     /// in the same terminal — which is the only way to tell one claude from
@@ -300,7 +298,7 @@ mod tests {
                 "version": "0.8.0",
                 "agents": [
                     {"terminal_id":"t1","agent":"claude","agent_status":"working",
-                     "pane_id":"w1:p1","cwd":"/repo","title":"fixing"},
+                     "pane_id":"w1:p1","cwd":"/repo"},
                     {"agent":"mystery"}
                 ]
             }
@@ -310,20 +308,19 @@ mod tests {
         assert_eq!(agents[0].terminal_id, "t1");
         assert_eq!(agents[0].agent_status, "working");
         assert_eq!(agents[0].pane_id, "w1:p1");
-        assert_eq!(agents[0].title.as_deref(), Some("fixing"));
     }
 
     #[test]
     fn an_agent_survives_the_fields_herdr_is_allowed_to_leave_out() {
         // herdr's schema requires only terminal_id, pane_id and
-        // agent_status; `agent`, `cwd` and `title` are nullable and
+        // agent_status; `agent` and `cwd` are nullable and
         // optional. A null there must not delete the agent from amon —
         // silently dropping the record is how a live agent vanishes from
         // the bar for a reason nobody can see.
         let snapshot = serde_json::json!({
             "agents": [
                 {"terminal_id":"t1","pane_id":"w1:p1","agent_status":"blocked",
-                 "agent": null, "cwd": null, "title": null},
+                 "agent": null, "cwd": null},
                 {"terminal_id":"t2","pane_id":"w1:p2","agent_status":"idle"},
             ]
         });

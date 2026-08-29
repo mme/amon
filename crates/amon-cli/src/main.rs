@@ -260,51 +260,58 @@ fn run_status(json: bool) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let width = agents
+    // Where each agent is working, the way the panel leads with it: the
+    // Project and where inside it the agent sits, or the directory itself when
+    // there is no Project. The full path stays for the second case — this
+    // output gets piped, and a shortened path is worth less than a real one.
+    let identities: Vec<String> = agents
         .iter()
-        .map(|agent| agent.agent.len())
+        .map(|agent| match (&agent.project, &agent.subpath) {
+            (Some(project), Some(subpath)) => format!("{project}/{subpath}"),
+            (Some(project), None) => project.clone(),
+            (None, _) => agent.cwd.clone(),
+        })
+        .collect();
+    // Characters, not bytes: `{:<width$}` pads by character count, so measuring
+    // in bytes makes every column after a non-ASCII name start in a different
+    // place on that row. Still not display cells — a CJK name occupies two of
+    // them per character — but that needs a width table, and this at least
+    // agrees with what the formatter actually does.
+    let identity_width = identities
+        .iter()
+        .map(|identity| identity.chars().count())
         .max()
-        .unwrap_or(5)
-        .max(5);
-    // Only earns a column when something is actually running on a compositor
-    // amon understands; everywhere else the line stays as it was.
+        .unwrap_or(0);
+
+    // A column only earns its place when some agent can fill it, the same rule
+    // the panel draws by. Everywhere else the line closes up rather than
+    // printing a column of dashes about nothing.
     let workspace_width = agents
         .iter()
         .filter_map(|agent| agent.workspace.as_deref())
-        .map(str::len)
+        .map(|workspace| workspace.chars().count())
         .max();
-    // Same rule for the branch: agents outside a repository are ordinary, and
-    // a column of dashes for them would be a column about nothing.
     let branch_width = agents
         .iter()
         .filter_map(|agent| agent.branch.as_deref())
-        .map(str::len)
+        .map(|branch| branch.chars().count())
         .max();
 
-    for agent in agents {
-        let workspace = match workspace_width {
-            Some(width) => format!(
-                "{:<width$}  ",
-                agent.workspace.as_deref().unwrap_or("-"),
-                width = width
-            ),
-            None => String::new(),
-        };
-        let branch = match branch_width {
-            Some(width) => format!(
-                "{:<width$}  ",
-                agent.branch.as_deref().unwrap_or(""),
-                width = width
-            ),
-            None => String::new(),
-        };
+    let column = |value: Option<&str>, width: Option<usize>| match width {
+        Some(width) => format!("{:<width$}  ", value.unwrap_or(""), width = width),
+        None => String::new(),
+    };
+
+    for (agent, identity) in agents.iter().zip(&identities) {
         println!(
-            "{:<width$}  {:<8}  {:>5}  {workspace}{branch}{}",
-            agent.agent,
-            agent.state.as_str(),
+            "{}{:<identity_width$}  {}{:>5}  {:<8}  {}",
+            column(agent.workspace.as_deref(), workspace_width),
+            identity,
+            column(agent.branch.as_deref(), branch_width),
             age(agent.state_since),
-            agent.cwd,
-            width = width
+            agent.state.as_str(),
+            agent.agent,
+            identity_width = identity_width,
         );
     }
     Ok(())

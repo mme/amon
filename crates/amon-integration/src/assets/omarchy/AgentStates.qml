@@ -389,6 +389,12 @@ Item {
       // Absent outside a repository and on a detached HEAD, which the pane
       // draws as an empty column rather than as a placeholder.
       branch: entry.branch || "",
+      // The repository the agent works in, and where inside its checkout it
+      // sits. A worktree reports the repository it was cut from, so its rows
+      // read alongside that repository's. Both absent outside a repository,
+      // where the pane falls back to the directory itself.
+      project: entry.project || "",
+      subpath: entry.subpath || "",
       stateSince: entry.state_since || 0,
       // Opaque, and handed back to the compositor rather than parsed (ADR-0011
       // and the note on AgentEntry::window). Absent off a supported compositor,

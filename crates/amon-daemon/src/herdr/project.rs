@@ -69,12 +69,19 @@ pub fn entry_for(
         args: vec![label],
         hostname: hostname(),
         started_at: now_ms,
-        title: agent.title.clone(),
         agent_session_id: None,
         agent_session_path: None,
         window: window.map(|window| window.address.clone()),
         workspace: window.and_then(|window| window.workspace.clone()),
+        // No branch and no Project for a herdr-hosted agent. Both are facts
+        // about a directory, and amon could read them from the cwd herdr
+        // reports — but neither is watched here, and giving a row half the
+        // git facts a wrapped row has would read as amon knowing less than it
+        // does rather than as the honest gap it is. Filling these in belongs
+        // with teaching this path to watch a directory at all.
         branch: None,
+        project: None,
+        subpath: None,
         focused: None,
         seen,
         herdr: Some(HerdrInfo {
@@ -106,7 +113,6 @@ mod tests {
             agent_status: status.into(),
             pane_id: "w1:p2".into(),
             cwd: Some("/repo".into()),
-            title: Some("fixing auth".into()),
             state_change_seq: Some(1),
         }
     }
@@ -145,7 +151,6 @@ mod tests {
         assert_eq!(entry.seen, Some(false));
         assert_eq!(entry.state_since, 1000);
         assert_eq!(entry.cwd, "/repo");
-        assert_eq!(entry.title.as_deref(), Some("fixing auth"));
         assert_eq!(entry.window.as_deref(), Some("abc123"));
         assert_eq!(entry.workspace.as_deref(), Some("3"));
         assert!(!entry.hostname.is_empty());

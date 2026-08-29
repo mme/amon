@@ -7,7 +7,7 @@
 set -euo pipefail
 
 HERDR_REPO="https://github.com/ogulcancelik/herdr"
-HERDR_COMMIT="514e4465ee33d4d81682d06ee2934483982a54ed"
+HERDR_COMMIT="095f1337d6502081658973ae3487dee8c6b34e1a"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cache="${AMON_VENDOR_CACHE:-${TMPDIR:-/tmp}/amon-vendor-herdr}"
@@ -38,6 +38,8 @@ FILES=(
     "src/integration/types.rs           crates/amon-integration/src/vendor/integration/types.rs"
     "src/integration/version.rs         crates/amon-integration/src/vendor/integration/version.rs"
     "src/integration/tests.rs           crates/amon-integration/src/vendor/integration/tests.rs"
+    "src/integration/claude_settings.rs crates/amon-integration/src/vendor/integration/claude_settings.rs"
+    "src/integration/opencode_config.rs crates/amon-integration/src/vendor/integration/opencode_config.rs"
 )
 
 # Per-agent hook assets, copied with their directory layout. File names carry

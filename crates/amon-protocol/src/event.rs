@@ -15,7 +15,7 @@ pub enum Event {
     /// An agent registered.
     #[serde(rename = "agent_connected")]
     AgentConnected(AgentEntry),
-    /// An agent's entry changed — state, title, or session identity.
+    /// An agent's entry changed — state, window, or session identity.
     #[serde(rename = "agent_updated")]
     AgentUpdated(AgentEntry),
     /// An agent's wrapper disconnected; its entry is gone.
