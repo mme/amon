@@ -417,8 +417,15 @@
                padding:6px 0 2px}
 
   /* One grid shared by every row, so the columns line up down the list the way
-     they do in the real panel. */
-  .panel-row{display:grid; grid-template-columns:18px 5.5rem minmax(0,1fr) 7.5rem 5.5rem 2.5rem;
+     they do in the real panel: the glyph, where the agent is working, the
+     branch, how long, the state in words, and last the kind of agent.
+
+     Every width is fixed. Each row is its own grid here, so a column that sized
+     itself to its own content would start somewhere different on every line -
+     and a grid whose columns move per row is not one. The leftover falls after
+     the last column rather than pooling in the middle, which is where the real
+     panel leaves it: it packs the columns from the left and stops. */
+  .panel-row{display:grid; grid-template-columns:18px 4rem 7.75rem 2rem 5.5rem 4rem;
              align-items:center; gap:0 10px; border-radius:6px}
   .panel-row.is-cursor{background:color-mix(in oklab, var(--ink) 7%, transparent)}
 
@@ -454,27 +461,37 @@
     .panel-dot{animation:none}
     .panel-dot.bl,.panel-dot.br{opacity:.16}
   }
-  .panel-cell.is-who{display:grid; grid-column:2 / 4;
-                     grid-template-columns:5.5rem minmax(0,1fr); gap:0 10px; align-items:center}
-  .panel-cell.is-who b{color:var(--ink); font-weight:700}
-  /* No right-to-left trick to elide from the head of the path the way the real
-     panel does: it reverses the leading "~/" and prints "Projects/amon.sh/~".
-     These paths are written to fit instead. */
-  .panel-cell.is-who span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .panel-cell.is-age{text-align:right}
-  .panel-cell.is-branch,.panel-cell.is-state{overflow:hidden; text-overflow:ellipsis;
-                          white-space:nowrap}
+  /* Three tiers and only two inks: bold is which project, plain is which line
+     of work, dim is everything that describes a row rather than identifies it.
+     Dim is the cell default, so the age, the state and the kind ask for nothing.
+
+     Where the agent is working, and the first thing the eye lands on. Not the
+     directory: the Project, which is the repository that directory belongs to.
+     A worktree carries the name of the repository it was cut from, so several
+     agents in one project read as one project however they are checked out. */
+  .panel-cell.is-where{color:var(--ink); font-weight:700}
+  /* Identity too, at a finer grain than the Project. Rows can share a project
+     and then the branch is the only thing telling them apart, so it keeps the
+     full ink - but not the weight: two bold columns compete and neither leads. */
+  .panel-cell.is-branch{color:var(--ink)}
+  .panel-cell.is-where,.panel-cell.is-branch,
+  .panel-cell.is-state,.panel-cell.is-kind{overflow:hidden;
+                            text-overflow:ellipsis; white-space:nowrap}
 
 
-  /* Narrow: the branch is the first thing to go, because on a phone the panel
-     is being recognised rather than read. */
+  /* Narrow: the columns give way from the right, in the order the real panel
+     drops them. The kind of agent goes first - on a machine running one kind it
+     writes the same word down every line, and it is worth its width only while
+     there is width to spare. The state goes next, because the glyph beside the
+     project already carries it. What survives still says where the agent is,
+     which line of work it is on, and how long it has been there. */
   @media (max-width:640px){
-    /* The branch goes first, and the state keeps its full width: "needs input"
-       is the one word on the row worth crossing the page for, and a path that
-       loses its tail is still recognisable where a truncated state is not. */
-    .panel-row{grid-template-columns:18px 4.2rem minmax(0,1fr) 6.4rem 2.4rem}
-    .panel-cell.is-branch{display:none}
-    .panel-cell.is-who{grid-template-columns:4.2rem minmax(0,1fr)}
+    .panel-row{grid-template-columns:18px 4rem 7.75rem 2rem 5.5rem}
+    .panel-cell.is-kind{display:none}
+  }
+  @media (max-width:460px){
+    .panel-row{grid-template-columns:18px 4rem minmax(0,1fr) 2rem}
+    .panel-cell.is-state{display:none}
   }
 
   /* ---- the install block ------------------------------------------- */
@@ -904,6 +921,12 @@
       pointer the way it does in the real panel, and that is the whole of the
       interaction. The one thing that moves is the spinner, which moves there
       too.
+
+      Three of the four rows say amon.sh, and that is the layout making its
+      point rather than a mistake in the mock: the last of them is an agent in
+      a worktree at ~/.cache/worktrees/site, which belongs to the same
+      repository, and the branch beside it is the only thing telling the three
+      apart.
     -->
     <figure class="panel">
       <div class="panel-card">
@@ -931,33 +954,37 @@
           <div class="panel-group" style="grid-column:1/-1">WORKSPACE 1</div>
           <div class="panel-row is-cursor">
             <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle class="panel-dot tl" cx="8.7" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot tr" cx="15.3" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot bl" cx="8.7" cy="14.55" r="2.35" fill="currentColor"/><circle class="panel-dot br" cx="15.3" cy="14.55" r="2.35" fill="currentColor"/></svg></span>
-            <span class="panel-cell is-who"><b>claude</b><span>~/Projects/amon.sh</span></span>
+            <span class="panel-cell is-where">amon.sh</span>
             <span class="panel-cell is-branch">main</span>
-            <span class="panel-cell is-state">running</span>
             <span class="panel-cell is-age">4m</span>
+            <span class="panel-cell is-state">running</span>
+            <span class="panel-cell is-kind">claude</span>
           </div>
           <div class="panel-row">
             <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg></span>
-            <span class="panel-cell is-who"><b>codex</b><span>~/Projects/amon.sh</span></span>
+            <span class="panel-cell is-where">amon.sh</span>
             <span class="panel-cell is-branch">fix/detect-flake</span>
-            <span class="panel-cell is-state">done</span>
             <span class="panel-cell is-age">2m</span>
+            <span class="panel-cell is-state">done</span>
+            <span class="panel-cell is-kind">codex</span>
           </div>
           <div class="panel-group" style="grid-column:1/-1">WORKSPACE 3</div>
           <div class="panel-row">
             <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg></span>
-            <span class="panel-cell is-who"><b>pi</b><span>~/work/atlas</span></span>
+            <span class="panel-cell is-where">atlas</span>
             <span class="panel-cell is-branch">atlas-api</span>
-            <span class="panel-cell is-state">needs input</span>
             <span class="panel-cell is-age">6m</span>
+            <span class="panel-cell is-state">needs input</span>
+            <span class="panel-cell is-kind">pi</span>
           </div>
           <div class="panel-group" style="grid-column:1/-1">WORKSPACE 4</div>
           <div class="panel-row">
             <span class="panel-cell is-glyph"></span>
-            <span class="panel-cell is-who"><b>opencode</b><span>~/.cache/worktrees/site</span></span>
+            <span class="panel-cell is-where">amon.sh</span>
             <span class="panel-cell is-branch">website</span>
-            <span class="panel-cell is-state">idle</span>
             <span class="panel-cell is-age">41m</span>
+            <span class="panel-cell is-state">idle</span>
+            <span class="panel-cell is-kind">opencode</span>
           </div>
       </div>
 
@@ -965,8 +992,9 @@
 
     <p>The agent panel is the central piece - <span class="lift">Super+A</span> from wherever
        you are, over whatever you are doing. It is where you come back to: every agent,
-       grouped by the workspace it is on, with what it is doing and how long it has been
-       at it. Pick one and <span class="lift">Enter</span> immediately puts you in front
+       grouped by the workspace it is on, each row leading with the project it is working
+       in and the branch it is on, then what it is doing and how long it has been at it.
+       Pick one and <span class="lift">Enter</span> immediately puts you in front
        of it.</p>
   </section>
 
@@ -976,18 +1004,22 @@
     </header>
 
     <!--
-      The same four agents as the panel above, answered in the terminal - and
+      The same four agents as the panel above, answered in the terminal - the
+      same fields in the same order, so the two surfaces cannot drift - and
       sorted the way everything in amon sorts: blocked first, then finished-
       but-unseen (which the CLI prints as idle; only its place in the order
-      gives it away), then working. The trailing focus command is typed and
-      not yet run, the way the panel's cursor rests on a row.
+      gives it away), then working. The workspace leads here where the panel
+      makes it a heading, and the full path stands in for the project where an
+      agent is not in a repository, because this output gets piped. The
+      trailing focus command is typed and not yet run, the way the panel's
+      cursor rests on a row.
     -->
     <figure class="snippet">
       <pre><code><span class="t-p">~ &#10095;</span> <span class="t-in">amon status</span>
-<span class="t-o">pi        blocked    6m  3  atlas-api         ~/work/atlas
-codex     idle       2m  1  fix/detect-flake  ~/Projects/amon.sh
-claude    working    4m  1  main              ~/Projects/amon.sh
-opencode  idle      41m  4  website           ~/.cache/worktrees/site</span>
+<span class="t-o">3  atlas    atlas-api            6m  blocked   pi
+1  amon.sh  fix/detect-flake     2m  idle      codex
+1  amon.sh  main                 4m  working   claude
+4  amon.sh  website             41m  idle      opencode</span>
 <span class="t-p">~ &#10095;</span> <span class="t-in">amon focus 3</span></code></pre>
     </figure>
 
