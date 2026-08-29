@@ -37,6 +37,12 @@ long it has been at it. Pick one and Enter puts you in front of it.
 `Super+W` closes the panel while it is open - amon rebinds Omarchy's
 close-window key to ask the panel first, so the window underneath survives.
 
+Have a Work Louder Creator Micro 2 on the desk? Connect it (USB or
+Bluetooth) and it becomes a hardware agent panel: six keys colored by each
+workspace's agent state, the ring glowing when anything needs you, tap a key
+to be there. The encoder scrolls, the joystick moves window focus, and every
+control is remappable - see Settings.
+
 There is nothing to configure. `amon setup` makes it all work automatically -
 agent hooks, aliases, the bar widget, the panel, the keybindings - and
 `amon doctor` reports what is wired up and what is not.
@@ -278,6 +284,35 @@ stereo - on a surround or bitstream-passthrough setup, skip ducking.
   nothing about your machine in it. When a newer release exists, the agent
   panel shows a one-line footer with the command that upgrades; nothing
   downloads or installs itself. Set to false and it never checks.
+
+**`[devices.micro2]`**
+
+A Work Louder Creator Micro 2 lights up by itself when connected - these
+only tune it. On a machine that has never had Work Louder udev rules, one
+root step grants access; `amon setup` offers it.
+
+- `enabled = true` - set false to leave the device alone entirely.
+- `brightness = 1.0` - keys and ring alike, 0.0-1.0.
+- `ring = true` - the ambient ring shows the fleet's most urgent state:
+  solid orange when anything needs input, snaking blue while anything
+  works, breathing green when something finished unseen.
+
+**`[devices.micro2.colors]`**
+
+- `blocked = "#FF6D00"`, `working = "#304FFE"`, `done = "#00FF4C"`,
+  `idle = "#FFFFFF"` - per-state key colors.
+
+**`[devices.micro2.keys]`**
+
+The seven macro keys, any action. Controls: `macro_1`..`macro_7` in
+reading order - `macro_1`-`macro_4` across the upper row, `macro_5`-
+`macro_7` across the lower. Actions: `none`, `panel`, `workspace:N`,
+`key:<chord>` (e.g. `key:super+shift+f`), `exec:<command>`. The defaults:
+the agent panel, nothing, Up, Escape on the upper row; dictation
+(`voxtype record toggle`), Down, Enter on the lower. Everything else is
+fixed: agent key N lights and focuses workspace N, the encoder scrolls
+(and walks the agent panel while it is open, its click selecting), the
+joystick moves window focus like Super+arrows.
 
 ## Credits
 

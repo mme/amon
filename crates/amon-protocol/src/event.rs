@@ -9,7 +9,7 @@ use crate::config::Config;
 /// [`Event::Unknown`] is what makes a subscriber built against an older amon
 /// survive a newer daemon: events it has never heard of land here and are
 /// skipped rather than breaking the stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 #[serde(tag = "event", content = "params")]
 pub enum Event {
     /// An agent registered.

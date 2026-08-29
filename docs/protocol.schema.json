@@ -303,9 +303,20 @@
             "glyphs": {}
           }
         },
+        "devices": {
+          "$ref": "#/$defs/DevicesConfig",
+          "default": {
+            "micro2": {
+              "colors": {},
+              "dictation": {},
+              "enabled": true
+            }
+          }
+        },
         "sound": {
           "$ref": "#/$defs/SoundConfig",
           "default": {
+            "duck_while_dictating": true,
             "enabled": true
           }
         },
@@ -314,6 +325,72 @@
           "default": {
             "check": true
           }
+        }
+      },
+      "type": "object"
+    },
+    "DeviceColors": {
+      "description": "Which color stands for each agent state on the device.",
+      "properties": {
+        "blocked": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "done": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "idle": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "working": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "DevicesConfig": {
+      "description": "Physical status devices on the desk (ADR-0016). Today that is the Work\nLouder Creator Micro 2; the shape leaves room for its siblings.",
+      "properties": {
+        "micro2": {
+          "$ref": "#/$defs/Micro2Config",
+          "default": {
+            "colors": {},
+            "dictation": {},
+            "enabled": true
+          }
+        }
+      },
+      "type": "object"
+    },
+    "DictationConfig": {
+      "description": "How the `dictate` action reads its button. Recording always starts on\nthe press; these decide what the release means.",
+      "properties": {
+        "auto_submit": {
+          "description": "Whether ending a hold also presses Enter once the text has landed —\ndictate a message, let go, and it sends itself. Only holds submit;\na tap-stopped recording never does.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "hold_ms": {
+          "description": "Milliseconds a press must last to count as holding: a shorter press\nis a tap (recording runs until the next tap), a longer one is\npush-to-talk (recording stops on release). Absent means the tuned\ndefault.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -549,6 +626,49 @@
         "socket",
         "pane"
       ],
+      "type": "object"
+    },
+    "Micro2Config": {
+      "description": "The Creator Micro 2: six agent keys lit by agent state, a ring showing\nthe fleet's most urgent state, and every other control mapped to an\naction. Everything here is optional; absent means the tuned default.",
+      "properties": {
+        "brightness": {
+          "description": "0.0–1.0, applied to keys and ring alike.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "colors": {
+          "$ref": "#/$defs/DeviceColors",
+          "default": {},
+          "description": "Per-state key colors, `#RRGGBB`. Defaults are the Codex palette."
+        },
+        "dictation": {
+          "$ref": "#/$defs/DictationConfig",
+          "default": {},
+          "description": "How the `dictate` action reads the button."
+        },
+        "enabled": {
+          "default": true,
+          "description": "On unless turned off. With no device connected this configures\nnothing; the daemon only acts when one appears.",
+          "type": "boolean"
+        },
+        "keys": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Macro-key overrides: keys are the seven macro keys in reading\norder (`macro_1`..`macro_4` upper row, `macro_5`..`macro_7` lower),\nvalues are actions (`none`, `panel`, `workspace:N`, `key:<spec>`,\n`exec:<command>`). The agent keys, encoder, and joystick have fixed\nroles and are not remappable.",
+          "type": "object"
+        },
+        "ring": {
+          "description": "Whether the ambient ring shows the fleet's most urgent state.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
       "type": "object"
     },
     "ReportSession": {
@@ -839,6 +959,11 @@
             "string",
             "null"
           ]
+        },
+        "duck_while_dictating": {
+          "default": true,
+          "description": "Duck other audio while voxtype is recording, the way notifications do.\n\nOn by default, for the same reason the sounds are: it only ever helps,\nand a setting nobody knows exists helps nobody. It needs the ducking\ndrop-in (`amon setup --duck`) to have any effect — without it nothing\nchanges — and it composes with rather than replaces voxtype's own\n`pause_media`, which pauses MPRIS players for transcription accuracy;\nducked audio still reaches the microphone.",
+          "type": "boolean"
         },
         "enabled": {
           "default": true,

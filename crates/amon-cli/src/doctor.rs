@@ -8,7 +8,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 
-use amon_integration::{alias, desktop, ducking, shims, DesktopTarget, InstallState};
+use amon_integration::{alias, desktop, ducking, shims, udev, DesktopTarget, InstallState};
 use amon_protocol::{Hello, HelloResult, Method, Request, Response, Role, PROTOCOL_VERSION};
 
 pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -40,6 +40,9 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("daemon:");
     let socket = amon_protocol::paths::daemon_socket();
+    // Asked once, read twice: the daemon's own settings say both whether
+    // the config file took effect and whether it is lighting the desk.
+    let daemon_config = probe_config();
     match probe_daemon(version) {
         DaemonProbe::Running(running) => {
             print_line(
@@ -52,7 +55,7 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
             // configuration (ADR-0012), and this is the report the docs
             // promise. Only the error's first line — TOML errors span
             // several, and the row is a status, not a stack trace.
-            match probe_config() {
+            match daemon_config.as_ref().map(|result| &result.error) {
                 Some(Some(error)) => print_line(
                     "config",
                     &format!(
@@ -110,7 +113,8 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("audio:");
     if ducking::available() {
-        match ducking::status() {
+        let dropin = ducking::status();
+        match dropin {
             InstallState::Current => {
                 print_line("ducking", "installed (music dips under notifications)", "")
             }
@@ -123,8 +127,62 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
                 print_line("ducking", "not installed (amon setup --duck)", "")
             }
         }
+        // Only what the daemon actually runs with counts (ADR-0012); with no
+        // daemon to ask, no row — the daemon section already says why.
+        if let Some(result) = &daemon_config {
+            let state_file = amon_daemon::dictation_state_path().is_some_and(|path| path.exists());
+            if let Some(row) =
+                dictation_row(result.config.sound.duck_while_dictating, dropin, state_file)
+            {
+                print_line("dictation", row, "");
+            }
+        }
     } else {
         print_line("ducking", "no wireplumber on PATH — nothing to duck", "");
+    }
+
+    println!();
+    println!("devices:");
+    match amon_daemon::devices::discover() {
+        Some(found) => {
+            // "the daemon lights it" is a claim about the daemon, so it is
+            // only made when one answered and its settings agree. A device
+            // switched off in config earns neither that claim nor the
+            // /dev/uinput warning, for actions it will never run.
+            let enabled = daemon_config
+                .as_ref()
+                .map(|result| result.config.devices.micro2.enabled);
+            let node = found.node.display().to_string();
+            if !udev::accessible(&found.node) {
+                print_line(
+                    "micro2",
+                    "connected, not accessible (amon setup adds the udev rule)",
+                    &node,
+                );
+            } else {
+                match enabled {
+                    Some(true) => print_line("micro2", "connected (the daemon lights it)", &node),
+                    Some(false) => print_line(
+                        "micro2",
+                        "connected, left alone ([devices.micro2] enabled = false)",
+                        &node,
+                    ),
+                    None => print_line(
+                        "micro2",
+                        "connected (a daemon will light it once running)",
+                        &node,
+                    ),
+                }
+            }
+            if enabled != Some(false) && !udev::accessible(std::path::Path::new("/dev/uinput")) {
+                print_line(
+                    "input",
+                    "no /dev/uinput access — key and scroll actions stay inert (amon setup)",
+                    "",
+                );
+            }
+        }
+        None => print_line("micro2", "not connected", ""),
     }
 
     println!();
@@ -190,11 +248,11 @@ enum DaemonProbe {
     NotRunning,
 }
 
-/// Asks the running daemon for its configuration state: `Some(Some(error))`
-/// when the file on disk is not what the daemon runs on, `Some(None)` when
-/// all is well, `None` when the daemon could not answer (its own row already
-/// says so) — or is too old to know the field, which deserializes as absent.
-fn probe_config() -> Option<Option<String>> {
+/// Asks the running daemon what it is configured with: the settings it is
+/// actually running on, and why the file on disk is not them when it is
+/// not. `None` when the daemon could not answer (its own row already says
+/// so) — or is too old to know the method, which deserializes as absent.
+fn probe_config() -> Option<amon_protocol::ConfigResult> {
     let stream = UnixStream::connect(amon_protocol::paths::daemon_socket()).ok()?;
     let timeout = Some(std::time::Duration::from_secs(2));
     let _ = stream.set_read_timeout(timeout);
@@ -205,8 +263,7 @@ fn probe_config() -> Option<Option<String>> {
     let mut line = String::new();
     BufReader::new(&stream).read_line(&mut line).ok()?;
     let response: Response = serde_json::from_str(&line).ok()?;
-    let result: amon_protocol::ConfigResult = serde_json::from_value(response.result?).ok()?;
-    Some(result.error)
+    serde_json::from_value(response.result?).ok()
 }
 
 /// Asks a *running* daemon for its version. Deliberately not connect-or-spawn:
@@ -261,10 +318,58 @@ fn describe_state(state: InstallState, installed: &str, expected: &str) -> Strin
     }
 }
 
+/// The dictation-ducking row of the audio section, `None` when the setting
+/// was turned off — what someone opted out of deserves no line. When it is
+/// on, the row says the one thing that decides whether it works: the drop-in
+/// (stale still ducks), then voxtype's state file, and only then "working".
+fn dictation_row(
+    duck_while_dictating: bool,
+    dropin: InstallState,
+    state_file_present: bool,
+) -> Option<&'static str> {
+    if !duck_while_dictating {
+        return None;
+    }
+    Some(match (dropin, state_file_present) {
+        (InstallState::NotInstalled, _) => {
+            "duck_while_dictating is on, but nothing ducks without the drop-in (amon setup --duck)"
+        }
+        (_, false) => "duck_while_dictating is on, but no voxtype state file — is voxtype running?",
+        (_, true) => "music ducks while dictation records",
+    })
+}
+
 fn print_line(label: &str, state: &str, path: &str) {
     if path.is_empty() {
         println!("  {label:<12} {state}");
     } else {
         println!("  {label:<12} {state:<24} {path}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dictation_row_speaks_only_when_the_setting_is_on() {
+        assert_eq!(dictation_row(false, InstallState::Current, true), None);
+        assert_eq!(
+            dictation_row(true, InstallState::NotInstalled, true),
+            Some("duck_while_dictating is on, but nothing ducks without the drop-in (amon setup --duck)")
+        );
+        assert_eq!(
+            dictation_row(true, InstallState::Current, false),
+            Some("duck_while_dictating is on, but no voxtype state file — is voxtype running?")
+        );
+        assert_eq!(
+            dictation_row(true, InstallState::Current, true),
+            Some("music ducks while dictation records")
+        );
+        // A stale drop-in still ducks; the ducking row already says "stale".
+        assert_eq!(
+            dictation_row(true, InstallState::Outdated, true),
+            Some("music ducks while dictation records")
+        );
     }
 }

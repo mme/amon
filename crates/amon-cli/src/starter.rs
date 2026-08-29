@@ -65,6 +65,12 @@ const STARTER: &str = r##"# amon
 # done = "~/sounds/finished.mp3"
 # blocked = "~/sounds/attention.mp3"
 
+# Duck other audio while dictation records, the way notifications duck it.
+# Needs the ducking drop-in (amon setup --duck); without it, nothing changes.
+#
+# On by default. Uncomment to leave the music alone while dictating:
+# duck_while_dictating = false
+
 [updates]
 # Whether the daemon may look for newer releases: one request against the
 # GitHub release page's redirect, at most daily, with nothing about your
@@ -72,4 +78,41 @@ const STARTER: &str = r##"# amon
 #
 # On by default. Uncomment to never check:
 # check = false
+
+[devices.micro2]
+# A Work Louder Creator Micro 2 on the desk lights up by itself: six agent
+# keys colored by state (key N = workspace N, tap to focus), the ring
+# showing whether anything needs you, the encoder scrolling (and driving
+# the agent panel while it is open), the joystick moving window focus.
+# Those roles are fixed; nothing here is needed for any of it.
+# enabled = true
+# brightness = 1.0
+# ring = true
+
+[devices.micro2.colors]
+# Per-state key colors.
+# blocked = "#FF6D00"
+# working = "#304FFE"
+# done = "#00FF4C"
+# idle = "#FFFFFF"
+
+[devices.micro2.keys]
+# The seven macro keys in reading order (macro_1-4 upper row, macro_5-7
+# lower), any action: "none", "panel", "workspace:N", "key:<chord>"
+# (e.g. "key:super+shift+f"), "exec:<command>", or "dictate". The defaults:
+# macro_1 = "panel"
+# macro_2 = "none"
+# macro_3 = "key:Up"
+# macro_4 = "key:Escape"
+# macro_5 = "dictate"
+# macro_6 = "key:Down"
+# macro_7 = "key:Enter"
+
+[devices.micro2.dictation]
+# The dictate button reads two ways, and recording starts on the press
+# either way: a tap toggles (tap again to stop), a hold is push-to-talk —
+# recording stops when you let go, and voxtype presses Enter for you once
+# the text has landed. The defaults:
+# hold_ms = 250        # a press this long counts as holding
+# auto_submit = true   # a hold's end sends Enter; taps never do
 "##;

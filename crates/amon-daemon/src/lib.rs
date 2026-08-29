@@ -19,6 +19,8 @@ use amon_protocol::{
 };
 
 mod config;
+pub mod devices;
+mod dictation;
 mod herdr;
 mod manifests;
 mod registry;
@@ -35,6 +37,13 @@ pub use registry::Registry;
 /// that path is a second thing to get wrong.
 pub fn config_path() -> Option<std::path::PathBuf> {
     config::path()
+}
+
+/// Where voxtype reports dictation state, for the same reason: the daemon is
+/// what watches it, so it is the one opinion on where it is. Doctor asks to
+/// say whether ducking-while-dictating has anything to watch.
+pub fn dictation_state_path() -> Option<std::path::PathBuf> {
+    dictation::state_path()
 }
 
 /// Runs the daemon until it is asked to shut down, taking the socket over from
@@ -66,6 +75,10 @@ pub fn run(version: String) -> std::io::Result<()> {
         move |config| registry.broadcast_config(config.clone())
     });
     updates::check_periodically(registry.clone(), config.clone(), version.clone());
+    // Music dips while dictation records, if the config asks for it.
+    dictation::watch(config.clone());
+    // Desk devices light up from the same registry the bar reads.
+    let devices = devices::start(registry.clone(), config.clone());
     let shutdown = Arc::new(AtomicBool::new(false));
     // Shared with the herdr watcher: projected entries and socket
     // connections draw registry ids from one counter, because the registry
@@ -96,6 +109,10 @@ pub fn run(version: String) -> std::io::Result<()> {
             registry.disconnect(connection);
         });
     }
+
+    // Devices first: a daemon that leaves colors burning on the desk has
+    // not shut down, it has abandoned its post.
+    devices.stop();
 
     // Remove the socket file only if it is still this daemon's. During a
     // takeover the successor unlinks the path and binds its own socket there;

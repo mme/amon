@@ -1290,6 +1290,39 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
            upgrades; nothing downloads or installs itself. Set to false and
            it never checks.</p>
       </div>
+
+      <div class="cli-sect">[devices.micro2]</div>
+      <div>
+        <p>A Work Louder Creator Micro 2 lights up by itself when
+           connected - six keys colored by each workspace's agent state,
+           the ring glowing when anything needs you, tap a key to be
+           there. These settings only tune it. On a machine that never had
+           Work Louder udev rules, one root step grants access;
+           <span class="lift">amon setup</span> offers it.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-micro2-enabled" href="#set-micro2-enabled"><code class="cli-cmd">enabled = true</code></a>
+        <p>Set false to leave the device alone entirely.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-micro2-brightness" href="#set-micro2-brightness"><code class="cli-cmd">brightness = 1.0</code></a>
+        <p>Keys and ring alike, 0.0-1.0. <span class="lift">ring =
+           false</span> darkens the ambient ring; by default it shows the
+           fleet's most urgent state.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-micro2-keys" href="#set-micro2-keys"><code class="cli-cmd">[devices.micro2.keys]</code></a>
+        <p>The seven macro keys, any action. Controls:
+           <span class="lift">macro_1</span>..<span class="lift">macro_7</span>
+           in reading order, upper row then lower. Actions: <span class="lift">none</span>,
+           <span class="lift">panel</span>,
+           <span class="lift">workspace:N</span>, <span class="lift">key:&lt;chord&gt;</span>,
+           <span class="lift">exec:&lt;command&gt;</span>. Defaults: the agent
+           panel, nothing, Up, Escape on the upper row; dictation, Down,
+           Enter on the lower. Everything else is fixed: agent key N lights
+           and focuses workspace N, the encoder scrolls and drives the open
+           agent panel, the joystick moves window focus.</p>
+      </div>
     </div>
   </section>
 </main>
