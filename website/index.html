@@ -212,6 +212,12 @@
   .mark-omarchy{background:currentColor;
                 -webkit-mask:url(omarchy-logo.svg) center/contain no-repeat;
                         mask:url(omarchy-logo.svg) center/contain no-repeat}
+  /* herdr's mark, the same way: masked, currentColor, set in the heading at
+     the type's own size so it reads as a word in the line, not a badge. */
+  .mark-herdr{display:inline-block; width:1.3em; height:1.3em; vertical-align:-.22em;
+              margin-right:.35em; background:currentColor;
+              -webkit-mask:url(herdr-logo.svg) center/contain no-repeat;
+                      mask:url(herdr-logo.svg) center/contain no-repeat}
   .cta .mark-check{display:none}
   .cta.copied .mark-omarchy{display:none}
   .cta.copied .mark-check{display:block}
@@ -908,12 +914,16 @@
     <p>Start your agents in the terminal as usual. <span class="lift">amon</span> shows their
        live state in the top bar. <span class="lift">Super+number</span> now lands you on the
        right agent when switching workspaces.</p>
+  </section>
 
-    <p>Running agents in <a href="https://github.com/herdrdev/herdr">herdr</a>? Those
-       count too. <span class="lift">amon</span> watches for herdr sessions and puts their
-       agents on the bar and in the panel beside the wrapped ones, same states, same
-       keystrokes - and a jump lands on the right pane, not just the right window.
-       Wrap an agent or host it in herdr; either way it is one keystroke away.</p>
+  <section class="plate">
+    <header>
+      <h2><a class="h-anchor" id="herdr" href="#herdr"><span class="mark-herdr" aria-hidden="true"></span>agents in herdr count too</a></h2>
+      <p><a href="https://github.com/herdrdev/herdr">herdr</a> is the runtime your agents
+         live on. <span class="lift">amon</span> sees the agents in its sessions and puts
+         them on the bar and in the panel beside the wrapped ones - same states, same
+         keystrokes, and a jump lands on the right pane.</p>
+    </header>
   </section>
 
   <section class="plate">
