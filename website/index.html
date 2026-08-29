@@ -18,7 +18,7 @@
 <meta property="og:image:type" content="image/jpeg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="The amon robot beside the amon wordmark: agent monitor, built for Omarchy">
+<meta property="og:image:alt" content="The amon robot over the amon wordmark, agent monitor, between a neon sunset road and an ink-drawn night">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@mme_xyz">
 <style>
@@ -212,6 +212,21 @@
   .mark-omarchy{background:currentColor;
                 -webkit-mask:url(omarchy-logo.svg) center/contain no-repeat;
                         mask:url(omarchy-logo.svg) center/contain no-repeat}
+  /* herdr's mark, the same way: masked, currentColor. */
+  .mark-herdr{display:block; width:34px; height:34px; flex:none; color:var(--ink);
+              background:currentColor;
+              -webkit-mask:url(herdr-logo.svg) center/contain no-repeat;
+                      mask:url(herdr-logo.svg) center/contain no-repeat}
+  /* the note card: a ruled box, no ground of its own, the mark beside a
+     heading and one line - quieter than the panel card, since it speaks to
+     one kind of reader and the rest should pass it by. Flex overrides the
+     plate's column so the two sit side by side; the heading drops to body
+     size because it names a card, not a chapter. */
+  .plate.note{flex-direction:row; align-items:flex-start; gap:14px;
+              border:1px solid var(--rule); border-radius:8px; padding:14px 16px}
+  .plate.note .mark-herdr{width:26px; height:26px; color:var(--muted); margin-top:1px}
+  .plate.note h2{font-size:14px}
+  .plate.note p{margin:.25rem 0 0; color:var(--muted); font-size:13.5px; max-width:62ch}
   .cta .mark-check{display:none}
   .cta.copied .mark-omarchy{display:none}
   .cta.copied .mark-check{display:block}
@@ -909,6 +924,20 @@
        live state in the top bar. <span class="lift">Super+number</span> now lands you on the
        right agent when switching workspaces.</p>
   </section>
+
+  <!--
+    An aside, not a section: one card with the mark on the left, the same
+    border and ground as the panel card, no rule above it. It addresses the
+    reader who already runs herdr and says nothing to anyone else.
+  -->
+  <aside class="plate note" aria-labelledby="herdr">
+    <span class="mark-herdr" aria-hidden="true"></span>
+    <div>
+      <h2><a class="h-anchor" id="herdr" href="#herdr">using herdr &amp; omarchy? you'll love this!</a></h2>
+      <p>Nothing to set up. <span class="lift">amon</span> finds your
+         <a href="https://github.com/herdrdev/herdr">herdr</a> sessions and just works out of the box.</p>
+    </div>
+  </aside>
 
   <section class="plate">
     <header>

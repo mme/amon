@@ -30,6 +30,12 @@ urgent agent state on that workspace's own indicator, and `Super+number` lands
 on the agent that needs you rather than on whatever was focused there last -
 blocked first, then finished-but-unseen, then working, never an agent at rest.
 
+Agents you run in [herdr](https://github.com/herdrdev/herdr) count too. amon
+watches for herdr sessions and puts their agents on the bar and in the panel
+beside the wrapped ones, with the same states, and jumping to one lands on the
+right pane, not just the right window. Wrap an agent, or host it in herdr -
+either way it is one keystroke away.
+
 `Super+A` opens the agent panel from wherever you are, over whatever you are
 doing: every agent, grouped by the workspace it is on, each row leading with the
 project it is working in and the branch it is on, then what it is doing and how
@@ -96,6 +102,15 @@ real one. (Amon does ask the terminal itself to report focus, and takes those
 reports back out of the agent's input - [ADR-0007](./docs/adr/0007-wrapper-enables-terminal-focus-reporting.md)
 covers what that costs and why.) If the daemon is missing, wedged, or killed,
 the agent keeps running - observability never interrupts your session.
+
+Inside a herdr session there is no wrapping at all: the daemon speaks to
+herdr's socket, takes the agent states herdr detects itself, and carries them
+onto the bar with the window of the attached client. Agents are shown for as
+long as a client is attached to their session, and `amon focus` asks herdr to
+bring the agent's pane forward once the window is up. An `amon claude` typed
+in a herdr pane runs the agent bare, so there is one detection authority per
+context ([ADR-0001](./docs/adr/0001-vendor-herdr-terminal-and-detect.md),
+[the design](./docs/research/herdr-live-integration.md)).
 
 ## Subscribing
 
@@ -284,11 +299,12 @@ stereo - on a surround or bitstream-passthrough setup, skip ducking.
 - [Omarchy](https://omarchy.org) - the desktop this is built for; the bar
   widget is a four-line fork of its own workspaces widget, and the panel is
   built from its shell's components.
-- [herdr](https://github.com/ogulcancelik/herdr) by Ogulcan Celik
+- [herdr](https://github.com/herdrdev/herdr) by Ogulcan Celik
   (Apache-2.0) - agent state detection and its manifests, the terminal state
   machine, and the per-agent hook installer are all derived from it, and
   detection manifests refresh from herdr's public catalog. An excellent agent
-  multiplexer worth using in its own right.
+  runtime worth using in its own right - and amon shows the agents living in
+  it.
 - [libghostty-vt](https://github.com/ghostty-org/ghostty) (MIT) - terminal
   emulation, Ghostty's VT library.
 
