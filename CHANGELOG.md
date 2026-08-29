@@ -8,6 +8,13 @@ the machinery, not decoration.
 
 <!-- next -->
 
+- **Agents in herdr show up**: amon watches for
+  [herdr](https://github.com/herdrdev/herdr) sessions and puts their agents
+  on the bar and in the panel beside the wrapped ones, with herdr's own
+  states, for as long as a client is attached. Jumping to one lands on its
+  pane. Inside a herdr pane, `amon <agent>` runs the agent bare, so herdr
+  stays the one detecting it.
+
 ## v0.1.1
 
 - **Chimes survive a sleeping speaker**: amon now wakes a suspended audio
