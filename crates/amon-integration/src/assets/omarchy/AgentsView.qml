@@ -131,6 +131,146 @@ FocusScope {
     idle: "idle"
   })
 
+  // Column widths come from measuring the actual strings. Counting characters
+  // and multiplying by one advance is close enough for ASCII and wrong for
+  // everything else: a monospaced font still draws CJK at two cells, and a
+  // repository named in Chinese would be allotted half the room it needs —
+  // and the identifying segment is never elided, so it would run into the
+  // column beside it rather than being cut short.
+  //
+  // `advanceWidth` is a call rather than a property, which is what keeps this
+  // usable from inside a binding: measuring a string here cannot invalidate
+  // the binding that asked for it.
+  FontMetrics {
+    id: metrics
+    font.family: view.fontFamily
+    font.pixelSize: Style.font.body
+  }
+  function textWidth(text) {
+    return text ? Math.ceil(metrics.advanceWidth(text)) : 0
+  }
+
+  readonly property int columnGap: Style.space(10)
+
+  // Left to right. Position is priority: what sits further right goes first
+  // when the pane is too narrow to hold everything.
+  readonly property var columnOrder: ["glyph", "identity", "branch", "age", "state", "kind"]
+
+  // Everything except the glyph and the identity, rightmost first. Whatever
+  // else goes, a row still says whether it wants you and which agent it is —
+  // which is the whole question the pane exists to answer.
+  readonly property var droppable: ["state", "kind", "age", "branch"]
+
+  // Where the agent is, split into the one segment that identifies it and the
+  // qualification around it. Inside a repository that is the Project, and the
+  // subpath trails it; outside one there is no Project, and the directory the
+  // agent stands in is what you recognise, with the path to it leading up.
+  //
+  // Only ever one of prefix and suffix is set, which is what lets one layout
+  // draw both cases: the bold segment keeps its width and the dim part takes
+  // what is left, eliding from whichever side it sits on.
+  function identityParts(entry) {
+    if (entry.project !== "")
+      return {
+        prefix: "",
+        bold: entry.project,
+        suffix: entry.subpath !== "" ? "/" + entry.subpath : ""
+      }
+    const path = view.shortPath(entry.cwd)
+    const cut = path.lastIndexOf("/")
+    if (cut < 0)
+      return { prefix: "", bold: path, suffix: "" }
+    return { prefix: path.slice(0, cut + 1), bold: path.slice(cut + 1), suffix: "" }
+  }
+
+  function cellText(entry, column) {
+    if (column === "identity") {
+      const parts = view.identityParts(entry)
+      return parts.prefix + parts.bold + parts.suffix
+    }
+    if (column === "branch") return entry.branch
+    if (column === "kind") return entry.agent
+    if (column === "state") return view.labels[entry.state] || entry.state
+    return ""
+  }
+
+  // One set of column widths for the whole visible list, so a column starts at
+  // the same place on every line and the eye can run down it. herdr packs each
+  // row independently, which suits a list of sentences; this is a grid, and a
+  // grid whose columns move per row is not one.
+  //
+  // A column no row can fill is not drawn at all — a branch column where
+  // nothing is in a repository, for instance.
+  function computeColumns(rows, available) {
+    const gap = view.columnGap
+    const natural = {
+      glyph: Style.space(18),
+      identity: 0,
+      branch: 0,
+      // Sized for the longest age this column can hold rather than for the
+      // one showing now, so the row does not shuffle when 59s becomes 1m.
+      age: view.textWidth("9999h"),
+      kind: 0,
+      state: 0
+    }
+
+    for (let i = 0; i < rows.length; i++) {
+      const entry = rows[i]
+      natural.identity = Math.max(natural.identity, view.textWidth(view.cellText(entry, "identity")))
+      natural.branch = Math.max(natural.branch, view.textWidth(entry.branch))
+      natural.state = Math.max(natural.state, view.textWidth(view.cellText(entry, "state")))
+      natural.kind = Math.max(natural.kind, view.textWidth(entry.agent))
+    }
+
+    let present = view.columnOrder.filter(column => natural[column] > 0)
+    const width = {}
+    for (let i = 0; i < present.length; i++) width[present[i]] = natural[present[i]]
+
+    while (true) {
+      const gaps = Math.max(0, present.length - 1) * gap
+      let total = 0
+      for (let i = 0; i < present.length; i++) total += width[present[i]]
+      if (total + gaps <= available) break
+
+      let dropped = false
+      for (let i = present.length - 1; i >= 0; i--) {
+        if (view.droppable.indexOf(present[i]) >= 0) {
+          present.splice(i, 1)
+          dropped = true
+          break
+        }
+      }
+      // Nothing left that may go. The identity takes what remains and elides
+      // its dim half; the bold segment is never truncated away.
+      if (!dropped) {
+        width.identity = Math.max(0, available - gaps - natural.glyph)
+        break
+      }
+    }
+
+    const x = {}
+    let cursor = 0
+    for (let i = 0; i < present.length; i++) {
+      x[present[i]] = cursor
+      cursor += width[present[i]] + gap
+    }
+    return { present: present, width: width, x: x }
+  }
+
+  readonly property var columnLayout: view.computeColumns(
+    view.agents.rows,
+    Math.max(0, list.width - Style.space(10) * 2))
+
+  function columnWidth(column) {
+    return view.columnLayout.width[column] || 0
+  }
+  function columnX(column) {
+    return view.columnLayout.x[column] || 0
+  }
+  function columnVisible(column) {
+    return view.columnLayout.present.indexOf(column) >= 0
+  }
+
   // "1 NEEDS INPUT · 2 DONE · 1 RUNNING · 3 IDLE", dropping any part that is
   // zero so the line only ever states what is true. PanelHero uppercases it and
   // spaces the letters out; the separator dot is Omarchy's own.
@@ -438,9 +578,9 @@ FocusScope {
   }
   }
 
-  // One agent. The columns are fixed widths so that they line up down the list;
-  // only the path takes what is left, and it elides from the left because the
-  // end of a path is the part that identifies it.
+  // One agent, drawn into the shared column layout so every row agrees where a
+  // column starts. What each column holds and when it gives way is decided in
+  // `computeColumns` above; a row only places what it is given.
   component AgentRow: CursorSurface {
     id: row
 
@@ -468,13 +608,13 @@ FocusScope {
     // same spinner in step with the bar's.
     //
     // Idle has no glyph on purpose: it is the absence of anything happening,
-    // and the column keeps its width so the names stay aligned.
+    // and the column keeps its width so the rows stay aligned. Never dropped:
+    // whether an agent wants you is the one thing a row must always say.
     Text {
       id: stateGlyph
-      anchors.left: parent.left
-      anchors.leftMargin: Style.space(10)
+      x: Style.space(10) + view.columnX("glyph")
       anchors.verticalCenter: parent.verticalCenter
-      width: Style.space(18)
+      width: view.columnWidth("glyph")
       text: {
         if (row.entry.state === "blocked") return view.agents.blockedGlyph
         if (row.entry.state === "done") return view.agents.doneGlyph
@@ -486,86 +626,129 @@ FocusScope {
       font.pixelSize: Style.font.body
     }
 
-    Text {
-      id: agentName
-      anchors.left: stateGlyph.right
-      anchors.leftMargin: Style.space(8)
+    // Where the agent is working, and the first thing the eye lands on. Bold
+    // marks the one segment that identifies it — the Project, or the directory
+    // when there is no Project — and that segment is never truncated: elision
+    // eats the dim qualification, from whichever side it sits on.
+    Item {
+      id: identity
+      x: Style.space(10) + view.columnX("identity")
       anchors.verticalCenter: parent.verticalCenter
-      width: Style.space(78)
-      text: row.entry.agent
+      width: view.columnWidth("identity")
+      height: parent.height
+
+      readonly property var parts: view.identityParts(row.entry)
+      readonly property real boldWidth: Math.min(view.textWidth(parts.bold), width)
+
+      Text {
+        visible: identity.parts.prefix !== ""
+        x: 0
+        width: Math.max(0, identity.width - identity.boldWidth)
+        anchors.verticalCenter: parent.verticalCenter
+        text: identity.parts.prefix
+        color: view.dim
+        font.family: view.fontFamily
+        font.pixelSize: Style.font.body
+        // The path leading up to the directory: its tail is what matters, so
+        // it gives way from the front.
+        elide: Text.ElideLeft
+        horizontalAlignment: Text.AlignRight
+      }
+
+      Text {
+        x: identity.parts.prefix !== "" ? Math.max(0, identity.width - identity.boldWidth) : 0
+        width: identity.boldWidth
+        anchors.verticalCenter: parent.verticalCenter
+        text: identity.parts.bold
+        color: view.foreground
+        font.family: view.fontFamily
+        font.pixelSize: Style.font.body
+        font.bold: true
+      }
+
+      Text {
+        visible: identity.parts.suffix !== ""
+        x: identity.boldWidth
+        width: Math.max(0, identity.width - identity.boldWidth)
+        anchors.verticalCenter: parent.verticalCenter
+        text: identity.parts.suffix
+        color: view.dim
+        font.family: view.fontFamily
+        font.pixelSize: Style.font.body
+        elide: Text.ElideRight
+      }
+    }
+
+    // Identity too, at a finer grain than the Project. A repository with six
+    // worktrees puts the same Project on every row, and then the branch is the
+    // only thing telling them apart — so it is drawn at full weight rather
+    // than dimmed down with the metadata beside it. Three tiers, each meaning
+    // something: bold is which project, plain is which line of work, dim is
+    // everything that describes the row rather than identifies it.
+    //
+    // Not bold, though. Two bold columns compete and neither leads.
+    //
+    // Blank is the ordinary case for anything not in a repository.
+    Text {
+      id: branchText
+      visible: view.columnVisible("branch")
+      x: Style.space(10) + view.columnX("branch")
+      anchors.verticalCenter: parent.verticalCenter
+      width: view.columnWidth("branch")
+      text: row.entry.branch
       color: view.foreground
       font.family: view.fontFamily
       font.pixelSize: Style.font.body
-      font.bold: true
       elide: Text.ElideRight
     }
 
+    // How long the agent has been in the state it is in — not how long it has
+    // been running. A row that has wanted you for forty minutes is a different
+    // thing from one that has wanted you for one, and the glyph cannot say so.
     Text {
       id: ageText
-      anchors.right: parent.right
-      anchors.rightMargin: Style.space(10)
+      visible: view.columnVisible("age")
+      x: Style.space(10) + view.columnX("age")
       anchors.verticalCenter: parent.verticalCenter
-      width: Style.space(34)
-      horizontalAlignment: Text.AlignRight
+      width: view.columnWidth("age")
       text: view.agents.age(row.entry.stateSince, view.now)
       color: view.dim
       font.family: view.fontFamily
       font.pixelSize: Style.font.body
+      // The column is sized for a very old agent, but age() counts hours
+      // without end. Eliding rather than overflowing keeps a row that has been
+      // idle for years from drawing over the column beside it.
+      elide: Text.ElideRight
     }
 
+    // Which agent it is. Last, and so the first thing to go when the pane
+    // narrows: on a machine running one kind of agent it writes the same word
+    // down the list, and it is only worth its width while there is width to
+    // spare.
     Text {
-      id: stateText
-      anchors.right: ageText.left
-      anchors.rightMargin: Style.space(10)
+      id: kindText
+      visible: view.columnVisible("kind")
+      x: Style.space(10) + view.columnX("kind")
       anchors.verticalCenter: parent.verticalCenter
-      // Wide enough for the longest word this column can hold. "needs input"
-      // is eleven characters, and the menu font advances exactly 0.6em, so at
-      // body size it needs 80px — the column was 62 and had been quietly
-      // eliding it to "needs i…" since the list was written. Nothing showed it
-      // until an agent was actually blocked.
-      width: Style.space(86)
-      text: view.labels[row.entry.state] || row.entry.state
+      width: view.columnWidth("kind")
+      text: row.entry.agent
       color: view.dim
       font.family: view.fontFamily
       font.pixelSize: Style.font.body
       elide: Text.ElideRight
     }
 
-    // Where the agent is: the directory, and the branch that directory is on.
-    //
-    // Beside each other rather than in columns at opposite ends of the row.
-    // They are one fact — the branch qualifies the path — and separating them
-    // left the row's slack pooling between them, which read as a hole rather
-    // than as a margin. Now the leftover falls between where the agent is and
-    // what it is doing, which is a division worth seeing.
-    //
-    // Both fixed rather than elastic, so a column sits in the same place on
-    // every row and the eye can go straight to it.
+    // The state in words. First to go when the pane narrows, because the glyph
+    // beside the identity already carries it — this is the elaboration, and
+    // "needs input" is worth the width only while there is width to spare.
     Text {
-      id: pathText
-      anchors.left: agentName.right
-      anchors.leftMargin: Style.space(8)
+      id: stateText
+      visible: view.columnVisible("state")
+      x: Style.space(10) + view.columnX("state")
       anchors.verticalCenter: parent.verticalCenter
-      width: Style.space(180)
-      text: view.shortPath(row.entry.cwd)
+      width: view.columnWidth("state")
+      text: view.labels[row.entry.state] || row.entry.state
       color: view.dim
-      font.family: view.fontFamily
-      font.pixelSize: Style.font.body
-      // From the left: the end of a path is the part that identifies it.
-      elide: Text.ElideLeft
-    }
-
-    // A step further back than the path. The directory is what you recognise;
-    // the branch qualifies it, and blank is the ordinary case for anything not
-    // in a repository.
-    Text {
-      id: branchText
-      anchors.left: pathText.right
-      anchors.leftMargin: Style.space(10)
-      anchors.verticalCenter: parent.verticalCenter
-      width: Style.space(118)
-      text: row.entry.branch
-      color: Qt.darker(view.dim, 1.22)
       font.family: view.fontFamily
       font.pixelSize: Style.font.body
       elide: Text.ElideRight
