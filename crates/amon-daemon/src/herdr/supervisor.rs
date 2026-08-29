@@ -455,19 +455,6 @@ fn apply_status(registry: &Registry, shared: &Arc<Mutex<Shared>>, data: &serde_j
             owned.entry.agent = label;
         }
     }
-    // Present-and-null clears the title; absent leaves it alone.
-    let title = match data.get("title") {
-        None => None,
-        Some(serde_json::Value::Null) => Some(None),
-        Some(title) => title.as_str().map(|title| Some(title.to_owned())),
-    };
-    if let Some(title) = title {
-        if owned.entry.title != title {
-            patch.title = Some(title.clone());
-            owned.entry.title = title;
-        }
-    }
-
     if patch == AgentPatch::new(owned.entry.id.clone()) {
         return;
     }
@@ -687,15 +674,15 @@ mod tests {
         });
 
         // Presentation travels on the same event, and moves on its own: an
-        // agent that stays blocked while its title changes must not go on
-        // describing what it was doing before.
+        // agent that stays blocked while herdr renames it must not go on
+        // being labelled what it was before.
         let settled = wait_for(|| {
-            let event = r#"{"event":"pane.agent_status_changed","data":{"pane_id":"w1:p1","agent_status":"blocked","title":"waiting on approval","agent":"claude-code"}}"#;
+            let event = r#"{"event":"pane.agent_status_changed","data":{"pane_id":"w1:p1","agent_status":"blocked","agent":"claude-code"}}"#;
             let _ = pushes.send(event.into());
             registry
                 .agents()
                 .into_iter()
-                .find(|agent| agent.title.as_deref() == Some("waiting on approval"))
+                .find(|agent| agent.agent == "claude-code")
         });
         assert_eq!(settled.agent, "claude-code");
         assert_eq!(settled.state, AgentState::Blocked, "the state held still");

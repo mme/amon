@@ -73,7 +73,6 @@ pub struct Observer {
     agent_id: String,
     link: DaemonLink,
     last_reported: AgentState,
-    last_title: Option<String>,
     dirty: bool,
     last_detection: Instant,
     /// Newest identity-carrying report sequence seen per hook source. Tracked
@@ -127,7 +126,6 @@ impl Observer {
             agent_id: setup.agent_id,
             link,
             last_reported: AgentState::Unknown,
-            last_title: None,
             dirty: false,
             last_detection: Instant::now(),
             identity_seqs: std::collections::HashMap::new(),
@@ -327,13 +325,6 @@ impl Observer {
                 process_exited,
                 Instant::now(),
             );
-        }
-
-        if title != self.last_title {
-            self.last_title = title.clone();
-            let mut patch = AgentPatch::new(&self.agent_id);
-            patch.title = Some(title);
-            self.link.update(patch);
         }
 
         self.publish();

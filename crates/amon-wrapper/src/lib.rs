@@ -146,7 +146,6 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
             .collect(),
         hostname: hostname(),
         started_at: now_millis(),
-        title: None,
         agent_session_id: None,
         agent_session_path: None,
         window: None,

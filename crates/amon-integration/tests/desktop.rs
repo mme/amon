@@ -416,7 +416,6 @@ fn order_in_rust() -> Vec<String> {
         args: Vec::new(),
         hostname: "h".into(),
         started_at: 0,
-        title: None,
         agent_session_id: None,
         agent_session_path: None,
         window: None,

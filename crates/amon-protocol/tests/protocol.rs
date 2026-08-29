@@ -19,13 +19,12 @@ fn entry() -> AgentEntry {
         args: vec!["claude".into(), "--resume".into()],
         hostname: "workstation".into(),
         started_at: 1_699_999_999_000,
-        title: Some("amon.sh".into()),
         agent_session_id: None,
         agent_session_path: None,
+        window: Some("0x1a2b".into()),
+        workspace: None,
         project: None,
         subpath: None,
-        window: None,
-        workspace: None,
         branch: None,
         focused: None,
         seen: None,
@@ -161,38 +160,66 @@ fn a_patch_changes_only_what_it_names() {
 
     assert!(patch.apply(&mut entry), "state changed");
     assert_eq!(entry.state, AgentState::Blocked);
-    assert_eq!(entry.title.as_deref(), Some("amon.sh"), "title untouched");
+    assert_eq!(entry.window.as_deref(), Some("0x1a2b"), "window untouched");
     assert_eq!(entry.pid, 4242);
 
     assert!(!patch.apply(&mut entry), "reapplying changes nothing");
 }
 
 #[test]
-fn a_patch_can_clear_the_title() {
-    // An agent that stops setting a title must not leave its last one on
-    // display forever. Absent means "leave alone"; null means "clear".
+fn a_patch_moves_the_agent_and_everything_that_moved_with_it() {
+    // An agent that walks into a worktree changes its directory, its Project
+    // and its branch in one step. Applying them separately would let an entry
+    // sit briefly with a branch from one checkout and a Project from another.
     let mut entry = entry();
     let mut patch = AgentPatch::new("a1");
-    patch.title = Some(None);
+    patch.cwd = Some("/home/mme/.cache/claude-worktrees/amon-readme".into());
+    patch.project = Some(Some("amon.sh".into()));
+    patch.subpath = Some(None);
+    patch.branch = Some(Some("readme-herdr".into()));
+
+    assert!(patch.apply(&mut entry), "moving is a change");
+    assert_eq!(entry.cwd, "/home/mme/.cache/claude-worktrees/amon-readme");
+    assert_eq!(entry.project.as_deref(), Some("amon.sh"));
+    assert_eq!(entry.subpath, None);
+    assert_eq!(entry.branch.as_deref(), Some("readme-herdr"));
+
+    // And walking out of a repository clears them rather than leaving the last
+    // one standing.
+    let mut leaving = AgentPatch::new("a1");
+    leaving.project = Some(None);
+    leaving.branch = Some(None);
+    assert!(leaving.apply(&mut entry), "leaving is a change");
+    assert_eq!(entry.project, None);
+    assert_eq!(entry.branch, None);
+}
+
+#[test]
+fn a_patch_can_clear_a_field_rather_than_leave_it_stale() {
+    // A window that closed must not leave its last address on display
+    // forever. Absent means "leave alone"; null means "clear".
+    let mut entry = entry();
+    let mut patch = AgentPatch::new("a1");
+    patch.window = Some(None);
 
     assert!(patch.apply(&mut entry), "clearing is a change");
-    assert_eq!(entry.title, None);
+    assert_eq!(entry.window, None);
 
     // The distinction must survive the wire: null is not the same as absent.
     let request = Request::new("req-8", Method::AgentUpdate(patch));
     let line = request.to_line();
-    assert!(line.contains(r#""title":null"#), "{line:?}");
+    assert!(line.contains(r#""window":null"#), "{line:?}");
     let Method::AgentUpdate(parsed) = Request::parse(line.trim()).unwrap().method else {
         panic!("expected an update");
     };
-    assert_eq!(parsed.title, Some(None), "null still means clear");
+    assert_eq!(parsed.window, Some(None), "null still means clear");
 
     let untouched =
         Request::parse(r#"{"id":"req-9","method":"agent.update","params":{"id":"a1"}}"#).unwrap();
     let Method::AgentUpdate(absent) = untouched.method else {
         panic!("expected an update");
     };
-    assert_eq!(absent.title, None, "absent still means leave alone");
+    assert_eq!(absent.window, None, "absent still means leave alone");
 }
 
 #[test]

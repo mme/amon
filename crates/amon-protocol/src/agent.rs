@@ -49,9 +49,6 @@ pub struct AgentEntry {
     pub hostname: String,
     /// Unix milliseconds.
     pub started_at: u64,
-    /// Terminal title the agent set, if any.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
     /// Reported by integration hooks; absent when none are installed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_id: Option<String>,
@@ -171,23 +168,15 @@ pub struct AgentPatch {
     pub state: Option<AgentState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_since: Option<u64>,
-    /// Two levels deep because "clear the title" has to be expressible: absent
-    /// means leave alone, `null` means clear, a string means set. An older
-    /// daemon reads `null` as absent and merely keeps the stale title.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "present_or_null"
-    )]
-    pub title: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_path: Option<String>,
-    /// Two levels deep, like [`AgentPatch::title`]: a window that closed has
-    /// to be expressible as "no longer known", not merely left stale.
+    /// Two levels deep because "no longer known" has to be expressible:
+    /// absent means leave alone, `null` means clear, a string means set. A
+    /// window that closed has to be able to say so rather than be left stale.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -269,9 +258,6 @@ impl AgentPatch {
         }
         if let Some(state_since) = self.state_since {
             entry.state_since = state_since;
-        }
-        if let Some(title) = &self.title {
-            entry.title = title.clone();
         }
         if let Some(agent) = &self.agent {
             entry.agent = agent.clone();

@@ -104,13 +104,6 @@
             "null"
           ]
         },
-        "title": {
-          "description": "Terminal title the agent set, if any.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "window": {
           "description": "The compositor window hosting the agent's terminal, as an opaque\ncompositor-native token. Absent off a supported compositor, or when the\nwrapper could not identify its window unambiguously — never guessed.\nConsumers hand it back to the compositor rather than parsing it.",
           "type": [
@@ -220,15 +213,8 @@
             "null"
           ]
         },
-        "title": {
-          "description": "Two levels deep because \"clear the title\" has to be expressible: absent\nmeans leave alone, `null` means clear, a string means set. An older\ndaemon reads `null` as absent and merely keeps the stale title.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "window": {
-          "description": "Two levels deep, like [`AgentPatch::title`]: a window that closed has\nto be expressible as \"no longer known\", not merely left stale.",
+          "description": "Two levels deep because \"no longer known\" has to be expressible:\nabsent means leave alone, `null` means clear, a string means set. A\nwindow that closed has to be able to say so rather than be left stale.",
           "type": [
             "string",
             "null"
@@ -394,7 +380,7 @@
           "type": "object"
         },
         {
-          "description": "An agent's entry changed — state, title, or session identity.",
+          "description": "An agent's entry changed — state, window, or session identity.",
           "properties": {
             "event": {
               "const": "agent_updated",

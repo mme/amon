@@ -244,7 +244,6 @@ mod tests {
             args: Vec::new(),
             hostname: "h".into(),
             started_at: 0,
-            title: None,
             agent_session_id: None,
             agent_session_path: None,
             project: None,
