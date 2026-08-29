@@ -59,9 +59,10 @@ pub enum Signal {
         /// hook knows.
         session_start_source: Option<String>,
     },
-    /// The branch the agent's directory is on changed, or first became known.
-    /// `None` means it is on no branch: outside a repository, or detached.
-    Branch(Option<String>),
+    /// Where the agent is working changed: it moved, or HEAD moved under it.
+    /// Carries all of it at once, because a row showing a branch from one
+    /// checkout beside a Project from another would be wrong about both.
+    Location(crate::git::Location),
     AgentExited,
 }
 
@@ -180,9 +181,12 @@ impl Observer {
                 patch.workspace = Some(workspace);
                 self.link.update(patch);
             }
-            Signal::Branch(branch) => {
+            Signal::Location(location) => {
                 let mut patch = AgentPatch::new(&self.agent_id);
-                patch.branch = Some(branch);
+                patch.cwd = Some(location.cwd.to_string_lossy().into_owned());
+                patch.project = Some(location.project);
+                patch.subpath = Some(location.subpath);
+                patch.branch = Some(location.branch);
                 self.link.update(patch);
             }
             Signal::Resize { cols, rows } => {

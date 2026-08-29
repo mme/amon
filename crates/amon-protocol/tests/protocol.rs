@@ -22,6 +22,8 @@ fn entry() -> AgentEntry {
         title: Some("amon.sh".into()),
         agent_session_id: None,
         agent_session_path: None,
+        project: None,
+        subpath: None,
         window: None,
         workspace: None,
         branch: None,

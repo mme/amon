@@ -247,6 +247,8 @@ mod tests {
             title: None,
             agent_session_id: None,
             agent_session_path: None,
+            project: None,
+            subpath: None,
             window: None,
             workspace: None,
             branch: None,

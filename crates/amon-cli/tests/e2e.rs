@@ -236,6 +236,82 @@ fn a_running_agent_is_visible_in_status() {
 }
 
 #[test]
+fn the_project_reaches_status() {
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", WORKING_THEN_IDLE);
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent), "5", "5"]);
+
+    let agents = sandbox.wait_for_status("the agent to register", |agents| {
+        agent_named(agents, "claude").is_some_and(|entry| entry["project"].is_string())
+    });
+    let entry = agent_named(&agents, "claude").expect("registered");
+
+    // The suite runs inside amon's own repository, so there is always a
+    // Project — named for the repository root rather than for whichever
+    // directory the test happens to run in.
+    let project = entry["project"]
+        .as_str()
+        .expect("a Project inside a repository");
+    assert!(!project.is_empty(), "{entry:#?}");
+    let cwd = entry["cwd"].as_str().unwrap_or_default();
+    if let Some(subpath) = entry["subpath"].as_str() {
+        assert!(
+            cwd.ends_with(subpath),
+            "the subpath says where inside its checkout the agent sits: {entry:#?}"
+        );
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Linux only: following an agent means reading `/proc/<pid>/cwd`, and where
+/// that does not exist amon keeps reporting where the agent started.
+#[cfg(target_os = "linux")]
+#[test]
+fn an_agent_that_moves_takes_its_project_with_it() {
+    // The case this exists for: an agent dispatched into a worktree. It
+    // changes directory as a process, so the row has to follow — one that went
+    // on naming where the agent started would be confidently wrong about the
+    // Project and the branch at once, and two agents in two checkouts would
+    // read as the same row.
+    let sandbox = Sandbox::new();
+    let elsewhere = sandbox.runtime_path("a-second-checkout");
+    std::fs::create_dir_all(elsewhere.join(".git")).expect("repository");
+    std::fs::write(elsewhere.join(".git/HEAD"), "ref: refs/heads/moved-here\n").expect("HEAD");
+
+    let agent = sandbox.fake_agent(
+        "claude",
+        &format!("#!/bin/sh\ncd {}\nsleep 10\n", path_str(&elsewhere)),
+    );
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    let agents = sandbox.wait_for_status("the agent to walk into the other checkout", |agents| {
+        agent_named(agents, "claude")
+            .is_some_and(|entry| entry["branch"] == serde_json::json!("moved-here"))
+    });
+    let entry = agent_named(&agents, "claude").expect("registered");
+
+    assert_eq!(
+        entry["project"],
+        serde_json::json!("a-second-checkout"),
+        "the Project moves with the agent: {entry:#?}"
+    );
+    assert_eq!(
+        entry["cwd"],
+        serde_json::json!(path_str(&elsewhere)),
+        "and so does the directory it names: {entry:#?}"
+    );
+    assert!(
+        entry["subpath"].is_null(),
+        "it landed at the checkout root, so nothing qualifies it: {entry:#?}"
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
 fn the_entry_disappears_when_the_agent_exits() {
     let sandbox = Sandbox::new();
     let agent = sandbox.fake_agent("claude", "#!/bin/sh\necho hi\nsleep 1\n");

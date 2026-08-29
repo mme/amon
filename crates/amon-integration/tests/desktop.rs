@@ -422,6 +422,8 @@ fn order_in_rust() -> Vec<String> {
         window: None,
         workspace: None,
         branch: None,
+        project: None,
+        subpath: None,
         focused: None,
         seen,
         herdr: None,
