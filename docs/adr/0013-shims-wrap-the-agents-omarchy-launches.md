@@ -138,3 +138,16 @@ ownership, and would serve herdr equally. `omarchy-agent` is a packaged script
 rather than a user file, so such a hook would reach every Omarchy user at once.
 Worth filing regardless of what is built here; if it lands, this ADR's mechanism
 is deleted rather than maintained.
+
+## Postscript: the guard compares a pid, not a mark
+
+"A shim that sees `AMON_AGENT_ID` knows it is being called *by* amon" was too
+strong a reading of that variable. It is inherited by everything the agent
+starts, so a shim reached from inside a wrapped agent saw it too and stepped
+aside for an agent amon had never wrapped — which then ran unwrapped while still
+carrying the outer agent's id and socket, and reported its state into the outer
+agent's row.
+
+The wrapper now also sets `AMON_WRAPPER_PID` to its own process id, and the
+guard fires only when that equals the shim's `$PPID`: amon is the caller, not
+merely somewhere above. ADR-0016 has the reasoning and the residual risk.

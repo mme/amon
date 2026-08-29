@@ -54,6 +54,31 @@ pub fn stdout_is_terminal() -> bool {
     unsafe { libc::isatty(io::stdout().as_raw_fd()) == 1 }
 }
 
+/// Whether amon has a terminal on either side of it.
+///
+/// Either side, not both: `amon agent > log` keeps a terminal on stdin and
+/// `echo prompt | amon agent` keeps one on stdout, and in both a person is
+/// sitting there watching. Neither side is the case that matters — an agent
+/// started by another agent takes stdin from `/dev/null` and writes stdout to
+/// a file — and that is an agent with no window to jump to (ADR-0016).
+///
+/// The two fds, not `/dev/tty`. This asks what amon was handed, which is the
+/// question; a controlling terminal is inherited by everything a
+/// terminal-borne process starts, so an agent launched in the background by a
+/// parent that did not `setsid` would still have one and would look
+/// interactive when it is not.
+///
+/// Load-bearing assumption: the agent that starts another agent hands it pipes
+/// rather than a PTY. Harnesses sometimes allocate a PTY to coax colour out of
+/// a subprocess, and one that did would look interactive here. That costs the
+/// suppression, not correctness — the row comes back and amon behaves as it
+/// did before this check existed.
+pub fn attached_to_terminal() -> bool {
+    unsafe {
+        libc::isatty(io::stdin().as_raw_fd()) == 1 || libc::isatty(io::stdout().as_raw_fd()) == 1
+    }
+}
+
 /// The terminal's current size, or a sane default when it cannot be read (a
 /// pipe, or a terminal being torn down).
 pub fn window_size() -> (u16, u16) {

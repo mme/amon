@@ -30,7 +30,11 @@ fn output_is_identical_to_running_the_agent_without_amon() {
     let script = "#!/bin/sh\nprintf 'plain\\ttab\\r\\n\\033[1mbold\\033[0m ⠋ ✳\\n'\n";
     let agent = sandbox.fake_agent("claude", script);
 
-    let through_amon = sandbox.run(&[&path_str(&agent)]).stdout;
+    // A terminal on stdin, so amon wraps rather than stepping aside
+    // (ADR-0016) — this is the wrapped path's transparency that is worth
+    // asserting. The bare path cannot drift: `exec` leaves the agent writing
+    // to the same descriptors amon was handed.
+    let through_amon = harness::run_with_terminal_stdin(&sandbox, &[&path_str(&agent)]).stdout;
     // The same program on a bare PTY of the same size. Comparing against this
     // rather than against the literal string keeps the test honest about what
     // the terminal driver itself does (newline translation), while still
@@ -46,10 +50,22 @@ fn output_is_identical_to_running_the_agent_without_amon() {
 #[test]
 fn the_agents_exit_code_is_the_wrappers_exit_code() {
     let sandbox = Sandbox::new();
-    let agent = sandbox.fake_agent("claude", "#!/bin/sh\nexit 42\n");
+    let agent = sandbox.fake_agent(
+        "claude",
+        "#!/bin/sh\necho \"amon_env=${AMON_ENV:-unset}\"\nexit 42\n",
+    );
 
-    let output = sandbox.run(&[&path_str(&agent)]);
+    // A terminal, so this is the wrapper reporting the agent's exit and not
+    // `exec` doing it for free — piped, amon steps aside (ADR-0016) and the
+    // reaping this test exists for never runs.
+    let output = harness::run_with_terminal_stdin(&sandbox, &[&path_str(&agent)]);
 
+    // Asserted, not assumed: `exec` reproduces an exit code too, so without
+    // this the test would keep passing if it silently took the bare path.
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("amon_env=1"),
+        "the agent must be wrapped for this to mean anything: {output:?}"
+    );
     assert_eq!(output.status.code(), Some(42));
 }
 
@@ -90,6 +106,60 @@ fn inside_herdr_the_wrapper_steps_aside() {
     assert_eq!(output.status.code(), Some(7));
 }
 
+/// What a fake agent prints so a test can tell wrapped from bare.
+const REPORTS_ITS_WRAPPING: &str = "#!/bin/sh\necho \"amon_env=${AMON_ENV:-unset} \
+                                    id=${AMON_AGENT_ID:-unset} \
+                                    sock=${AMON_SOCKET_PATH:-unset}\"\nexit 7\n";
+
+#[test]
+fn without_a_terminal_the_wrapper_steps_aside() {
+    // An agent started by another agent — Claude Code running `codex` in the
+    // background — reaches amon through the same alias a person would, but it
+    // has no terminal on either side: stdin is /dev/null and stdout is a file.
+    // There is no window to jump to, so a row for it is noise, and amon runs
+    // it bare instead (ADR-0016).
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", REPORTS_ITS_WRAPPING);
+
+    let mut command = sandbox.command(&[&path_str(&agent)]);
+    // The outer agent's own routing, inherited the way a subprocess inherits
+    // it. Left in place it would point this agent's hooks at the wrapper
+    // watching the outer one — one agent's state driving another's row.
+    command.env("AMON_ENV", "1");
+    command.env("AMON_AGENT_ID", "outer-agent");
+    command.env("AMON_SOCKET_PATH", "/nonexistent/outer.sock");
+    // `output()` pipes all three, which is exactly the no-terminal case.
+    let output = command.output().expect("amon runs");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("amon_env=unset"),
+        "the agent should run bare, not wrapped: {stdout:?}"
+    );
+    assert!(
+        stdout.contains("id=unset") && stdout.contains("sock=unset"),
+        "an outer wrapper's routing must not follow the agent in: {stdout:?}"
+    );
+    assert_eq!(output.status.code(), Some(7));
+}
+
+#[test]
+fn a_terminal_on_one_side_is_enough_to_wrap() {
+    // `amon claude > log` has a terminal for stdin and a file for stdout. The
+    // person is sitting right there, so the agent is wrapped and keeps its
+    // row — which is why the check asks about both sides and not just stdout.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", REPORTS_ITS_WRAPPING);
+
+    let stdout = harness::run_with_terminal_stdin(&sandbox, &[&path_str(&agent)]).stdout;
+
+    let stdout = String::from_utf8_lossy(&stdout);
+    assert!(
+        stdout.contains("amon_env=1"),
+        "a terminal on stdin alone must still wrap: {stdout:?}"
+    );
+}
+
 #[test]
 fn arguments_after_the_agent_belong_to_the_agent() {
     let sandbox = Sandbox::new();
@@ -110,10 +180,24 @@ fn a_signal_death_is_reproduced_not_translated() {
     let sandbox = Sandbox::new();
     // The agent dies of SIGTERM (15). Bare, the caller would see a signal
     // death; through amon it must see exactly the same, not exit code 1.
-    let agent = sandbox.fake_agent("claude", "#!/bin/sh\nkill -TERM $$\n");
+    let agent = sandbox.fake_agent(
+        "claude",
+        "#!/bin/sh\necho \"amon_env=${AMON_ENV:-unset}\"\nkill -TERM $$\n",
+    );
 
-    let output = sandbox.run(&[&path_str(&agent)]);
+    // A terminal, so amon wraps: this test is about the wrapper noticing
+    // `WIFSIGNALED` and re-raising the signal on itself. Run bare (ADR-0016),
+    // the agent *is* the process and its signal death needs no reproducing,
+    // which would leave that machinery untested.
+    let output = harness::run_with_terminal_stdin(&sandbox, &[&path_str(&agent)]);
 
+    // Asserted, not assumed: run bare, the agent *is* the process and dies of
+    // SIGTERM without any reproducing, so this test would keep passing while
+    // testing nothing.
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("amon_env=1"),
+        "the agent must be wrapped for this to mean anything: {output:?}"
+    );
     assert_eq!(
         output.status.signal(),
         Some(15),
@@ -127,17 +211,33 @@ fn non_utf8_argv_reaches_the_agent_byte_exact() {
     use std::os::unix::ffi::OsStrExt;
 
     let sandbox = Sandbox::new();
-    let agent = sandbox.fake_agent("claude", "#!/bin/sh\nprintf 'got:%s.' \"$1\"\n");
+    let agent = sandbox.fake_agent(
+        "claude",
+        "#!/bin/sh\nprintf 'got:%s.' \"$1\"\necho \"amon_env=${AMON_ENV:-unset}\"\n",
+    );
 
     // Valid Unix argv, invalid UTF-8. Bare execve passes it through; so must
     // amon (ADR-0006: the agent's argv is opaque).
     let arg = std::ffi::OsStr::from_bytes(b"bad-\xff-arg");
     let mut command = sandbox.command(&[]);
     command.arg(&agent).arg(arg);
+    // A terminal, so the bytes travel through portable-pty's `CommandBuilder`
+    // — the path that would mangle them. Piped, amon steps aside (ADR-0016)
+    // and this would only be re-testing `execve`.
+    let (stdin, controller) = harness::open_terminal_stdin();
+    command.stdin(stdin);
     let output = command.output().expect("amon runs");
+    unsafe { libc::close(controller) };
 
     assert!(output.status.success(), "{output:?}");
     let stdout = &output.stdout;
+    // Asserted, not assumed: `execve` passes these bytes through too, so
+    // without this the test would keep passing if it took the bare path and
+    // stopped covering `CommandBuilder` at all.
+    assert!(
+        String::from_utf8_lossy(stdout).contains("amon_env=1"),
+        "the agent must be wrapped for this to mean anything: {stdout:?}"
+    );
     assert!(
         stdout
             .windows(b"got:bad-\xff-arg.".len())
@@ -929,7 +1029,7 @@ fn amon_writes_nothing_of_its_own_when_stdout_is_not_a_terminal() {
     let sandbox = Sandbox::new();
     let agent = sandbox.fake_agent("claude", TOGGLES_FOCUS_REPORTING);
 
-    let output = harness::run_with_terminal_stdin(&sandbox, &[&path_str(&agent)]);
+    let output = harness::run_with_terminal_stdin(&sandbox, &[&path_str(&agent)]).stdout;
 
     assert_eq!(
         String::from_utf8_lossy(&output),
@@ -2307,12 +2407,32 @@ fn a_shim_actually_runs_the_agent_under_amon() {
     // exec, no shell — gets the agent wrapped rather than run directly.
     let sandbox = Sandbox::new();
     sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
-    sandbox.fake_agent("claude", "#!/bin/sh\necho \"agent saw: $*\"\n");
+    sandbox.fake_agent(
+        "claude",
+        "#!/bin/sh\necho \"agent saw: $* amon_env=${AMON_ENV:-unset}\"\n",
+    );
     agent_is_installed(&sandbox, ".claude");
     sandbox.run(&["setup", "claude"]);
 
+    // A terminal, or amon steps aside (ADR-0016) and this test would prove
+    // only that the shim eventually reaches the agent — not the claim above,
+    // that it reaches it *under amon*.
+    let (stdin, controller) = harness::open_terminal_stdin();
     let shim = shim_path(&sandbox, "claude");
     let output = std::process::Command::new(&shim)
+        .stdin(stdin)
+        // This `Command` is built by hand, so it inherits the developer's
+        // environment rather than going through `Sandbox::command`. Run from a
+        // terminal that is itself wrapped by amon, the shim would see a real
+        // `AMON_AGENT_ID`, take its already-inside-amon branch, and exec the
+        // agent directly — testing the guard that
+        // `a_shim_called_from_inside_amon_does_not_wrap_twice` covers instead
+        // of the path this test is named for, while the inherited `AMON_ENV=1`
+        // kept the assertion below green.
+        .env_remove("AMON_ENV")
+        .env_remove("AMON_AGENT_ID")
+        .env_remove("AMON_SOCKET_PATH")
+        .env_remove("HERDR_ENV")
         .arg("--permission-mode")
         .arg("bypassPermissions")
         .env("XDG_RUNTIME_DIR", sandbox.runtime_path(""))
@@ -2331,11 +2451,16 @@ fn a_shim_actually_runs_the_agent_under_amon() {
         )
         .output()
         .expect("the shim runs");
+    unsafe { libc::close(controller) };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("agent saw: --permission-mode bypassPermissions"),
         "the agent ran, with its arguments untouched: {stdout}"
+    );
+    assert!(
+        stdout.contains("amon_env=1"),
+        "and it ran under amon, which is the whole claim: {stdout}"
     );
     assert!(
         output.status.success(),
@@ -2346,23 +2471,69 @@ fn a_shim_actually_runs_the_agent_under_amon() {
 #[test]
 fn a_shim_called_from_inside_amon_does_not_wrap_twice() {
     // `amon claude` typed in a terminal whose PATH carries the shim dir: amon
-    // spawns `claude`, the lookup finds the shim, and without the guard that
+    // spawns `claude`, the lookup finds this shim, and without the guard that
     // would put a second amon around the same agent.
+    //
+    // Proven by parentage rather than by simulation: with one wrapper the
+    // agent's parent is the amon we started, and a second wrapper in between
+    // would show up here as some other pid.
     let sandbox = Sandbox::new();
     sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
-    sandbox.fake_agent(
-        "claude",
-        "#!/bin/sh\necho \"depth: ${AMON_AGENT_ID:-none}\"\n",
-    );
+    sandbox.fake_agent("claude", "#!/bin/bash\necho \"ppid: $PPID\"\n");
     agent_is_installed(&sandbox, ".claude");
     sandbox.run(&["setup", "claude"]);
 
     let shim = shim_path(&sandbox, "claude");
+    let (stdin, controller) = harness::open_terminal_stdin();
+    let mut command = sandbox.command(&["claude"]);
+    command
+        .stdin(stdin)
+        .stdout(std::process::Stdio::piped())
+        // The shim dir ahead of the rest, exactly as the session PATH has it,
+        // which is what makes amon's own lookup land here.
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                shim.parent().expect("dir").display(),
+                sandbox.sandbox_path()
+            ),
+        );
+    let child = command.spawn().expect("amon spawns");
+    let amon = child.id();
+    let output = child.wait_with_output().expect("amon runs");
+    unsafe { libc::close(controller) };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(&format!("ppid: {amon}")),
+        "the agent hangs off the amon we started, with nothing in between: \
+         {stdout} (amon was {amon})"
+    );
+}
+
+#[test]
+fn a_shim_reached_from_inside_an_agent_still_wraps() {
+    // A wrapped agent starting another agent with no shell in the way: the
+    // marks amon left for *its own* child have come down the process tree, but
+    // amon is not this shim's caller. The inner agent is an agent in its own
+    // right and gets its own wrapper — the guard above must not fire on a mark
+    // that merely drifted down from an ancestor (ADR-0016).
+    let sandbox = Sandbox::new();
+    sandbox.fake_agent("omarchy", "#!/bin/sh\nexit 0\n");
+    sandbox.fake_agent("claude", "#!/bin/sh\necho \"id: ${AMON_AGENT_ID:-none}\"\n");
+    agent_is_installed(&sandbox, ".claude");
+    sandbox.run(&["setup", "claude"]);
+
+    let shim = shim_path(&sandbox, "claude");
+    let (stdin, controller) = harness::open_terminal_stdin();
     let output = std::process::Command::new(&shim)
+        .stdin(stdin)
         .env("XDG_RUNTIME_DIR", sandbox.runtime_path(""))
         .env("XDG_STATE_HOME", sandbox.runtime_path("state"))
         .env("HOME", sandbox.home_path(""))
         .env("XDG_CONFIG_HOME", sandbox.home_path(".config"))
+        .env("AMON_HERDR", "0")
         .env(
             "PATH",
             format!(
@@ -2371,15 +2542,26 @@ fn a_shim_called_from_inside_amon_does_not_wrap_twice() {
                 sandbox.sandbox_path()
             ),
         )
-        // Standing in for "amon is already wrapping this".
-        .env("AMON_AGENT_ID", "pretend-wrapper")
+        // An outer agent's marks, inherited the way any descendant inherits
+        // them. Zero rather than any real-looking number: no process has it as
+        // a parent, so this cannot come out a match by accident — pid 1 can,
+        // where the test binary is itself a container's init.
+        .env("AMON_ENV", "1")
+        .env("AMON_AGENT_ID", "outer-agent")
+        .env("AMON_SOCKET_PATH", "/nonexistent/outer.sock")
+        .env("AMON_WRAPPER_PID", "0")
         .output()
         .expect("the shim runs");
+    unsafe { libc::close(controller) };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("depth: pretend-wrapper"),
-        "the agent ran directly, keeping the id it was given: {stdout}"
+        !stdout.contains("id: outer-agent"),
+        "the inner agent must not answer to the outer agent's id: {stdout}"
+    );
+    assert!(
+        stdout.contains("id: ") && !stdout.contains("id: none"),
+        "it must be wrapped, with an id of its own: {stdout}"
     );
 }
 

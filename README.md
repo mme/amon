@@ -68,6 +68,12 @@ working, idle, or blocked waiting for you. It reports that to a per-user daemon
 (started on demand) which keeps a live registry of every wrapped agent and
 pushes events to subscribers over a unix socket.
 
+Not every agent is wrapped. One with a terminal on neither side of it - a
+background agent that another agent started, a cron job, a CI step - has no
+window to switch to, so amon steps out of the way and runs it directly rather
+than adding a row you cannot act on
+([ADR-0016](./docs/adr/0016-a-terminal-is-what-makes-an-agent-worth-tracking.md)).
+
 On Hyprland each agent also carries the window it is running in and that
 window's workspace, so "which one is blocked" comes with "and it is over
 there" - which is what the bar, the panel, and `amon focus` turn into
