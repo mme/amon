@@ -8,12 +8,37 @@ the machinery, not decoration.
 
 <!-- next -->
 
+## v0.2.0
+
 - **Agents in herdr show up**: amon watches for
   [herdr](https://github.com/herdrdev/herdr) sessions and puts their agents
   on the bar and in the panel beside the wrapped ones, with herdr's own
   states, for as long as a client is attached. Jumping to one lands on its
   pane. Inside a herdr pane, `amon <agent>` runs the agent bare, so herdr
-  stays the one detecting it.
+  stays the one detecting it. A session that reconnects keeps its one row
+  instead of spawning a duplicate, and doesn't chime for a state it already
+  left.
+- **Rows lead with where an agent is working**: the panel and `amon status`
+  now put the project (or directory) first and in bold, with the branch, how
+  long it's been in its state, and the agent kind following in the same
+  order on both surfaces. An agent's project and branch update live as it
+  moves around, including when it's dispatched into a worktree.
+- **No more rows with nowhere to jump**: an agent started with no terminal
+  behind it - in the background, from a script, or by another agent - no
+  longer takes a panel row that nothing can focus; amon now runs it bare
+  instead.
+- **Fewer misdirected agents**: fixes a bug where an agent started by
+  another wrapped agent could end up unwrapped and reporting its state onto
+  the wrong row, and a bug where a home directory containing brackets or
+  wildcards sent the wrapper into an infinite loop instead of starting the
+  agent.
+- **Detection keeps up with Claude Code**: re-vendors herdr's detector,
+  picking up recognition of Claude Code's newer busy spinner and four
+  months of other upstream agent-detection fixes.
+- **Upgrading amon shows the new panel**: fixes a bug where running
+  `amon setup` again could leave the shell drawing the pre-upgrade panel;
+  amon now restarts the shell itself so Super+A opens what was just
+  installed.
 
 ## v0.1.1
 
