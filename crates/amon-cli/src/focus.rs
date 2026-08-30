@@ -6,7 +6,7 @@
 //! you end up, and one ranking decides it — [`AgentEntry::attention`], the
 //! same order the bar draws and `amon status` sorts by. A caller that
 //! dispatched the compositor itself would be a second implementation, and
-//! the one that forgot the herdr pane hop is exactly how that goes wrong.
+//! the one that forgot the runtime's pane hop is exactly how that goes wrong.
 //!
 //! **One dispatch, never two.** Focusing a window switches to its workspace on
 //! the way, so resolving the agent *first* and then issuing a single focus
@@ -22,7 +22,7 @@
 use std::process::Command;
 use std::time::Duration;
 
-use amon_protocol::{AgentEntry, Method, StatusResult};
+use amon_protocol::{AgentEntry, Method, Runtime, StatusResult};
 
 use crate::Client;
 
@@ -85,13 +85,13 @@ fn go_to(agent: &AgentEntry) -> Result<bool, Box<dyn std::error::Error>> {
     ))? {
         return Ok(false);
     }
-    // Inside herdr the window is only half the jump: every agent in a session
-    // shares the herdr client's terminal, and the pane this one lives in
+    // Inside a runtime the window is only half the jump: every agent in a
+    // session shares the client's terminal, and the pane this one lives in
     // still has to come to the front. Only after the window actually moved —
     // the hop marks the agent seen, and an agent nobody was taken to has not
     // been seen.
-    if let Some(herdr) = &agent.herdr {
-        herdr_hop(herdr);
+    if let Some(runtime) = &agent.runtime {
+        runtime_hop(runtime);
     }
     Ok(true)
 }
@@ -128,14 +128,14 @@ fn agent_with_id(id: &str) -> Option<AgentEntry> {
     status.agents.into_iter().find(|agent| agent.id == id)
 }
 
-/// One `agent.focus` at herdr, then done — best-effort and bounded, because
-/// this sits between a keypress and the screen settling. Every failure mode
-/// leaves the user exactly where the window dispatch put them, which is
-/// already the right window.
-fn herdr_hop(info: &amon_protocol::HerdrInfo) {
+/// One focus request at the runtime, then done — best-effort and bounded,
+/// because this sits between a keypress and the screen settling. Every
+/// failure mode leaves the user exactly where the window dispatch put them,
+/// which is already the right window.
+fn runtime_hop(runtime: &Runtime) {
     use std::io::{BufRead, BufReader, Write};
 
-    let Ok(stream) = std::os::unix::net::UnixStream::connect(&info.socket) else {
+    let Ok(stream) = std::os::unix::net::UnixStream::connect(runtime.socket()) else {
         return;
     };
     let _ = stream.set_read_timeout(Some(RESOLVE_TIMEOUT));
@@ -143,11 +143,8 @@ fn herdr_hop(info: &amon_protocol::HerdrInfo) {
     let Ok(mut writer) = stream.try_clone() else {
         return;
     };
-    let line = serde_json::json!({
-        "id": "amon-focus",
-        "method": "agent.focus",
-        "params": {"target": info.pane},
-    });
+    let (method, params) = runtime.focus_request();
+    let line = serde_json::json!({"id": "amon-focus", "method": method, "params": params});
     if writeln!(writer, "{line}").is_err() {
         return;
     }
@@ -188,7 +185,7 @@ mod tests {
     use std::os::unix::net::UnixListener;
 
     #[test]
-    fn the_hop_sends_one_agent_focus_for_the_entrys_pane() {
+    fn the_hop_sends_the_runtimes_own_focus_call_for_the_entrys_pane() {
         let dir = tempfile::tempdir().unwrap();
         let socket = dir.path().join("herdr.sock");
         let listener = UnixListener::bind(&socket).unwrap();
@@ -203,7 +200,7 @@ mod tests {
             request
         });
 
-        herdr_hop(&amon_protocol::HerdrInfo {
+        runtime_hop(&Runtime::Herdr {
             socket: socket.to_string_lossy().into_owned(),
             session: None,
             pane: "w1:p2".into(),
@@ -216,12 +213,12 @@ mod tests {
 
     #[test]
     fn a_dead_socket_is_silently_nothing() {
-        // The user asked for a workspace switch; herdr being gone must not
-        // turn that into an error or a hang.
-        herdr_hop(&amon_protocol::HerdrInfo {
-            socket: "/nonexistent/herdr.sock".into(),
+        // The user asked for a workspace switch; the runtime being gone must
+        // not turn that into an error or a hang.
+        runtime_hop(&Runtime::Luvus {
+            socket: "/nonexistent/luvus.sock".into(),
             session: None,
-            pane: "w1:p1".into(),
+            pane: "7".into(),
         });
     }
 }

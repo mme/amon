@@ -225,7 +225,7 @@ pub(crate) fn run_session(
         let panes: Vec<String> = lock(&shared)
             .owned
             .values()
-            .filter_map(|owned| owned.entry.herdr.as_ref().map(|h| h.pane.clone()))
+            .filter_map(|owned| owned.entry.runtime.as_ref().map(|r| r.pane().to_owned()))
             .collect();
         let Ok(events) = wire::subscribe(
             &session.socket,
@@ -263,7 +263,7 @@ pub(crate) fn run_session(
         let mut current_panes: Vec<String> = lock(&shared)
             .owned
             .values()
-            .filter_map(|owned| owned.entry.herdr.as_ref().map(|h| h.pane.clone()))
+            .filter_map(|owned| owned.entry.runtime.as_ref().map(|r| r.pane().to_owned()))
             .collect();
         let mut subscribed = panes;
         current_panes.sort();
@@ -412,11 +412,13 @@ fn apply_status(registry: &Registry, shared: &Arc<Mutex<Shared>>, data: &serde_j
         return;
     };
     let mut shared = lock(shared);
-    let Some(owned) = shared
-        .owned
-        .values_mut()
-        .find(|owned| owned.entry.herdr.as_ref().is_some_and(|h| h.pane == pane))
-    else {
+    let Some(owned) = shared.owned.values_mut().find(|owned| {
+        owned
+            .entry
+            .runtime
+            .as_ref()
+            .is_some_and(|r| r.pane() == pane)
+    }) else {
         return;
     };
 
@@ -659,7 +661,7 @@ mod tests {
                 .find(|agent| agent.id.ends_with(":t1"))
         });
         assert_eq!(entry.state, AgentState::Working);
-        assert_eq!(entry.herdr.as_ref().unwrap().pane, "w1:p1");
+        assert_eq!(entry.runtime.as_ref().unwrap().pane(), "w1:p1");
 
         // A status event lands as a patch. Sent until observed: the
         // supervisor may still be between its first and second subscription,

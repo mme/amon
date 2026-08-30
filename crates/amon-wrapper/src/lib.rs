@@ -158,7 +158,7 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
         subpath: location.subpath.clone(),
         focused: None,
         seen: None,
-        herdr: None,
+        runtime: None,
     });
 
     let focus_shared = focus::Shared::default();

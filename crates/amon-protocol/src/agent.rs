@@ -98,27 +98,74 @@ pub struct AgentEntry {
     /// place instead of leaving every consumer to invent the same rule.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seen: Option<bool>,
-    /// Set when this agent runs inside a herdr session rather than under an
-    /// amon wrapper.
+    /// Set when this agent lives inside an agent runtime (herdr, luvus)
+    /// rather than under an amon wrapper.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub herdr: Option<HerdrInfo>,
+    pub runtime: Option<Runtime>,
 }
 
-/// Where a herdr-hosted agent lives inside herdr. Present exactly on entries
-/// the daemon's herdr module projects; wrapped agents never carry it. The
-/// socket travels with the entry so a consumer that wants to act on the agent
-/// (the focus hop) does not re-derive herdr's path rules.
+/// Where a runtime-hosted agent lives. Present exactly on entries a runtime
+/// module of the daemon projects; wrapped agents never carry it.
+///
+/// One variant per runtime, tagged by `kind`, so a consumer that only badges
+/// or filters reads one field and each runtime keeps its own address shape.
+/// What a variant carries is what the focus hop needs — the socket travels
+/// with the entry so the CLI does not re-derive the runtime's path rules.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct HerdrInfo {
-    /// Absolute path of the session's JSON API socket.
-    pub socket: String,
-    /// Session name; absent for herdr's default session.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session: Option<String>,
-    /// The pane currently hosting the agent (`w1:p1`) — what `agent.focus`
-    /// takes. Pane ids change when panes move across herdr workspaces, so the
-    /// daemon refreshes this and consumers must not cache it.
-    pub pane: String,
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Runtime {
+    Herdr {
+        /// Absolute path of the session's JSON API socket.
+        socket: String,
+        /// Session name; absent for the default session.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session: Option<String>,
+        /// The pane hosting the agent (`w1:p1`) — what `agent.focus` takes.
+        /// Pane ids change when panes move across herdr workspaces, so the
+        /// daemon refreshes this and consumers must not cache it.
+        pane: String,
+    },
+    Luvus {
+        /// Absolute path of the session's UHP socket.
+        socket: String,
+        /// Session name; absent for the default session.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session: Option<String>,
+        /// The pane hosting the agent — what `pane.focus` takes. luvus pane
+        /// ids are stable for the pane's life.
+        pane: String,
+    },
+}
+
+impl Runtime {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Runtime::Herdr { .. } => "herdr",
+            Runtime::Luvus { .. } => "luvus",
+        }
+    }
+
+    pub fn socket(&self) -> &str {
+        match self {
+            Runtime::Herdr { socket, .. } | Runtime::Luvus { socket, .. } => socket,
+        }
+    }
+
+    pub fn pane(&self) -> &str {
+        match self {
+            Runtime::Herdr { pane, .. } | Runtime::Luvus { pane, .. } => pane,
+        }
+    }
+
+    /// The runtime's own "bring this agent to the front" call — method and
+    /// params as its socket takes them. Defined once, here, so the CLI hop
+    /// and any test of it agree on what the second hop is.
+    pub fn focus_request(&self) -> (&'static str, serde_json::Value) {
+        match self {
+            Runtime::Herdr { pane, .. } => ("agent.focus", serde_json::json!({"target": pane})),
+            Runtime::Luvus { pane, .. } => ("pane.focus", serde_json::json!({"pane": pane})),
+        }
+    }
 }
 
 impl AgentEntry {

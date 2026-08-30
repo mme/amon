@@ -6,7 +6,7 @@
 //! unrecognized status maps to Unknown, which ranks last — a new herdr
 //! status must not cry wolf on every bar.
 
-use amon_protocol::{AgentEntry, AgentState, HerdrInfo};
+use amon_protocol::{AgentEntry, AgentState, Runtime};
 
 use super::proc::HerdrSession;
 use super::wire::HerdrAgent;
@@ -84,7 +84,7 @@ pub fn entry_for(
         subpath: None,
         focused: None,
         seen,
-        herdr: Some(HerdrInfo {
+        runtime: Some(Runtime::Herdr {
             socket: session.socket.to_string_lossy().into_owned(),
             session: session.name.clone(),
             pane: agent.pane_id.clone(),
@@ -154,10 +154,15 @@ mod tests {
         assert_eq!(entry.window.as_deref(), Some("abc123"));
         assert_eq!(entry.workspace.as_deref(), Some("3"));
         assert!(!entry.hostname.is_empty());
-        let herdr = entry.herdr.expect("projected entries carry provenance");
-        assert_eq!(herdr.socket, "/tmp/herdr.sock");
-        assert_eq!(herdr.session.as_deref(), Some("work"));
-        assert_eq!(herdr.pane, "w1:p2");
+        let runtime = entry.runtime.expect("projected entries carry provenance");
+        assert_eq!(
+            runtime,
+            Runtime::Herdr {
+                socket: "/tmp/herdr.sock".into(),
+                session: Some("work".into()),
+                pane: "w1:p2".into(),
+            }
+        );
     }
 
     #[test]
@@ -183,7 +188,10 @@ mod tests {
         assert!(entry.id.ends_with(":t1"));
         assert_eq!(entry.window, None);
         assert_eq!(entry.workspace, None);
-        assert_eq!(entry.herdr.unwrap().session, None);
+        assert!(matches!(
+            entry.runtime,
+            Some(Runtime::Herdr { session: None, .. })
+        ));
     }
 
     #[test]
