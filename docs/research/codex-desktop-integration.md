@@ -5,14 +5,22 @@ package 26.825.51511 (bundles codex 0.151.0-alpha.7.2), codex CLI 0.150.1
 installed here, `openai/codex` at `28327355` (2026-08-30), and amon main
 (`8a306a6`). Nothing here is implemented.
 
+**Update, later on 2026-08-30 — verified live, see "Live verification"
+below: the opt-in this note is built on does not work on any current desktop
+build (26.820 and later, including the 26.825 read here). It is an upstream
+regression, not a design problem; the last working build is 26.818.61809.
+Work on this integration is parked until OpenAI ships a fix.**
+
 The question: the herdr integration adopts agents amon never wrapped by
 speaking herdr's socket and borrowing the herdr client's window. OpenAI's
 desktop app is now on Linux and runs Codex threads that amon likewise never
 wrapped. Can the same shape work — rows on the bar, `Super+N` landing on the
 right thread — and where does it break?
 
-Short answer: yes, with one opt-in the user has to make. The desktop app by
-default runs a **private** app-server over stdio that nobody else can reach.
+Short answer: yes in principle, with one opt-in the user has to make — but
+that opt-in is currently broken in the app (see "Live verification"). The
+desktop app by default runs a **private** app-server over stdio that nobody
+else can reach.
 With `CODEX_APP_SERVER_USE_LOCAL_DAEMON=1` it instead attaches to the
 **shared local app-server daemon** at
 `~/.codex/app-server-control/app-server-control.sock`, which is a JSON-RPC
@@ -260,6 +268,112 @@ Mirror of `herdr/supervisor.rs`, with the herdr-specific parts swapped:
    `>= 0.141.0` version gate. Without this the module simply finds no
    socket and shows nothing — never guesses from the private stdio mode.
 
+## Live verification (2026-08-30, later)
+
+The section above was written from reading the app's code. It was then put
+to the test on this machine, against the AUR-installed package 26.820.80927
+(bundled codex 0.150.0-alpha.8) and a daemon started from the mise-installed
+CLI 0.150.1 with `codex app-server --listen unix://`.
+
+**The daemon side works exactly as described.** The socket appears at
+`~/.codex/app-server-control/app-server-control.sock`; both the CLI's and the
+bundled binary's `app-server daemon version` report `appServerVersion
+0.150.1` (above the app's `0.141.0` gate); a raw websocket client — HTTP
+Upgrade on the unix socket, masked text frames — completes `initialize`
+(`userAgent`, `codexHome`, `platformOs`) and `thread/loaded/list`, and
+receives broadcast notifications (`remoteControl/status/changed`). The
+scratch client is ~60 lines of Python; no library is needed.
+
+**The desktop never attaches.** Three launches, all logging
+`[AppServerConnection] Starting app-server connection hostId=local
+transport=stdio`:
+
+1. Through omarchy's launcher (`uwsm-app -- chatgpt`) after
+   `systemctl --user set-environment CODEX_APP_SERVER_USE_LOCAL_DAEMON=1`
+   **and** `systemctl --user restart wayland-wm-app-daemon.service` — the
+   launcher is a long-lived user service that captured its environment at
+   login, so the restart is what makes the variable reach apps it starts.
+   (Chromium overwrites its own `/proc/<pid>/environ`, so the app's
+   environment cannot be read back; the socket connection count and the log
+   are the evidence.)
+2. Launched directly from a shell that had the variable.
+3. With the variable additionally exported in the login shell (the app's
+   "shell environment hydrated" startup phase was a suspect; it is not the
+   cause).
+
+The cause is in the app. The attach condition in `app.asar` (class `QB`,
+this build) is the one quoted above plus `!e?.length`, where
+`e = await this.options.getConfigOverrides()` on a local host. That function
+is the injector for the bundled **codex-app-tools MCP plugin**: it creates
+the app-tools pipe, sets `CODEX_APP_TOOLS_PIPE_PATH`, reads the bundled
+`codex-app-tools/desktop-mcp.json`, and returns a request-level override
+`mcp_servers.codex_app={…}`. Its failure paths (`missing-pipe`,
+`missing-plugin`, `missing-definition`) return a one-element
+`mcp_servers.codex_app={command="",enabled=false}` override. So on a local
+host the list is never empty, `!e?.length` is always false, and the
+websocket branch is unreachable: the app hard-wires itself to a private
+child so its app-tools plugin can be configured on it. Nothing in the user's
+environment changes that.
+
+This is a known upstream regression, filed the same week:
+
+- openai/codex#41014 — "[macOS][regression] `codex_app` MCP override makes
+  `CODEX_APP_SERVER_USE_LOCAL_DAEMON=1` unreachable" (2026-08-27; same
+  diagnosis, from the packaged startup logic).
+- openai/codex#41112 — "[macOS] Desktop 26.820.60940 ignores local App
+  Server daemon" — last working 26.818.61809, broken from 26.820.60940;
+  logs went from `transport=websocket` to `transport=stdio`.
+- openai/codex#40134 — the feature request for a documented
+  `--remote unix://…` / setting instead of the env var.
+
+None had a maintainer response as of this writing. The 26.825.51511 package
+this note was first written against has the same code, so the "yes, with one
+opt-in" verdict above was never true for a Linux build.
+
+**The last working build attaches, on Linux too.** OpenAI's apt pool still
+serves `chatgpt_26.818.61809_amd64.deb` (bundled codex 0.149.0-alpha.4.3).
+Its `app.asar` has no `getConfigOverrides` and no `mcp_servers.codex_app`
+at all; the condition is just platform, host kind, the env var, the
+`CODEX_CLI_PATH`/`FORCE_CLI` escapes, and the version probe. Run from the
+extracted tree (`--no-sandbox`, an isolated `CODEX_HOME` and
+`--user-data-dir`, alongside the installed app) against a daemon in that
+`CODEX_HOME`, it logged `Transport start success connectionId=1
+hostId=local transport=websocket` and held one connection on the socket.
+
+### The recipe, as it is meant to work
+
+For when a fixed desktop ships (or on ≤ 26.818):
+
+1. **Server.** Install the standalone package —
+   `curl -fsSL https://chatgpt.com/codex/install.sh | sh` (Linux is
+   supported; it lands under `~/.codex/packages/standalone/current/` and
+   includes `codex-code-mode-host`, which the desktop's code-mode features
+   need and which the Homebrew/mise/npm CLI does not ship, per #31991) —
+   then `codex app-server daemon start`, or `daemon bootstrap` for a
+   self-updating one. Any CLI ≥ 0.141 running
+   `codex app-server --listen unix://` passes the desktop's probe, but
+   without code-mode-host some desktop features would be missing.
+2. **Client.** `CODEX_APP_SERVER_USE_LOCAL_DAEMON=1` in the desktop's own
+   process environment, then a full restart. On omarchy/Hyprland the app is
+   launched through `uwsm-app` → `wayland-wm-app-daemon.service`, so the
+   variable belongs in the `systemd --user` environment:
+   `~/.config/environment.d/50-codex.conf` for persistence, and for the
+   running session `systemctl --user set-environment …` followed by
+   `systemctl --user restart wayland-wm-app-daemon.service`. Login-shell
+   exports are irrelevant.
+3. **Check.** `ss -xp | grep app-server-control` shows the desktop's
+   connection; the app's stderr says `transport=websocket`.
+
+### Decision
+
+Parked. amon will not pin users to 26.818, and a hook-based channel
+(`~/.codex/hooks.json` runs inside the private app-server too: `SessionStart`,
+`SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`,
+`PermissionRequest`, `Stop`, `SubagentStop`, with `session_id`, `cwd` and a
+`client` field) would work on every version but is a different, larger
+design with no better answer to "seen". The socket design above stands; it
+resumes when a desktop release attaches again — watch #41014 / #41112.
+
 ## What does not work, and was considered
 
 - **Default (stdio) mode is opaque.** The only observable facts are
@@ -289,6 +403,17 @@ Kept for honesty; nothing in the repo changed besides this file.
   and the extracted app launched once for ~40 s (`--no-sandbox`). Both the
   extraction and the `~/.config/Codex/` user-data directory it created were
   deleted afterwards.
+- The live verification later that day: a daemon from the mise CLI was
+  started and stopped; `CODEX_APP_SERVER_USE_LOCAL_DAEMON=1` was set in the
+  `systemd --user` environment and unset again, `wayland-wm-app-daemon`
+  restarted twice, the installed desktop app quit and relaunched several
+  times (once directly from a shell), and a marked export line was added to
+  and removed from `~/.bashrc`. `chatgpt_26.818.61809_amd64.deb` was
+  downloaded and extracted under `~/.cache/claude-research/deb-26.818/`,
+  and run once from there with its own `CODEX_HOME`
+  (`~/.cache/claude-research/codex-home`) and user-data dir, so the
+  installed app's state was not touched by the older binary. An empty
+  `~/.codex/app-server-control/` directory remains.
 - What could not be undone: the bundled codex 0.151.0-alpha.7.2 touched
   `~/.codex/` (`sqlite/codex-dev.db`, `ipc/`, `vendor_imports/`,
   `plugins/cache/openai-bundled`, `.tmp/`, WAL files of `state_5.sqlite`
@@ -338,6 +463,18 @@ Primary, in order of weight:
   `crates/amon-cli/src/focus.rs`, `crates/amon-protocol/src/agent.rs`,
   `crates/amon-wrapper/src/lib.rs` (`HERDR_ENV`), `~/.codex/hooks.json`
   and `~/.codex/amon-agent-state.sh` (installed codex integration).
+
+- Live verification (2026-08-30): the installed AUR package
+  `openai-codex-desktop 26.820.80927` (`/usr/lib/chatgpt/resources/app.asar`,
+  class `QB`, `getConfigOverrides` → the app-tools injector and its `GT`
+  fallback); `chatgpt_26.818.61809_amd64.deb` from
+  `https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/`
+  (the `Packages` index there lists 26.825.51511 as current);
+  `https://chatgpt.com/codex/install.sh` (read, not run);
+  `codex-rs/app-server-daemon/README.md` and `codex-rs/hooks/src/{lib,types}.rs`
+  @ `88f7765` (2026-08-30).
+- https://github.com/openai/codex/issues/41014, #41112, #40134 — the
+  regression and the feature request, see "Live verification".
 
 Secondary (reports, not verified against code beyond what is above):
 
