@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" role="img" aria-label="luvus">
+  <!--
+    luvus's mark, from assets/logo.svg in github.com/RizRiyz/luvus (Apache-2.0,
+    Copyright Riz). Only the mark: the background plate is dropped so it can be
+    masked onto the page in currentColor, the way the herdr mark beside it is.
+    The original paints white fills over earlier shapes as knockouts, which an
+    alpha mask would read as solid ink - so the shapes moved into an SVG mask,
+    strokes white and knockouts black in the original order, and the mark is
+    one currentColor rect wearing it. Geometry untouched.
+  -->
+  <defs>
+    <mask id="luvus-mark">
+      <rect x="200" y="90" width="673" height="100" rx="50" transform="rotate(20 200 90)" fill="none" stroke="white" stroke-width="30"/>
+      <rect x="833" y="184.352" width="673" height="100" rx="50" transform="rotate(160 833 184.352)" fill="black" stroke="white" stroke-width="30"/>
+      <rect x="490" y="304" width="30" height="103" rx="7" fill="white"/>
+      <rect x="232" y="395" width="30" height="234" rx="7" fill="white"/>
+      <rect x="736" y="395" width="30" height="234" rx="7" fill="white"/>
+      <circle cx="500" cy="558.785" r="149" fill="none" stroke="white" stroke-width="30"/>
+      <rect x="431" y="499.785" width="39" height="81" rx="19.5" fill="none" stroke="white" stroke-width="20"/>
+      <rect x="536" y="499.785" width="39" height="81" rx="19.5" fill="none" stroke="white" stroke-width="20"/>
+      <circle cx="330" cy="752" r="149" fill="black" stroke="white" stroke-width="30"/>
+      <rect x="342.5" y="758.5" width="86" height="19" rx="9.5" fill="white" stroke="white"/>
+      <rect x="243.724" y="686.696" width="86" height="19" rx="9.5" transform="rotate(35 243.724 686.696)" fill="white" stroke="white"/>
+      <rect x="232.696" y="775.162" width="86" height="19" rx="9.5" transform="rotate(-35 232.696 775.162)" fill="white" stroke="white"/>
+      <circle cx="164" cy="164" r="149" transform="matrix(-1 0 0 1 832 588)" fill="black" stroke="white" stroke-width="30"/>
+      <rect x="-0.5" y="0.5" width="86" height="19" rx="9.5" transform="matrix(-1 0 0 1 655 758)" fill="white" stroke="white"/>
+      <rect x="-0.122788" y="0.696364" width="86" height="19" rx="9.5" transform="matrix(-0.819152 0.573576 0.573576 0.819152 753.776 686.196)" fill="white" stroke="white"/>
+      <rect x="-0.696364" y="0.122788" width="86" height="19" rx="9.5" transform="matrix(-0.819152 -0.573576 -0.573576 0.819152 764.804 774.662)" fill="white" stroke="white"/>
+    </mask>
+  </defs>
+  <rect width="1000" height="1000" fill="currentColor" mask="url(#luvus-mark)"/>
+</svg>

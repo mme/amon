@@ -308,6 +308,9 @@ stereo - on a surround or bitstream-passthrough setup, skip ducking.
   detection manifests refresh from herdr's public catalog. An excellent agent
   runtime worth using in its own right - and amon shows the agents living in
   it.
+- [luvus](https://github.com/RizRiyz/luvus) by Riz (Apache-2.0) - nothing is
+  vendored from it, but amon speaks its API and shows the agents living in
+  it. Another agent runtime worth a look.
 - [libghostty-vt](https://github.com/ghostty-org/ghostty) (MIT) - terminal
   emulation, Ghostty's VT library.
 
