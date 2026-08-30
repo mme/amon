@@ -1,4 +1,4 @@
-//! One thread per attached herdr session, projecting its agents into the
+//! One thread per attached runtime session, projecting its agents into the
 //! registry for exactly as long as the session has a client (spec decision:
 //! no client, no rows).
 //!
@@ -20,23 +20,24 @@ use std::time::Duration;
 
 use amon_protocol::{AgentEntry, AgentPatch};
 
-use super::proc::{self, HerdrSession};
-use super::{project, wire};
+use super::herdr::Herdr;
+use super::{discover, project, wire, Hosted, HostedAgent, HostedEvent, Session};
 use crate::Registry;
 
 const RESCAN_INTERVAL: Duration = Duration::from_secs(2);
 const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 
-/// Starts watching this machine for herdr sessions, forever.
+/// Starts watching this machine for runtime sessions, forever — one
+/// watcher per runtime.
 ///
 /// `connections` is the daemon's connection-id counter: projected entries
 /// and real socket connections draw from one id space, because the registry
 /// keys ownership by connection id and two allocators would collide.
 pub fn spawn(registry: Registry, connections: Arc<AtomicU64>) {
-    std::thread::spawn(move || watch(registry, connections));
+    std::thread::spawn(move || watch::<Herdr>(registry, connections));
 }
 
-struct Session {
+struct Live {
     stop: Arc<AtomicBool>,
     /// Set by the session thread once it has let go of every entry it owned.
     done: Arc<AtomicBool>,
@@ -49,13 +50,13 @@ struct Session {
 /// while a stuck watcher is not.
 const HANDOVER_GRACE: Duration = Duration::from_secs(2);
 
-fn watch(registry: Registry, connections: Arc<AtomicU64>) {
+fn watch<H: Hosted>(registry: Registry, connections: Arc<AtomicU64>) {
     // Keyed by socket, which is what a session *is*: two clients with no
     // session name pointed at different sockets are two sessions, and the
     // name is only what the rows are called.
-    let mut live: HashMap<PathBuf, Session> = HashMap::new();
+    let mut live: HashMap<PathBuf, Live> = HashMap::new();
     loop {
-        let found: HashMap<PathBuf, HerdrSession> = proc::sessions()
+        let found: HashMap<PathBuf, Session> = discover::sessions::<H>()
             .into_iter()
             .map(|session| (session.socket.clone(), session))
             .collect();
@@ -88,7 +89,7 @@ fn watch(registry: Registry, connections: Arc<AtomicU64>) {
             let done = Arc::new(AtomicBool::new(false));
             live.insert(
                 socket,
-                Session {
+                Live {
                     stop: stop.clone(),
                     done: done.clone(),
                     client_pid: session.client_pid,
@@ -98,7 +99,7 @@ fn watch(registry: Registry, connections: Arc<AtomicU64>) {
             let connections = connections.clone();
             std::thread::spawn(move || {
                 let watch = WindowWatch::open(session.client_pid);
-                run_session(session, registry, connections, stop, done, watch);
+                run_session::<H>(session, registry, connections, stop, done, watch);
             });
         }
         std::thread::sleep(RESCAN_INTERVAL);
@@ -146,12 +147,12 @@ impl WindowWatch {
 fn compositor_dir(pid: u32) -> Option<PathBuf> {
     let environ = std::fs::read(format!("/proc/{pid}/environ")).unwrap_or_default();
     let environ = String::from_utf8_lossy(&environ);
-    let Some(signature) = proc::env_value(&environ, "HYPRLAND_INSTANCE_SIGNATURE") else {
+    let Some(signature) = discover::env_value(&environ, "HYPRLAND_INSTANCE_SIGNATURE") else {
         // An unreadable environ leaves the daemon's own compositor as the
         // best guess, and on one desktop it is the right one.
         return amon_hypr::socket_dir();
     };
-    let runtime = proc::env_value(&environ, "XDG_RUNTIME_DIR")
+    let runtime = discover::env_value(&environ, "XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .or_else(amon_hypr::runtime_dir);
     amon_hypr::socket_dir_for(std::ffi::OsStr::new(signature), runtime)
@@ -167,7 +168,7 @@ fn now_ms() -> u64 {
 /// What the session thread and the window follower both touch.
 struct Shared {
     window: Option<amon_hypr::Window>,
-    /// terminal_id → its registry claim. Keyed by herdr's stable terminal
+    /// identity → its registry claim. Keyed by the runtime's stable
     /// identity, not by pane id: a pane move renames the pane but must not
     /// look like an agent leaving and another arriving.
     owned: HashMap<String, Owned>,
@@ -178,15 +179,16 @@ struct Owned {
     /// The entry as last registered, kept so updates can preserve
     /// `state_since` across resnapshots and skip no-op registrations.
     entry: AgentEntry,
-    /// herdr's transition counter as of that entry, which is how a restart
-    /// in the same terminal is told from the life already being watched.
-    seq: Option<u64>,
+    /// The runtime's per-life counter as of that entry, which is how a
+    /// restart in the same terminal is told from the life already being
+    /// watched.
+    life: Option<u64>,
 }
 
 /// Whether the terminal's agent counter went backwards, which only a new
 /// agent can do. Unknown on either side is not evidence of anything —
-/// herdr may not have said — so it reads as the same life, leaving the
-/// agent label as the only distinction, exactly as before.
+/// the runtime may not have said, or keep no counter — so it reads as the
+/// same life, leaving the agent label as the only distinction.
 fn restarted(was: Option<u64>, now: Option<u64>) -> bool {
     matches!((was, now), (Some(was), Some(now)) if now < was)
 }
@@ -199,8 +201,8 @@ fn await_done(done: &Arc<AtomicBool>) {
     }
 }
 
-pub(crate) fn run_session(
-    session: HerdrSession,
+pub(crate) fn run_session<H: Hosted>(
+    session: Session,
     registry: Registry,
     connections: Arc<AtomicU64>,
     stop: Arc<AtomicBool>,
@@ -221,27 +223,14 @@ pub(crate) fn run_session(
     spawn_stop_watch(&stop, &done, &current, compositor);
     spawn_window_follow(watch, session.client_pid, &registry, &shared, &stop);
 
+    let mut host = H::new();
     while !stop.load(Ordering::Relaxed) {
-        let panes: Vec<String> = lock(&shared)
-            .owned
-            .values()
-            .filter_map(|owned| owned.entry.runtime.as_ref().map(|r| r.pane().to_owned()))
-            .collect();
-        let Ok(events) = wire::subscribe(
-            &session.socket,
-            subscriptions_for(panes.iter().map(String::as_str)),
-        ) else {
+        let panes = owned_panes(&shared);
+        let Ok((agents, events)) = host.attach(&session.socket, &panes) else {
             std::thread::sleep(RETRY_INTERVAL);
             continue;
         };
         *lock(&current) = Some(events.shutdown_handle());
-
-        let Ok(snapshot) =
-            wire::request(&session.socket, "session.snapshot", serde_json::json!({}))
-        else {
-            std::thread::sleep(RETRY_INTERVAL);
-            continue;
-        };
         // The client may have gone while that request was in flight. Writing
         // this snapshot now would put a window that has closed back on rows
         // the replacement session has already corrected — and the correction
@@ -250,37 +239,43 @@ pub(crate) fn run_session(
         if stop.load(Ordering::Relaxed) {
             break;
         }
-        reconcile(
-            &wire::agents_from(&snapshot),
-            &session,
-            &registry,
-            &connections,
-            &shared,
-        );
-        // The subscription covers the agent panes known *before* this
-        // snapshot. If the set changed, resubscribe before trusting it —
-        // a status change on a pane outside the set would go unheard.
-        let mut current_panes: Vec<String> = lock(&shared)
-            .owned
-            .values()
-            .filter_map(|owned| owned.entry.runtime.as_ref().map(|r| r.pane().to_owned()))
-            .collect();
-        let mut subscribed = panes;
-        current_panes.sort();
-        subscribed.sort();
-        if current_panes != subscribed {
-            continue;
+        reconcile::<H>(&agents, &session, &registry, &connections, &shared);
+        // Where status is subscribed per pane, the subscription covers the
+        // agent panes known *before* this snapshot. If the set changed,
+        // resubscribe before trusting it — a status change on a pane outside
+        // the set would go unheard.
+        if H::STATUS_PER_PANE {
+            let mut current_panes = owned_panes(&shared);
+            let mut subscribed = panes;
+            current_panes.sort();
+            subscribed.sort();
+            if current_panes != subscribed {
+                continue;
+            }
         }
 
         for event in events {
             if stop.load(Ordering::Relaxed) {
                 break;
             }
-            if event.event != "pane.agent_status_changed" {
+            let labels: HashMap<String, String> = lock(&shared)
+                .owned
+                .values()
+                .filter_map(|owned| {
+                    let pane = owned.entry.runtime.as_ref()?.pane().to_owned();
+                    Some((pane, owned.entry.agent.clone()))
+                })
+                .collect();
+            match host.event(&event, &labels) {
+                HostedEvent::Status {
+                    pane,
+                    status,
+                    agent,
+                } => apply_status(&registry, &shared, &pane, &status, agent),
                 // Structural: start over with a fresh snapshot.
-                break;
+                HostedEvent::Structural => break,
+                HostedEvent::Ignore => {}
             }
-            apply_status(&registry, &shared, &event.data);
         }
     }
 
@@ -290,31 +285,23 @@ pub(crate) fn run_session(
     done.store(true, Ordering::Relaxed);
 }
 
+fn owned_panes(shared: &Arc<Mutex<Shared>>) -> Vec<String> {
+    lock(shared)
+        .owned
+        .values()
+        .filter_map(|owned| owned.entry.runtime.as_ref().map(|r| r.pane().to_owned()))
+        .collect()
+}
+
 fn lock<T>(shared: &Arc<Mutex<T>>) -> std::sync::MutexGuard<'_, T> {
     shared
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Global lifecycle events, plus one status subscription per known agent
-/// pane — herdr has no global status subscription, and a connection's set is
-/// fixed, which is why structural changes reconnect.
-fn subscriptions_for<'a>(panes: impl Iterator<Item = &'a str>) -> Vec<serde_json::Value> {
-    let mut subscriptions = vec![
-        serde_json::json!({"type": "pane.agent_detected"}),
-        serde_json::json!({"type": "pane.closed"}),
-        serde_json::json!({"type": "pane.exited"}),
-        serde_json::json!({"type": "pane.moved"}),
-    ];
-    subscriptions.extend(
-        panes.map(|pane| serde_json::json!({"type": "pane.agent_status_changed", "pane_id": pane})),
-    );
-    subscriptions
-}
-
-fn reconcile(
-    agents: &[wire::HerdrAgent],
-    session: &HerdrSession,
+fn reconcile<H: Hosted>(
+    agents: &[HostedAgent],
+    session: &Session,
     registry: &Registry,
     connections: &Arc<AtomicU64>,
     shared: &Arc<Mutex<Shared>>,
@@ -323,24 +310,24 @@ fn reconcile(
     let window = shared.window.clone();
     let mut present: std::collections::HashSet<String> = Default::default();
     for agent in agents {
-        present.insert(agent.terminal_id.clone());
-        let mut entry = project::entry_for(agent, session, window.as_ref(), now_ms());
-        let seq = agent.state_change_seq;
+        present.insert(agent.identity.clone());
+        let mut entry = project::entry_for::<H>(agent, session, window.as_ref(), now_ms());
+        let life = agent.life;
         let previous = shared
             .owned
-            .get(&agent.terminal_id)
-            .map(|owned| (owned.connection, owned.entry.clone(), owned.seq));
+            .get(&agent.identity)
+            .map(|owned| (owned.connection, owned.entry.clone(), owned.life));
 
         // A resnapshot is a fresh look at the same agent, not a fresh agent,
         // so its clocks carry over — but only while it *is* the same agent.
-        // A herdr terminal outlives what runs in it: finish with claude and
-        // start codex, or just claude again, and the terminal id is
-        // unchanged while the lifetime is not. Carrying clocks across that
-        // would date the new agent from the old one's launch and sort it by
-        // a wait it never had.
-        let same_lifetime = previous
-            .as_ref()
-            .is_some_and(|(_, was, was_seq)| was.agent == entry.agent && !restarted(*was_seq, seq));
+        // A terminal outlives what runs in it: finish with claude and start
+        // codex, or just claude again, and the identity is unchanged while
+        // the lifetime is not. Carrying clocks across that would date the
+        // new agent from the old one's launch and sort it by a wait it never
+        // had.
+        let same_lifetime = previous.as_ref().is_some_and(|(_, was, was_life)| {
+            was.agent == entry.agent && !restarted(*was_life, life)
+        });
 
         if let (true, Some((connection, was, _))) = (same_lifetime, previous.clone()) {
             entry.started_at = was.started_at;
@@ -353,11 +340,11 @@ fn reconcile(
                 registry.register(connection, entry.clone());
             }
             shared.owned.insert(
-                agent.terminal_id.clone(),
+                agent.identity.clone(),
                 Owned {
                     connection,
                     entry,
-                    seq,
+                    life,
                 },
             );
             continue;
@@ -374,21 +361,16 @@ fn reconcile(
         let connection = connections.fetch_add(1, Ordering::Relaxed);
         registry.register(connection, entry.clone());
         shared.owned.insert(
-            agent.terminal_id.clone(),
+            agent.identity.clone(),
             Owned {
                 connection,
                 entry,
-                seq,
+                life,
             },
         );
     }
-    shared.owned.retain(|_, owned| {
-        let keep = owned
-            .entry
-            .id
-            .rsplit(':')
-            .next()
-            .is_some_and(|terminal| present.contains(terminal));
+    shared.owned.retain(|identity, owned| {
+        let keep = present.contains(identity);
         if !keep {
             registry.disconnect(owned.connection);
         }
@@ -396,7 +378,7 @@ fn reconcile(
     });
 }
 
-/// Applies one `pane.agent_status_changed`.
+/// Applies one status event.
 ///
 /// The event carries the agent's presentation as well as its status, and
 /// they move independently: a working agent that starts on something else
@@ -404,13 +386,13 @@ fn reconcile(
 /// leave the row describing work that finished a while ago, so both travel
 /// in one patch — and the clock only restarts when the state itself moved,
 /// or every title change would reset how long the agent has been at it.
-fn apply_status(registry: &Registry, shared: &Arc<Mutex<Shared>>, data: &serde_json::Value) {
-    let Some(pane) = data.get("pane_id").and_then(|id| id.as_str()) else {
-        return;
-    };
-    let Some(status) = data.get("agent_status").and_then(|status| status.as_str()) else {
-        return;
-    };
+fn apply_status(
+    registry: &Registry,
+    shared: &Arc<Mutex<Shared>>,
+    pane: &str,
+    status: &str,
+    agent: Option<Option<String>>,
+) {
     let mut shared = lock(shared);
     let Some(owned) = shared.owned.values_mut().find(|owned| {
         owned
@@ -425,12 +407,12 @@ fn apply_status(registry: &Registry, shared: &Arc<Mutex<Shared>>, data: &serde_j
     let mut patch = AgentPatch::new(owned.entry.id.clone());
     let (state, seen) = project::state_for(status);
     // `state_since` is when the agent entered this state, and being looked
-    // at is not entering anything. herdr's `done` and `idle` are one amon
-    // state either side of `seen`, so focusing a finished agent arrives here
-    // as a seen-only change — and restarting the clock for it would turn
-    // "finished twenty minutes ago" into "finished just now" for no reason
-    // but that you glanced at it. Wrapped agents keep their clock across the
-    // same moment.
+    // at is not entering anything. A runtime's `done` and `idle` are one
+    // amon state either side of `seen`, so focusing a finished agent arrives
+    // here as a seen-only change — and restarting the clock for it would
+    // turn "finished twenty minutes ago" into "finished just now" for no
+    // reason but that you glanced at it. Wrapped agents keep their clock
+    // across the same moment.
     if owned.entry.state != state {
         let since = now_ms();
         patch.state = Some(state);
@@ -442,16 +424,11 @@ fn apply_status(registry: &Registry, shared: &Arc<Mutex<Shared>>, data: &serde_j
         patch.seen = Some(seen);
         owned.entry.seen = seen;
     }
-    // Present-and-null means herdr no longer has a name for what is in the
-    // pane; absent means it did not say. The projection reads a null the
-    // same way, and the two paths must agree or the row keeps the name of an
-    // agent that has gone.
-    let label = match data.get("agent") {
-        None => None,
-        Some(serde_json::Value::Null) => Some(project::UNNAMED.to_owned()),
-        Some(agent) => agent.as_str().map(str::to_owned),
-    };
-    if let Some(label) = label {
+    // Some(None) is a runtime that no longer has a name for what is in the
+    // pane; the projection labels that the same way, and the two paths must
+    // agree or the row keeps the name of an agent that has gone.
+    if let Some(agent) = agent {
+        let label = agent.unwrap_or_else(|| project::UNNAMED.to_owned());
         if owned.entry.agent != label {
             patch.agent = Some(label.clone());
             owned.entry.agent = label;
@@ -504,7 +481,7 @@ fn spawn_stop_watch(
 }
 
 /// Follows the client's window between Hyprland workspaces, patching every
-/// entry the session owns. The agents all live in one window — the herdr
+/// entry the session owns. The agents all live in one window — the
 /// client's terminal — so one move patches them all.
 fn spawn_window_follow(
     watch: Option<WindowWatch>,
@@ -618,7 +595,10 @@ mod tests {
         // herdr's terminal id belongs to the pane, not to what runs in it.
         // Only a counter going backwards, or a different agent, marks the
         // moment one life ended and the next began.
-        assert!(!restarted(None, None), "herdr said nothing either time");
+        assert!(
+            !restarted(None, None),
+            "the runtime said nothing either time"
+        );
         assert!(!restarted(Some(4), None), "and nothing is not evidence");
         assert!(!restarted(Some(4), Some(4)), "standing still is one life");
         assert!(!restarted(Some(4), Some(9)), "counting up is one life");
@@ -633,7 +613,7 @@ mod tests {
         ]));
         let registry = crate::Registry::new();
         let stop = Arc::new(AtomicBool::new(false));
-        let session = crate::herdr::proc::HerdrSession {
+        let session = Session {
             name: Some("work".into()),
             socket,
             client_pid: std::process::id(),
@@ -642,7 +622,7 @@ mod tests {
             let registry = registry.clone();
             let stop = stop.clone();
             move || {
-                run_session(
+                run_session::<Herdr>(
                     session,
                     registry,
                     Arc::new(AtomicU64::new(1000)),

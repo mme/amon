@@ -2787,7 +2787,7 @@ fn a_shim_reached_from_inside_an_agent_still_wraps() {
         .env("XDG_STATE_HOME", sandbox.runtime_path("state"))
         .env("HOME", sandbox.home_path(""))
         .env("XDG_CONFIG_HOME", sandbox.home_path(".config"))
-        .env("AMON_HERDR", "0")
+        .env("AMON_RUNTIMES", "0")
         .env(
             "PATH",
             format!(

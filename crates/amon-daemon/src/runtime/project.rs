@@ -1,18 +1,18 @@
-//! One herdr agent, as an amon entry.
+//! One hosted agent, as an amon entry.
 //!
-//! The state mapping is the load-bearing part: herdr's `done` is amon's
+//! The state mapping is the load-bearing part: a runtime's `done` is amon's
 //! Idle-with-seen-false (finished but unnoticed), and both sides mean the
-//! same thing by it because amon vendors herdr's detector (ADR-0001). An
-//! unrecognized status maps to Unknown, which ranks last — a new herdr
-//! status must not cry wolf on every bar.
+//! same thing by it because amon vendors herdr's detector (ADR-0001) and
+//! luvus's states are the same five. An unrecognized status maps to
+//! Unknown, which ranks last — a new status must not cry wolf on every bar.
 
-use amon_protocol::{AgentEntry, AgentState, Runtime};
+use amon_protocol::{AgentEntry, AgentState};
 
-use super::proc::HerdrSession;
-use super::wire::HerdrAgent;
+use super::{Hosted, HostedAgent, Session};
 
-/// What an agent herdr has not named is called. herdr's schema allows a null
-/// agent, and a blank first column reads as a bug rather than as a fact.
+/// What an agent the runtime has not named is called. herdr's schema allows
+/// a null agent, and a blank first column reads as a bug rather than as a
+/// fact.
 pub const UNNAMED: &str = "unknown";
 
 /// A short, stable digest of the session's socket path.
@@ -44,21 +44,22 @@ pub fn state_for(status: &str) -> (AgentState, Option<bool>) {
     }
 }
 
-pub fn entry_for(
-    agent: &HerdrAgent,
-    session: &HerdrSession,
+pub fn entry_for<H: Hosted>(
+    agent: &HostedAgent,
+    session: &Session,
     window: Option<&amon_hypr::Window>,
     now_ms: u64,
 ) -> AgentEntry {
-    let (state, seen) = state_for(&agent.agent_status);
-    // herdr may hold an agent it has no name for; the row still belongs on
-    // the bar, labelled for what it is rather than dropped.
+    let (state, seen) = state_for(&agent.status);
+    // The runtime may hold an agent it has no name for; the row still
+    // belongs on the bar, labelled for what it is rather than dropped.
     let label = agent.agent.clone().unwrap_or_else(|| UNNAMED.to_string());
     AgentEntry {
         id: format!(
-            "herdr:{}:{}",
+            "{}:{}:{}",
+            H::KIND,
             socket_digest(&session.socket),
-            agent.terminal_id
+            agent.identity
         ),
         agent: label.clone(),
         state,
@@ -73,8 +74,8 @@ pub fn entry_for(
         agent_session_path: None,
         window: window.map(|window| window.address.clone()),
         workspace: window.and_then(|window| window.workspace.clone()),
-        // No branch and no Project for a herdr-hosted agent. Both are facts
-        // about a directory, and amon could read them from the cwd herdr
+        // No branch and no Project for a hosted agent. Both are facts about
+        // a directory, and amon could read them from the cwd the runtime
         // reports — but neither is watched here, and giving a row half the
         // git facts a wrapped row has would read as amon knowing less than it
         // does rather than as the honest gap it is. Filling these in belongs
@@ -84,11 +85,7 @@ pub fn entry_for(
         subpath: None,
         focused: None,
         seen,
-        runtime: Some(Runtime::Herdr {
-            socket: session.socket.to_string_lossy().into_owned(),
-            session: session.name.clone(),
-            pane: agent.pane_id.clone(),
-        }),
+        runtime: Some(H::runtime(session, agent)),
     }
 }
 
@@ -104,46 +101,46 @@ fn hostname() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use amon_protocol::AgentState;
+    use crate::runtime::herdr::Herdr;
+    use amon_protocol::{AgentState, Runtime};
 
-    fn agent(status: &str) -> crate::herdr::wire::HerdrAgent {
-        crate::herdr::wire::HerdrAgent {
-            terminal_id: "t1".into(),
+    fn agent(status: &str) -> HostedAgent {
+        HostedAgent {
+            identity: "t1".into(),
+            pane: "w1:p2".into(),
             agent: Some("claude".into()),
-            agent_status: status.into(),
-            pane_id: "w1:p2".into(),
+            status: status.into(),
             cwd: Some("/repo".into()),
-            state_change_seq: Some(1),
+            life: None,
         }
     }
 
-    fn session() -> crate::herdr::proc::HerdrSession {
-        crate::herdr::proc::HerdrSession {
+    fn session() -> Session {
+        Session {
             name: Some("work".into()),
             socket: "/tmp/herdr.sock".into(),
-            client_pid: 42,
+            client_pid: 4242,
         }
     }
 
     #[test]
-    fn herdr_statuses_map_onto_amon_states_and_seen() {
-        // done is idle-and-unnoticed — exactly amon's finished-but-unseen.
-        assert_eq!(state_for("done"), (AgentState::Idle, Some(false)));
+    fn runtime_statuses_map_onto_amon_states_and_seen() {
         assert_eq!(state_for("idle"), (AgentState::Idle, Some(true)));
+        assert_eq!(state_for("done"), (AgentState::Idle, Some(false)));
         assert_eq!(state_for("working"), (AgentState::Working, None));
         assert_eq!(state_for("blocked"), (AgentState::Blocked, Some(false)));
         assert_eq!(state_for("unknown"), (AgentState::Unknown, None));
-        // A status this build has never heard of must not look urgent.
-        assert_eq!(state_for("pondering"), (AgentState::Unknown, None));
+        // A status this build has never heard of ranks last, never first.
+        assert_eq!(state_for("meditating"), (AgentState::Unknown, None));
     }
 
     #[test]
-    fn an_entry_carries_identity_window_and_the_herdr_pointer() {
+    fn an_entry_carries_identity_window_and_the_runtime_pointer() {
         let window = amon_hypr::Window {
             address: "abc123".into(),
             workspace: Some("3".into()),
         };
-        let entry = entry_for(&agent("done"), &session(), Some(&window), 1000);
+        let entry = entry_for::<Herdr>(&agent("done"), &session(), Some(&window), 1000);
         assert!(entry.id.starts_with("herdr:"));
         assert!(entry.id.ends_with(":t1"));
         assert_eq!(entry.agent, "claude");
@@ -166,13 +163,13 @@ mod tests {
     }
 
     #[test]
-    fn an_agent_herdr_cannot_name_is_labelled_rather_than_blank() {
-        let unnamed = crate::herdr::wire::HerdrAgent {
+    fn an_agent_the_runtime_cannot_name_is_labelled_rather_than_blank() {
+        let unnamed = HostedAgent {
             agent: None,
             cwd: None,
             ..agent("blocked")
         };
-        let entry = entry_for(&unnamed, &session(), None, 1);
+        let entry = entry_for::<Herdr>(&unnamed, &session(), None, 1);
         assert_eq!(entry.agent, "unknown");
         assert_eq!(entry.args, vec!["unknown".to_string()]);
         assert_eq!(entry.cwd, "");
@@ -184,7 +181,7 @@ mod tests {
     fn a_nameless_session_still_projects() {
         let mut session = session();
         session.name = None;
-        let entry = entry_for(&agent("idle"), &session, None, 1);
+        let entry = entry_for::<Herdr>(&agent("idle"), &session, None, 1);
         assert!(entry.id.ends_with(":t1"));
         assert_eq!(entry.window, None);
         assert_eq!(entry.workspace, None);
@@ -196,21 +193,13 @@ mod tests {
 
     #[test]
     fn two_sessions_sharing_a_name_do_not_share_agent_ids() {
-        // Two config homes, two sockets, the same session name — and herdr
-        // hands out terminal ids that are only unique within the server that
-        // issued them. An id built from the name would let one session's row
-        // overwrite the other's in the panel, take the wrong row away on
-        // disconnect, and send `focus --agent` to the wrong window.
-        let mut one = session();
-        one.socket = "/one/herdr.sock".into();
-        let mut two = session();
-        two.socket = "/two/herdr.sock".into();
-
-        let left = entry_for(&agent("idle"), &one, None, 1);
-        let right = entry_for(&agent("idle"), &two, None, 1);
-        assert_ne!(left.id, right.id);
-        // ...and the same session keeps the same id, or every resnapshot
-        // would look like a new agent arriving.
-        assert_eq!(left.id, entry_for(&agent("working"), &one, None, 2).id);
+        // Same name, same terminal id, different sockets: two servers, two
+        // agents. The id must tell them apart or one row overwrites the
+        // other and a jump lands in the wrong window.
+        let mut other = session();
+        other.socket = "/tmp/elsewhere/herdr.sock".into();
+        let one = entry_for::<Herdr>(&agent("idle"), &session(), None, 1);
+        let two = entry_for::<Herdr>(&agent("idle"), &other, None, 1);
+        assert_ne!(one.id, two.id);
     }
 }

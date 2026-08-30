@@ -82,7 +82,7 @@ impl Sandbox {
         command.env("PATH", self.sandbox_path());
         // The daemon a test spawns inherits this: it must not adopt agents
         // from a herdr session the developer happens to have open.
-        command.env("AMON_HERDR", "0");
+        command.env("AMON_RUNTIMES", "0");
         // A developer running the tests from a terminal that is itself
         // wrapped by amon carries these; a test's agent would inherit them
         // and look wrapped when it is not.
@@ -415,7 +415,7 @@ impl PtySession {
         // Same reasons as `Sandbox::command`: no adopting the developer's
         // live herdr session, and no inheriting the wrapper's marks from a
         // terminal that is itself running under amon.
-        command.env("AMON_HERDR", "0");
+        command.env("AMON_RUNTIMES", "0");
         command.env_remove("AMON_ENV");
         command.env_remove("AMON_AGENT_ID");
         command.env_remove("AMON_SOCKET_PATH");
