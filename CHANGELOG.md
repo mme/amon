@@ -8,6 +8,19 @@ the machinery, not decoration.
 
 <!-- next -->
 
+- **Agents in luvus show up**: amon watches for
+  [luvus](https://github.com/RizRiyz/luvus) sessions the way it does herdr's
+  — their agents join the bar and the panel, `amon focus` lands on the pane,
+  and `amon <agent>` inside a luvus pane runs the agent bare.
+- **`amon focus` hops to the pane even without a window**: an agent in a
+  session the compositor never placed (over ssh, no Hyprland) still gets the
+  half of the jump amon can make.
+- **Protocol**: `AgentEntry.herdr` is now `AgentEntry.runtime`, tagged by
+  `kind` (`herdr` | `luvus`). Nothing outside amon read the old field.
+  `AMON_HERDR=0` is now `AMON_RUNTIMES=0`.
+- The end-to-end suite drives real herdr and luvus binaries, pinned in
+  `.mise.toml`.
+
 ## v0.2.0
 
 - **Agents in herdr show up**: amon watches for

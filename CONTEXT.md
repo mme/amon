@@ -10,10 +10,17 @@ agents and notifies subscribers. Detection and install machinery is lifted from
 **Wrapper**:
 The `amon` process that spawns one agent inside a PTY, passes its I/O through
 unmodified, and observes it. In two contexts it steps aside instead — `exec`s
-the agent and wraps nothing: inside a herdr pane, where herdr is the detection
-authority, and where it has a terminal on neither side, which means there is no
-window for a row to lead to (ADR-0016).
+the agent and wraps nothing: inside a Runtime's pane, where the Runtime is the
+detection authority, and where it has a terminal on neither side, which means
+there is no window for a row to lead to (ADR-0016).
 _Avoid_: launcher, runner
+
+**Runtime**:
+An agent multiplexer that owns agents' terminals itself — herdr, luvus — whose
+sessions the daemon watches instead of wrapping (ADR-0018). Its agents carry
+`runtime` on the wire, tagged by kind, and `amon focus` asks it to bring the
+pane forward after the window is up.
+_Avoid_: multiplexer (say which), host
 
 **Daemon**:
 The single per-user `amond` process that keeps the registry of connected agents.
