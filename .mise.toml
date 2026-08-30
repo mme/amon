@@ -7,3 +7,8 @@ zig = "0.15.2"
 # process per test rather than a thread per test. nextest does that; plain
 # `cargo test` races and fails intermittently.
 "cargo:cargo-nextest" = "0.9.140"
+# The runtimes the e2e tests drive for real. Pinned, so CI and a developer run
+# the same binaries, and a bump is a reviewed diff whose CI run is the
+# compatibility check against that release's socket protocol.
+"github:ogulcancelik/herdr" = "0.8.2"
+"github:RizRiyz/luvus" = "0.13.2"

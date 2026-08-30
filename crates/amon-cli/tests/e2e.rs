@@ -3198,3 +3198,174 @@ fn doctor_reports_a_config_file_that_does_not_parse() {
         "the kept-last-good state is reported: {stdout}"
     );
 }
+
+/// Agents living in real herdr and luvus sessions, adopted by the daemon.
+///
+/// One body per behaviour, one `#[test]` per runtime, so nextest names and
+/// times them apart and a runtime's own regression shows up under its own
+/// name.
+mod hosted_runtimes {
+    use super::*;
+    use harness::hosted::{Hosted, Kind, RUNTIME_DEADLINE, WORKS_TWICE};
+
+    /// A sandbox with a runtime session up and one agent in a background
+    /// pane.
+    ///
+    /// A struct rather than a tuple for its drop order: fields drop in
+    /// declaration order, so the session is stopped while its socket still
+    /// exists, before the sandbox takes the directory away — and unlike a
+    /// destructured tuple, whose bindings drop in reverse, this cannot be
+    /// undone at the call site.
+    struct Live {
+        hosted: Hosted,
+        sandbox: Sandbox,
+        pane: String,
+    }
+
+    fn live(kind: Kind) -> Live {
+        let sandbox = Sandbox::new().with_runtimes();
+        let shell = sandbox.fake_agent("claude", WORKS_TWICE);
+        let hosted = Hosted::start(&sandbox, kind, &shell);
+        let pane = hosted.background_pane();
+        Live {
+            hosted,
+            sandbox,
+            pane,
+        }
+    }
+
+    /// amon's row for the agent in `pane` of this session, if any.
+    fn hosted_row(sandbox: &Sandbox, hosted: &Hosted, pane: &str) -> Option<serde_json::Value> {
+        let socket = hosted.socket.to_string_lossy().into_owned();
+        sandbox
+            .status_json()
+            .as_array()?
+            .iter()
+            .find(|agent| agent["runtime"]["socket"] == socket && agent["runtime"]["pane"] == pane)
+            .cloned()
+    }
+
+    fn wait_for_row(
+        sandbox: &Sandbox,
+        hosted: &Hosted,
+        pane: &str,
+        what: &str,
+        accept: impl Fn(&serde_json::Value) -> bool,
+    ) -> serde_json::Value {
+        harness::wait_for_within(what, RUNTIME_DEADLINE, || {
+            hosted_row(sandbox, hosted, pane).filter(|row| accept(row))
+        })
+    }
+
+    fn an_agent_in_a_pane_shows_up_with_its_runtime_and_no_window(kind: Kind) {
+        let live = live(kind);
+        let (hosted, sandbox, pane) = (&live.hosted, &live.sandbox, live.pane.as_str());
+        let row = wait_for_row(sandbox, hosted, pane, "the row", |_| true);
+        assert_eq!(row["runtime"]["kind"], kind.name());
+        assert_eq!(row["runtime"]["session"], "amon-e2e");
+        assert_eq!(row["agent"], "claude");
+        assert!(row["window"].is_null(), "no compositor here: {row}");
+        assert!(
+            row["id"].as_str().unwrap().starts_with(kind.name()),
+            "{}",
+            row["id"]
+        );
+        // And the daemon agrees with the runtime about what the agent is
+        // doing, once both have settled on the same reading.
+        let status = hosted.status_of(pane).expect("the runtime lists it");
+        let expected = match status.as_str() {
+            "idle" | "done" => "idle",
+            other => other,
+        };
+        wait_for_row(sandbox, hosted, pane, "matching states", |row| {
+            row["state"] == expected
+        });
+    }
+
+    fn a_status_report_reaches_the_row_through_the_event_path(kind: Kind) {
+        let live = live(kind);
+        let (hosted, sandbox, pane) = (&live.hosted, &live.sandbox, live.pane.as_str());
+        wait_for_row(sandbox, hosted, pane, "the row", |_| true);
+        hosted.report(pane, "blocked");
+        let started = std::time::Instant::now();
+        wait_for_row(sandbox, hosted, pane, "blocked", |row| {
+            row["state"] == "blocked"
+        });
+        // The process rescan is every 2 s; the event path is what makes
+        // this fast.
+        assert!(
+            started.elapsed() < Duration::from_millis(1500),
+            "took {:?}, which is the rescan, not the event path",
+            started.elapsed()
+        );
+    }
+
+    fn detaching_the_client_removes_the_rows_and_reattaching_restores_them(kind: Kind) {
+        let mut live = live(kind);
+        let pane = live.pane.clone();
+        wait_for_row(&live.sandbox, &live.hosted, &pane, "the row", |_| true);
+        live.hosted.detach();
+        harness::wait_for_within("the row to go", RUNTIME_DEADLINE, || {
+            hosted_row(&live.sandbox, &live.hosted, &pane)
+                .is_none()
+                .then_some(())
+        });
+        live.hosted.reattach(&live.sandbox);
+        wait_for_row(&live.sandbox, &live.hosted, &pane, "the row back", |_| true);
+    }
+
+    fn focusing_an_agent_lands_on_its_pane_and_marks_it_seen(kind: Kind) {
+        let live = live(kind);
+        let (hosted, sandbox, pane) = (&live.hosted, &live.sandbox, live.pane.as_str());
+        // Finished while nobody was looking: the runtime says done, amon
+        // says idle and unseen.
+        let row = wait_for_row(sandbox, hosted, pane, "finished and unseen", |row| {
+            row["state"] == "idle" && row["seen"] == false
+        });
+        assert_eq!(hosted.status_of(pane).as_deref(), Some("done"));
+
+        let id = row["id"].as_str().unwrap();
+        let output = sandbox.run(&["focus", "--agent", id]);
+        assert!(output.status.success(), "{output:?}");
+
+        // The runtime itself now has the agent in front and seen, and amon
+        // follows through the event path.
+        harness::wait_for_within("the runtime to mark it seen", RUNTIME_DEADLINE, || {
+            (hosted.status_of(pane).as_deref() == Some("idle")).then_some(())
+        });
+        wait_for_row(sandbox, hosted, pane, "seen", |row| row["seen"] == true);
+    }
+
+    #[test]
+    fn herdr_agent_shows_up_with_its_runtime() {
+        an_agent_in_a_pane_shows_up_with_its_runtime_and_no_window(Kind::Herdr);
+    }
+    #[test]
+    fn luvus_agent_shows_up_with_its_runtime() {
+        an_agent_in_a_pane_shows_up_with_its_runtime_and_no_window(Kind::Luvus);
+    }
+    #[test]
+    fn herdr_status_report_reaches_the_row() {
+        a_status_report_reaches_the_row_through_the_event_path(Kind::Herdr);
+    }
+    #[test]
+    fn luvus_status_report_reaches_the_row() {
+        a_status_report_reaches_the_row_through_the_event_path(Kind::Luvus);
+    }
+    #[test]
+    fn herdr_detach_removes_and_reattach_restores() {
+        detaching_the_client_removes_the_rows_and_reattaching_restores_them(Kind::Herdr);
+    }
+    #[test]
+    fn luvus_detach_removes_and_reattach_restores() {
+        detaching_the_client_removes_the_rows_and_reattaching_restores_them(Kind::Luvus);
+    }
+    #[test]
+    fn herdr_focus_lands_on_the_pane_and_marks_it_seen() {
+        focusing_an_agent_lands_on_its_pane_and_marks_it_seen(Kind::Herdr);
+    }
+    #[test]
+    fn luvus_focus_lands_on_the_pane_and_marks_it_seen() {
+        focusing_an_agent_lands_on_its_pane_and_marks_it_seen(Kind::Luvus);
+    }
+}
