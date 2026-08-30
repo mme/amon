@@ -1,32 +1,14 @@
-//! Finding herdr on this machine by reading /proc.
+//! Telling herdr's processes apart, and where their socket is.
 //!
 //! herdr never rewrites its process title and `--session` survives verbatim
 //! in kernel-visible argv, which is what makes classification by argv safe.
 //! The server is a session leader with no controlling tty; an attached
-//! client is the `herdr` the user typed, tty and all. A session is shown
-//! exactly while it has an attached client (a spec decision — a headless
-//! server's agents have no window to jump to), and of several clients the
-//! lowest pid wins: "first, or something" was the whole requirement.
+//! client is the `herdr` the user typed, tty and all.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Role {
-    Client { name: Option<String> },
-    Server { name: Option<String> },
-    Other,
-}
-
-/// One herdr session with an attached client — the only kind amon shows.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HerdrSession {
-    pub name: Option<String>,
-    /// The session's JSON API socket.
-    pub socket: PathBuf,
-    /// The attached client whose window the session's agents borrow.
-    pub client_pid: u32,
-}
+use crate::runtime::discover::env_value;
+use crate::runtime::Role;
 
 /// herdr's top-level options that take a value, so what follows them is the
 /// value and not a subcommand.
@@ -122,16 +104,6 @@ fn argv_session(args: &[&str]) -> Option<String> {
     None
 }
 
-/// One variable out of a NUL-separated environ blob.
-pub fn env_value<'a>(environ: &'a str, key: &str) -> Option<&'a str> {
-    environ
-        .split('\0')
-        .filter_map(|pair| pair.split_once('='))
-        .find(|(name, _)| *name == key)
-        .map(|(_, value)| value)
-        .filter(|value| !value.is_empty())
-}
-
 /// `HERDR_SESSION` out of an environ blob. Usually absent on clients — herdr
 /// applies `--session` with setenv after exec, which relocates the
 /// environment off the stack `/proc` reads — so argv is the primary source
@@ -192,102 +164,6 @@ fn session_socket_in(config: &Path, name: Option<&str>) -> PathBuf {
         None => config.join("herdr.sock"),
         Some(name) => config.join("sessions").join(name).join("herdr.sock"),
     }
-}
-
-/// Records a client against its socket, keeping the lowest pid.
-///
-/// Sessions are told apart by socket, not by name: two nameless clients
-/// pointed at different sockets are two sessions, and two clients on one
-/// socket are one session with a shared view — of which amon follows the
-/// first, which is all the tie-breaking a shared view deserves.
-fn claim(found: &mut Vec<(PathBuf, u32)>, socket: PathBuf, pid: u32) {
-    match found.iter_mut().find(|(known, _)| *known == socket) {
-        Some((_, client)) => *client = (*client).min(pid),
-        None => found.push((socket, pid)),
-    }
-}
-
-/// `(session id, tty_nr)` from a `/proc/<pid>/stat` line — fields 6 and 7,
-/// counted after the last `)` because comm is arbitrary bytes.
-pub fn stat_fields(stat: &str) -> Option<(u32, u32)> {
-    let after_comm = &stat[stat.rfind(')')? + 1..];
-    let mut fields = after_comm.split_whitespace();
-    let session = fields.nth(3)?.parse().ok()?;
-    let tty_nr = fields.next()?.parse().ok()?;
-    Some((session, tty_nr))
-}
-
-/// Every herdr session that has an attached client right now.
-pub fn sessions() -> Vec<HerdrSession> {
-    use std::os::unix::fs::MetadataExt;
-
-    let mut found: Vec<(PathBuf, u32)> = Vec::new();
-    let mut names: HashMap<PathBuf, Option<String>> = HashMap::new();
-    let user = unsafe { libc::geteuid() };
-    let Ok(entries) = std::fs::read_dir("/proc") else {
-        return Vec::new();
-    };
-    for entry in entries.flatten() {
-        let Some(pid) = entry
-            .file_name()
-            .to_str()
-            .and_then(|name| name.parse::<u32>().ok())
-        else {
-            continue;
-        };
-        let path = entry.path();
-        // Somebody else's herdr is none of this daemon's business — amon is
-        // per-user. It matters beyond tidiness: `comm`, `cmdline` and `stat`
-        // are world-readable while `environ` is not, so another user's client
-        // would be classified from an empty environment, fall back to *this*
-        // user's default socket, and claim the session with a pid whose
-        // window lives in another login entirely.
-        let Ok(owner) = std::fs::metadata(&path) else {
-            continue;
-        };
-        if owner.uid() != user {
-            continue;
-        }
-        // comm first: cheap, and filters out everything that is not herdr
-        // before argv and environ are read at all.
-        let Ok(comm) = std::fs::read_to_string(path.join("comm")) else {
-            continue;
-        };
-        if comm.trim_end() != "herdr" {
-            continue;
-        }
-        let Ok(cmdline) = std::fs::read(path.join("cmdline")) else {
-            continue;
-        };
-        let argv: Vec<String> = cmdline
-            .split(|byte| *byte == 0)
-            .filter(|part| !part.is_empty())
-            .map(|part| String::from_utf8_lossy(part).into_owned())
-            .collect();
-        let Ok(stat) = std::fs::read_to_string(path.join("stat")) else {
-            continue;
-        };
-        let Some((session_id, tty_nr)) = stat_fields(&stat) else {
-            continue;
-        };
-        let environ = std::fs::read(path.join("environ")).unwrap_or_default();
-        let environ = String::from_utf8_lossy(&environ).into_owned();
-        if let Role::Client { name } = classify(&argv, session_id == pid, tty_nr != 0, &environ) {
-            let Some(socket) = socket_for(&argv, &environ) else {
-                continue;
-            };
-            names.entry(socket.clone()).or_insert(name);
-            claim(&mut found, socket, pid);
-        }
-    }
-    found
-        .into_iter()
-        .map(|(socket, client_pid)| HerdrSession {
-            name: names.get(&socket).cloned().unwrap_or_default(),
-            socket,
-            client_pid,
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -438,15 +314,6 @@ mod tests {
     }
 
     #[test]
-    fn the_stat_line_yields_sid_and_tty_past_a_hostile_comm() {
-        // comm may contain spaces and parens; fields count from after the
-        // last ')'. Layout: pid (comm) state ppid pgrp session tty_nr …
-        let stat = "17 (h (x) dr) S 1 17 17 34816 1234";
-        assert_eq!(stat_fields(stat), Some((17, 34816)));
-        assert_eq!(stat_fields("garbage"), None);
-    }
-
-    #[test]
     fn the_socket_follows_herdrs_own_resolution_order() {
         // Resolved against the *client's* environment, not the daemon's: a
         // herdr started with its own XDG_CONFIG_HOME or HERDR_SOCKET_PATH
@@ -499,35 +366,6 @@ mod tests {
         assert_eq!(
             socket_for(&argv(&["herdr"]), "HERDR_SOCKET_PATH=herdr.sock\0HOME=/h\0"),
             None
-        );
-    }
-
-    #[test]
-    fn two_clients_on_one_socket_are_one_session_and_the_first_wins() {
-        // Same socket, two attached clients: a shared view, so amon follows
-        // one of them — the lowest pid, deterministically. Sessions are kept
-        // apart by socket rather than by name, because two nameless clients
-        // pointed at different sockets are two sessions, not one.
-        let both = [
-            ("HERDR_SOCKET_PATH=/a.sock\0", 40u32),
-            ("HERDR_SOCKET_PATH=/a.sock\0", 12u32),
-            ("HERDR_SOCKET_PATH=/b.sock\0", 30u32),
-        ];
-        let mut found: Vec<(PathBuf, u32)> = Vec::new();
-        for (environ, pid) in both {
-            claim(
-                &mut found,
-                socket_for(&argv(&["herdr"]), environ).expect("an absolute override resolves"),
-                pid,
-            );
-        }
-        found.sort();
-        assert_eq!(
-            found,
-            vec![
-                (PathBuf::from("/a.sock"), 12),
-                (PathBuf::from("/b.sock"), 30)
-            ]
         );
     }
 

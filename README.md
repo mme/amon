@@ -30,11 +30,12 @@ urgent agent state on that workspace's own indicator, and `Super+number` lands
 on the agent that needs you rather than on whatever was focused there last -
 blocked first, then finished-but-unseen, then working, never an agent at rest.
 
-Agents you run in [herdr](https://github.com/herdrdev/herdr) count too. amon
-watches for herdr sessions and puts their agents on the bar and in the panel
-beside the wrapped ones, with the same states, and jumping to one lands on the
-right pane, not just the right window. Wrap an agent, or host it in herdr -
-either way it is one keystroke away.
+Agents you run in [herdr](https://github.com/herdrdev/herdr) or
+[luvus](https://github.com/RizRiyz/luvus) count too. amon watches for their
+sessions and puts their agents on the bar and in the panel beside the wrapped
+ones, with the same states, and jumping to one lands on the right pane, not
+just the right window. Wrap an agent, or host it in a runtime - either way it
+is one keystroke away.
 
 `Super+A` opens the agent panel from wherever you are, over whatever you are
 doing: every agent, grouped by the workspace it is on, each row leading with the
@@ -103,13 +104,15 @@ reports back out of the agent's input - [ADR-0007](./docs/adr/0007-wrapper-enabl
 covers what that costs and why.) If the daemon is missing, wedged, or killed,
 the agent keeps running - observability never interrupts your session.
 
-Inside a herdr session there is no wrapping at all: the daemon speaks to
-herdr's socket, takes the agent states herdr detects itself, and carries them
-onto the bar with the window of the attached client. Agents are shown for as
-long as a client is attached to their session, and `amon focus` asks herdr to
-bring the agent's pane forward once the window is up. An `amon claude` typed
-in a herdr pane runs the agent bare, so there is one detection authority per
-context ([ADR-0001](./docs/adr/0001-vendor-herdr-terminal-and-detect.md),
+Inside a herdr or luvus session there is no wrapping at all: the daemon speaks
+to the runtime's socket, takes the agent states it detects itself, and carries
+them onto the bar with the window of the attached client. Agents are shown for
+as long as a client is attached to their session, and `amon focus` asks the
+runtime to bring the agent's pane forward once the window is up. An
+`amon claude` typed in a herdr or luvus pane runs the agent bare, so there is
+one detection authority per context
+([ADR-0001](./docs/adr/0001-vendor-herdr-terminal-and-detect.md),
+[ADR-0018](./docs/adr/0018-runtimes-live-behind-one-seam.md),
 [the design](./docs/research/herdr-live-integration.md)).
 
 ## Subscribing

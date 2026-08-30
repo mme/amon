@@ -44,17 +44,6 @@
             "null"
           ]
         },
-        "herdr": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/HerdrInfo"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Set when this agent runs inside a herdr session rather than under an\namon wrapper."
-        },
         "hostname": {
           "type": "string"
         },
@@ -74,6 +63,17 @@
             "string",
             "null"
           ]
+        },
+        "runtime": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Runtime"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Set when this agent lives inside an agent runtime (herdr, luvus)\nrather than under an amon wrapper."
         },
         "seen": {
           "description": "Whether the terminal view has had focus since the current\n[`AgentEntry::state`] began. `Idle` and not seen is \"finished but\nunnoticed\" — an annotation on the state rather than a state of its own,\nwhich is why [`AgentEntry::attention`] exists: to combine the two in one\nplace instead of leaving every consumer to invent the same rule.",
@@ -526,31 +526,6 @@
       ],
       "type": "object"
     },
-    "HerdrInfo": {
-      "description": "Where a herdr-hosted agent lives inside herdr. Present exactly on entries\nthe daemon's herdr module projects; wrapped agents never carry it. The\nsocket travels with the entry so a consumer that wants to act on the agent\n(the focus hop) does not re-derive herdr's path rules.",
-      "properties": {
-        "pane": {
-          "description": "The pane currently hosting the agent (`w1:p1`) — what `agent.focus`\ntakes. Pane ids change when panes move across herdr workspaces, so the\ndaemon refreshes this and consumers must not cache it.",
-          "type": "string"
-        },
-        "session": {
-          "description": "Session name; absent for herdr's default session.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "socket": {
-          "description": "Absolute path of the session's JSON API socket.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "socket",
-        "pane"
-      ],
-      "type": "object"
-    },
     "ReportSession": {
       "description": "A hook reporting session identity. Mirrors herdr's\n`pane.report_agent_session`.",
       "properties": {
@@ -820,6 +795,69 @@
           "const": "hook",
           "description": "An installed integration hook, talking to a wrapper rather than the\ndaemon. Hooks do not actually send a hello — they send one request and\nhang up — but the role exists so their frames can be described.",
           "type": "string"
+        }
+      ]
+    },
+    "Runtime": {
+      "description": "Where a runtime-hosted agent lives. Present exactly on entries a runtime\nmodule of the daemon projects; wrapped agents never carry it.\n\nOne variant per runtime, tagged by `kind`, so a consumer that only badges\nor filters reads one field and each runtime keeps its own address shape.\nWhat a variant carries is what the focus hop needs — the socket travels\nwith the entry so the CLI does not re-derive the runtime's path rules.",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "herdr",
+              "type": "string"
+            },
+            "pane": {
+              "description": "The pane hosting the agent (`w1:p1`) — what `agent.focus` takes.\nPane ids change when panes move across herdr workspaces, so the\ndaemon refreshes this and consumers must not cache it.",
+              "type": "string"
+            },
+            "session": {
+              "description": "Session name; absent for the default session.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "socket": {
+              "description": "Absolute path of the session's JSON API socket.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "socket",
+            "pane"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "luvus",
+              "type": "string"
+            },
+            "pane": {
+              "description": "The pane hosting the agent — what `pane.focus` takes. luvus pane\nids are stable for the pane's life.",
+              "type": "string"
+            },
+            "session": {
+              "description": "Session name; absent for the default session.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "socket": {
+              "description": "Absolute path of the session's UHP socket.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "socket",
+            "pane"
+          ],
+          "type": "object"
         }
       ]
     },

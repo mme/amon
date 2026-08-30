@@ -41,10 +41,6 @@ pub enum AgentExit {
     Signal(i32),
 }
 
-/// Set by herdr in every pane process it manages. Its contract, not ours —
-/// the exact name and value herdr documents for integrations.
-const HERDR_ENV: &str = "HERDR_ENV";
-
 /// Runs the agent to completion and returns how it ended.
 pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     let (program, args) = launch
@@ -56,15 +52,19 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     // the same — step aside and let the agent be itself — so both end in
     // `exec_bare`.
 
-    // Inside a herdr pane, amon steps aside entirely. The user's alias still
-    // expands `claude` to `amon claude` there, but wrapping would be the
-    // worst of both worlds: herdr sees an unrecognized `amon` process and
-    // shows no agent, while the wrapper's window walk climbs pane shell →
-    // herdr server → init and registers a row with nowhere to jump to.
-    // Run bare instead: herdr detects the agent natively, and the daemon's
-    // herdr module carries it onto the bar with the client's window — one
-    // detection authority per context (docs/research/herdr-live-integration.md).
-    if std::env::var_os(HERDR_ENV).is_some_and(|value| value == "1") {
+    // Inside a runtime's pane (herdr, luvus), amon steps aside entirely. The
+    // user's alias still expands `claude` to `amon claude` there, but wrapping
+    // would be the worst of both worlds: the runtime sees an unrecognized
+    // `amon` process and shows no agent, while the wrapper's window walk
+    // climbs pane shell → runtime server → init and registers a row with
+    // nowhere to jump to. Run bare instead: the runtime detects the agent
+    // natively, and the daemon's runtime module carries it onto the bar with
+    // the client's window — one detection authority per context
+    // (docs/research/herdr-live-integration.md).
+    if protocol_env::RUNTIME_PANE_ENVS
+        .iter()
+        .any(|name| std::env::var_os(name).is_some_and(|value| value == "1"))
+    {
         return Err(exec_bare(program, args));
     }
 
@@ -158,7 +158,7 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
         subpath: location.subpath.clone(),
         focused: None,
         seen: None,
-        herdr: None,
+        runtime: None,
     });
 
     let focus_shared = focus::Shared::default();

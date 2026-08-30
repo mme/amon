@@ -4,8 +4,8 @@
 //! from quietly breaking a long-running wrapper talking to an upgraded daemon.
 
 use amon_protocol::{
-    AgentEntry, AgentPatch, AgentState, ErrorCode, Event, Hello, HerdrInfo, Method, Request,
-    Response, Role, ServerFrame, PROTOCOL_VERSION,
+    AgentEntry, AgentPatch, AgentState, ErrorCode, Event, Hello, Method, Request, Response, Role,
+    Runtime, ServerFrame, PROTOCOL_VERSION,
 };
 
 fn entry() -> AgentEntry {
@@ -28,7 +28,7 @@ fn entry() -> AgentEntry {
         branch: None,
         focused: None,
         seen: None,
-        herdr: None,
+        runtime: None,
     }
 }
 
@@ -335,26 +335,63 @@ fn only_an_agent_at_rest_is_not_worth_a_jump() {
 }
 
 #[test]
-fn a_herdr_entry_round_trips_and_a_plain_one_stays_bare() {
-    let with_herdr = AgentEntry {
-        id: "herdr:default:term_1".into(),
-        herdr: Some(HerdrInfo {
-            socket: "/home/mme/.config/herdr/herdr.sock".into(),
+fn a_hosted_entry_round_trips_and_a_plain_one_stays_bare() {
+    let hosted = AgentEntry {
+        id: "luvus:abc:7".into(),
+        runtime: Some(Runtime::Luvus {
+            socket: "/home/mme/.luvus/luvus.sock".into(),
             session: None,
-            pane: "w1:p2".into(),
+            pane: "7".into(),
         }),
         ..entry()
     };
-    let json = serde_json::to_value(&with_herdr).unwrap();
-    assert_eq!(json["herdr"]["pane"], "w1:p2");
+    let json = serde_json::to_value(&hosted).unwrap();
+    assert_eq!(json["runtime"]["kind"], "luvus");
+    assert_eq!(json["runtime"]["pane"], "7");
     // The default session is absence, not an empty string, so consumers have
     // one spelling to check.
-    assert!(json["herdr"].get("session").is_none());
+    assert!(json["runtime"].get("session").is_none());
+    assert!(
+        json.get("herdr").is_none(),
+        "the old field is gone for good"
+    );
     let back: AgentEntry = serde_json::from_value(json).unwrap();
-    assert_eq!(back, with_herdr);
+    assert_eq!(back, hosted);
 
     // Absent from the wire when not set, so a consumer that predates the
     // field sees nothing new.
     let json = serde_json::to_value(entry()).unwrap();
-    assert!(json.get("herdr").is_none());
+    assert!(json.get("runtime").is_none());
+}
+
+#[test]
+fn each_runtime_names_its_own_focus_call() {
+    let herdr = Runtime::Herdr {
+        socket: "/s".into(),
+        session: Some("work".into()),
+        pane: "w1:p2".into(),
+    };
+    assert_eq!(
+        herdr.focus_request(),
+        ("agent.focus", serde_json::json!({"target": "w1:p2"}))
+    );
+    let luvus = Runtime::Luvus {
+        socket: "/s".into(),
+        session: None,
+        pane: "7".into(),
+    };
+    assert_eq!(
+        luvus.focus_request(),
+        ("pane.focus", serde_json::json!({"pane": "7"}))
+    );
+    assert_eq!(herdr.kind(), "herdr");
+    assert_eq!(luvus.kind(), "luvus");
+    assert_eq!(luvus.socket(), "/s");
+    assert_eq!(luvus.pane(), "7");
+}
+
+#[test]
+fn an_unknown_runtime_kind_is_rejected_rather_than_misread() {
+    let json = serde_json::json!({"kind": "zed", "socket": "/s", "pane": "1"});
+    assert!(serde_json::from_value::<Runtime>(json).is_err());
 }

@@ -11,6 +11,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
+pub mod hosted;
+
 pub const AMON: &str = env!("CARGO_BIN_EXE_amon");
 
 /// Long enough to absorb a slow machine, short enough that a genuine hang
@@ -19,6 +21,10 @@ const DEADLINE: Duration = Duration::from_secs(10);
 
 pub struct Sandbox {
     runtime: PathBuf,
+    /// Whether the daemon this sandbox spawns adopts runtime sessions
+    /// (herdr, luvus). Off unless a test starts one of its own — see
+    /// [`Sandbox::with_runtimes`].
+    runtimes: bool,
 }
 
 impl Sandbox {
@@ -57,7 +63,26 @@ impl Sandbox {
                 }
             }
         }
-        Self { runtime }
+        Self {
+            runtime,
+            runtimes: false,
+        }
+    }
+
+    /// A sandbox whose daemon watches for runtime sessions. Only sessions
+    /// under this sandbox are adopted (`AMON_RUNTIMES_ROOT`), so the
+    /// developer's own herdr or luvus never leaks into a test.
+    pub fn with_runtimes(mut self) -> Self {
+        self.runtimes = true;
+        self
+    }
+
+    fn runtimes_flag(&self) -> &'static str {
+        if self.runtimes {
+            "1"
+        } else {
+            "0"
+        }
     }
 
     pub fn command(&self, args: &[&str]) -> Command {
@@ -81,8 +106,11 @@ impl Sandbox {
         // sandbox: planted stubs first, then the symlinked tool bin.
         command.env("PATH", self.sandbox_path());
         // The daemon a test spawns inherits this: it must not adopt agents
-        // from a herdr session the developer happens to have open.
-        command.env("AMON_HERDR", "0");
+        // from a herdr or luvus session the developer happens to have open,
+        // and when a test does start one, only sessions inside this sandbox
+        // count.
+        command.env("AMON_RUNTIMES", self.runtimes_flag());
+        command.env("AMON_RUNTIMES_ROOT", &self.runtime);
         // A developer running the tests from a terminal that is itself
         // wrapped by amon carries these; a test's agent would inherit them
         // and look wrapped when it is not.
@@ -90,6 +118,7 @@ impl Sandbox {
         command.env_remove("AMON_AGENT_ID");
         command.env_remove("AMON_SOCKET_PATH");
         command.env_remove("HERDR_ENV");
+        command.env_remove("LUVUS_ENV");
         command
     }
 
@@ -314,6 +343,22 @@ impl Client {
     }
 }
 
+/// Polls `probe` until it yields, within `deadline`. Panics with `what`.
+pub fn wait_for_within<T>(
+    what: &str,
+    deadline: Duration,
+    mut probe: impl FnMut() -> Option<T>,
+) -> T {
+    let start = Instant::now();
+    while start.elapsed() < deadline {
+        if let Some(value) = probe() {
+            return value;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    panic!("timed out after {deadline:?} waiting for {what}");
+}
+
 pub fn read_to_string(mut source: impl Read) -> String {
     let mut text = String::new();
     let _ = source.read_to_string(&mut text);
@@ -390,16 +435,27 @@ pub struct PtySession {
 impl PtySession {
     /// Starts `amon <argv>` on a PTY, draining its output in the background.
     pub fn start(sandbox: &Sandbox, argv: &[&str]) -> Self {
+        Self::start_program(sandbox, Path::new(AMON), argv, &[])
+    }
+
+    /// Starts any program on a PTY inside the sandbox, with `env` on top of
+    /// the sandbox's own. How a runtime's client gets its terminal.
+    pub fn start_program(
+        sandbox: &Sandbox,
+        program: &Path,
+        argv: &[&str],
+        env: &[(&str, &str)],
+    ) -> Self {
         let pty = portable_pty::native_pty_system()
             .openpty(portable_pty::PtySize {
-                rows: 24,
-                cols: 80,
+                rows: 40,
+                cols: 120,
                 pixel_width: 0,
                 pixel_height: 0,
             })
             .expect("openpty");
 
-        let mut command = portable_pty::CommandBuilder::new(AMON);
+        let mut command = portable_pty::CommandBuilder::new(program);
         command.args(argv);
         command.env("XDG_RUNTIME_DIR", sandbox.runtime_dir());
         command.env("XDG_STATE_HOME", sandbox.runtime_path("state"));
@@ -412,13 +468,18 @@ impl PtySession {
         // own desktop, and these tests are about focus, not windows.
         command.env_remove("HYPRLAND_INSTANCE_SIGNATURE");
         // Same reasons as `Sandbox::command`: no adopting the developer's
-        // live herdr session, and no inheriting the wrapper's marks from a
+        // live sessions, and no inheriting the wrapper's marks from a
         // terminal that is itself running under amon.
-        command.env("AMON_HERDR", "0");
+        command.env("AMON_RUNTIMES", sandbox.runtimes_flag());
+        command.env("AMON_RUNTIMES_ROOT", sandbox.runtime_dir());
         command.env_remove("AMON_ENV");
         command.env_remove("AMON_AGENT_ID");
         command.env_remove("AMON_SOCKET_PATH");
         command.env_remove("HERDR_ENV");
+        command.env_remove("LUVUS_ENV");
+        for (name, value) in env {
+            command.env(name, value);
+        }
         let child = pty.slave.spawn_command(command).expect("spawn");
         drop(pty.slave);
 

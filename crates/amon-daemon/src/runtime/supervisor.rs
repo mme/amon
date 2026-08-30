@@ -1,4 +1,4 @@
-//! One thread per attached herdr session, projecting its agents into the
+//! One thread per attached runtime session, projecting its agents into the
 //! registry for exactly as long as the session has a client (spec decision:
 //! no client, no rows).
 //!
@@ -20,23 +20,29 @@ use std::time::Duration;
 
 use amon_protocol::{AgentEntry, AgentPatch};
 
-use super::proc::{self, HerdrSession};
-use super::{project, wire};
+use super::herdr::Herdr;
+use super::luvus::Luvus;
+use super::{discover, project, wire, Hosted, HostedAgent, HostedEvent, Session};
 use crate::Registry;
 
 const RESCAN_INTERVAL: Duration = Duration::from_secs(2);
 const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 
-/// Starts watching this machine for herdr sessions, forever.
+/// Starts watching this machine for runtime sessions, forever — one
+/// watcher per runtime.
 ///
 /// `connections` is the daemon's connection-id counter: projected entries
 /// and real socket connections draw from one id space, because the registry
 /// keys ownership by connection id and two allocators would collide.
 pub fn spawn(registry: Registry, connections: Arc<AtomicU64>) {
-    std::thread::spawn(move || watch(registry, connections));
+    std::thread::spawn({
+        let (registry, connections) = (registry.clone(), connections.clone());
+        move || watch::<Herdr>(registry, connections)
+    });
+    std::thread::spawn(move || watch::<Luvus>(registry, connections));
 }
 
-struct Session {
+struct Live {
     stop: Arc<AtomicBool>,
     /// Set by the session thread once it has let go of every entry it owned.
     done: Arc<AtomicBool>,
@@ -49,13 +55,13 @@ struct Session {
 /// while a stuck watcher is not.
 const HANDOVER_GRACE: Duration = Duration::from_secs(2);
 
-fn watch(registry: Registry, connections: Arc<AtomicU64>) {
+fn watch<H: Hosted>(registry: Registry, connections: Arc<AtomicU64>) {
     // Keyed by socket, which is what a session *is*: two clients with no
     // session name pointed at different sockets are two sessions, and the
     // name is only what the rows are called.
-    let mut live: HashMap<PathBuf, Session> = HashMap::new();
+    let mut live: HashMap<PathBuf, Live> = HashMap::new();
     loop {
-        let found: HashMap<PathBuf, HerdrSession> = proc::sessions()
+        let found: HashMap<PathBuf, Session> = discover::sessions::<H>()
             .into_iter()
             .map(|session| (session.socket.clone(), session))
             .collect();
@@ -88,7 +94,7 @@ fn watch(registry: Registry, connections: Arc<AtomicU64>) {
             let done = Arc::new(AtomicBool::new(false));
             live.insert(
                 socket,
-                Session {
+                Live {
                     stop: stop.clone(),
                     done: done.clone(),
                     client_pid: session.client_pid,
@@ -98,7 +104,7 @@ fn watch(registry: Registry, connections: Arc<AtomicU64>) {
             let connections = connections.clone();
             std::thread::spawn(move || {
                 let watch = WindowWatch::open(session.client_pid);
-                run_session(session, registry, connections, stop, done, watch);
+                run_session::<H>(session, registry, connections, stop, done, watch);
             });
         }
         std::thread::sleep(RESCAN_INTERVAL);
@@ -146,12 +152,12 @@ impl WindowWatch {
 fn compositor_dir(pid: u32) -> Option<PathBuf> {
     let environ = std::fs::read(format!("/proc/{pid}/environ")).unwrap_or_default();
     let environ = String::from_utf8_lossy(&environ);
-    let Some(signature) = proc::env_value(&environ, "HYPRLAND_INSTANCE_SIGNATURE") else {
+    let Some(signature) = discover::env_value(&environ, "HYPRLAND_INSTANCE_SIGNATURE") else {
         // An unreadable environ leaves the daemon's own compositor as the
         // best guess, and on one desktop it is the right one.
         return amon_hypr::socket_dir();
     };
-    let runtime = proc::env_value(&environ, "XDG_RUNTIME_DIR")
+    let runtime = discover::env_value(&environ, "XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .or_else(amon_hypr::runtime_dir);
     amon_hypr::socket_dir_for(std::ffi::OsStr::new(signature), runtime)
@@ -167,7 +173,7 @@ fn now_ms() -> u64 {
 /// What the session thread and the window follower both touch.
 struct Shared {
     window: Option<amon_hypr::Window>,
-    /// terminal_id → its registry claim. Keyed by herdr's stable terminal
+    /// identity → its registry claim. Keyed by the runtime's stable
     /// identity, not by pane id: a pane move renames the pane but must not
     /// look like an agent leaving and another arriving.
     owned: HashMap<String, Owned>,
@@ -178,15 +184,16 @@ struct Owned {
     /// The entry as last registered, kept so updates can preserve
     /// `state_since` across resnapshots and skip no-op registrations.
     entry: AgentEntry,
-    /// herdr's transition counter as of that entry, which is how a restart
-    /// in the same terminal is told from the life already being watched.
-    seq: Option<u64>,
+    /// The runtime's per-life counter as of that entry, which is how a
+    /// restart in the same terminal is told from the life already being
+    /// watched.
+    life: Option<u64>,
 }
 
 /// Whether the terminal's agent counter went backwards, which only a new
 /// agent can do. Unknown on either side is not evidence of anything —
-/// herdr may not have said — so it reads as the same life, leaving the
-/// agent label as the only distinction, exactly as before.
+/// the runtime may not have said, or keep no counter — so it reads as the
+/// same life, leaving the agent label as the only distinction.
 fn restarted(was: Option<u64>, now: Option<u64>) -> bool {
     matches!((was, now), (Some(was), Some(now)) if now < was)
 }
@@ -199,8 +206,8 @@ fn await_done(done: &Arc<AtomicBool>) {
     }
 }
 
-pub(crate) fn run_session(
-    session: HerdrSession,
+pub(crate) fn run_session<H: Hosted>(
+    session: Session,
     registry: Registry,
     connections: Arc<AtomicU64>,
     stop: Arc<AtomicBool>,
@@ -221,27 +228,14 @@ pub(crate) fn run_session(
     spawn_stop_watch(&stop, &done, &current, compositor);
     spawn_window_follow(watch, session.client_pid, &registry, &shared, &stop);
 
+    let mut host = H::new();
     while !stop.load(Ordering::Relaxed) {
-        let panes: Vec<String> = lock(&shared)
-            .owned
-            .values()
-            .filter_map(|owned| owned.entry.herdr.as_ref().map(|h| h.pane.clone()))
-            .collect();
-        let Ok(events) = wire::subscribe(
-            &session.socket,
-            subscriptions_for(panes.iter().map(String::as_str)),
-        ) else {
+        let panes = owned_panes(&shared);
+        let Ok((agents, events)) = host.attach(&session.socket, &panes) else {
             std::thread::sleep(RETRY_INTERVAL);
             continue;
         };
         *lock(&current) = Some(events.shutdown_handle());
-
-        let Ok(snapshot) =
-            wire::request(&session.socket, "session.snapshot", serde_json::json!({}))
-        else {
-            std::thread::sleep(RETRY_INTERVAL);
-            continue;
-        };
         // The client may have gone while that request was in flight. Writing
         // this snapshot now would put a window that has closed back on rows
         // the replacement session has already corrected — and the correction
@@ -250,38 +244,54 @@ pub(crate) fn run_session(
         if stop.load(Ordering::Relaxed) {
             break;
         }
-        reconcile(
-            &wire::agents_from(&snapshot),
-            &session,
-            &registry,
-            &connections,
-            &shared,
-        );
-        // The subscription covers the agent panes known *before* this
-        // snapshot. If the set changed, resubscribe before trusting it —
-        // a status change on a pane outside the set would go unheard.
-        let mut current_panes: Vec<String> = lock(&shared)
-            .owned
-            .values()
-            .filter_map(|owned| owned.entry.herdr.as_ref().map(|h| h.pane.clone()))
-            .collect();
-        let mut subscribed = panes;
-        current_panes.sort();
-        subscribed.sort();
-        if current_panes != subscribed {
-            continue;
+        reconcile::<H>(&agents, &session, &registry, &connections, &shared);
+        // Where status is subscribed per pane, the subscription covers the
+        // agent panes known *before* this snapshot. If the set changed,
+        // resubscribe before trusting it — a status change on a pane outside
+        // the set would go unheard.
+        if H::STATUS_PER_PANE {
+            let mut current_panes = owned_panes(&shared);
+            let mut subscribed = panes;
+            current_panes.sort();
+            subscribed.sort();
+            if current_panes != subscribed {
+                drop_stream(&current, events);
+                continue;
+            }
         }
 
-        for event in events {
+        let mut events = events;
+        for event in events.by_ref() {
             if stop.load(Ordering::Relaxed) {
                 break;
             }
-            if event.event != "pane.agent_status_changed" {
+            let labels: HashMap<String, String> = lock(&shared)
+                .owned
+                .values()
+                .filter_map(|owned| {
+                    let pane = owned.entry.runtime.as_ref()?.pane().to_owned();
+                    Some((pane, owned.entry.agent.clone()))
+                })
+                .collect();
+            match host.event(&event, &labels) {
+                HostedEvent::Status {
+                    pane,
+                    status,
+                    agent,
+                } => apply_status(&registry, &shared, &pane, &status, agent),
+                // The claim goes first, so the snapshot's find in that pane
+                // — even the same kind of agent, restarted — arrives as what
+                // it is: a first claim, with clocks of its own.
+                HostedEvent::Departed { pane } => {
+                    retire_pane(&registry, &shared, &pane);
+                    break;
+                }
                 // Structural: start over with a fresh snapshot.
-                break;
+                HostedEvent::Structural => break,
+                HostedEvent::Ignore => {}
             }
-            apply_status(&registry, &shared, &event.data);
         }
+        drop_stream(&current, events);
     }
 
     for owned in lock(&shared).owned.drain().map(|(_, owned)| owned) {
@@ -290,31 +300,56 @@ pub(crate) fn run_session(
     done.store(true, Ordering::Relaxed);
 }
 
+/// Ends an abandoned stream now rather than when the next one replaces it.
+/// The handle in `current` is a second descriptor on the same connection,
+/// so dropping the stream alone leaves the subscription — and the runtime's
+/// thread behind it — alive for as long as the next attach takes; against a
+/// runtime with a subscriber cap, that is the slot the next attach needs.
+fn drop_stream(current: &Arc<Mutex<Option<wire::ShutdownHandle>>>, events: wire::EventStream) {
+    if let Some(handle) = lock(current).take() {
+        handle.shutdown();
+    }
+    drop(events);
+}
+
+fn retire_pane(registry: &Registry, shared: &Arc<Mutex<Shared>>, pane: &str) {
+    let mut shared = lock(shared);
+    let Some(identity) = shared
+        .owned
+        .iter()
+        .find(|(_, owned)| {
+            owned
+                .entry
+                .runtime
+                .as_ref()
+                .is_some_and(|r| r.pane() == pane)
+        })
+        .map(|(identity, _)| identity.clone())
+    else {
+        return;
+    };
+    if let Some(owned) = shared.owned.remove(&identity) {
+        registry.disconnect(owned.connection);
+    }
+}
+
+fn owned_panes(shared: &Arc<Mutex<Shared>>) -> Vec<String> {
+    lock(shared)
+        .owned
+        .values()
+        .filter_map(|owned| owned.entry.runtime.as_ref().map(|r| r.pane().to_owned()))
+        .collect()
+}
+
 fn lock<T>(shared: &Arc<Mutex<T>>) -> std::sync::MutexGuard<'_, T> {
     shared
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Global lifecycle events, plus one status subscription per known agent
-/// pane — herdr has no global status subscription, and a connection's set is
-/// fixed, which is why structural changes reconnect.
-fn subscriptions_for<'a>(panes: impl Iterator<Item = &'a str>) -> Vec<serde_json::Value> {
-    let mut subscriptions = vec![
-        serde_json::json!({"type": "pane.agent_detected"}),
-        serde_json::json!({"type": "pane.closed"}),
-        serde_json::json!({"type": "pane.exited"}),
-        serde_json::json!({"type": "pane.moved"}),
-    ];
-    subscriptions.extend(
-        panes.map(|pane| serde_json::json!({"type": "pane.agent_status_changed", "pane_id": pane})),
-    );
-    subscriptions
-}
-
-fn reconcile(
-    agents: &[wire::HerdrAgent],
-    session: &HerdrSession,
+fn reconcile<H: Hosted>(
+    agents: &[HostedAgent],
+    session: &Session,
     registry: &Registry,
     connections: &Arc<AtomicU64>,
     shared: &Arc<Mutex<Shared>>,
@@ -323,24 +358,24 @@ fn reconcile(
     let window = shared.window.clone();
     let mut present: std::collections::HashSet<String> = Default::default();
     for agent in agents {
-        present.insert(agent.terminal_id.clone());
-        let mut entry = project::entry_for(agent, session, window.as_ref(), now_ms());
-        let seq = agent.state_change_seq;
+        present.insert(agent.identity.clone());
+        let mut entry = project::entry_for::<H>(agent, session, window.as_ref(), now_ms());
+        let life = agent.life;
         let previous = shared
             .owned
-            .get(&agent.terminal_id)
-            .map(|owned| (owned.connection, owned.entry.clone(), owned.seq));
+            .get(&agent.identity)
+            .map(|owned| (owned.connection, owned.entry.clone(), owned.life));
 
         // A resnapshot is a fresh look at the same agent, not a fresh agent,
         // so its clocks carry over — but only while it *is* the same agent.
-        // A herdr terminal outlives what runs in it: finish with claude and
-        // start codex, or just claude again, and the terminal id is
-        // unchanged while the lifetime is not. Carrying clocks across that
-        // would date the new agent from the old one's launch and sort it by
-        // a wait it never had.
-        let same_lifetime = previous
-            .as_ref()
-            .is_some_and(|(_, was, was_seq)| was.agent == entry.agent && !restarted(*was_seq, seq));
+        // A terminal outlives what runs in it: finish with claude and start
+        // codex, or just claude again, and the identity is unchanged while
+        // the lifetime is not. Carrying clocks across that would date the
+        // new agent from the old one's launch and sort it by a wait it never
+        // had.
+        let same_lifetime = previous.as_ref().is_some_and(|(_, was, was_life)| {
+            was.agent == entry.agent && !restarted(*was_life, life)
+        });
 
         if let (true, Some((connection, was, _))) = (same_lifetime, previous.clone()) {
             entry.started_at = was.started_at;
@@ -353,11 +388,11 @@ fn reconcile(
                 registry.register(connection, entry.clone());
             }
             shared.owned.insert(
-                agent.terminal_id.clone(),
+                agent.identity.clone(),
                 Owned {
                     connection,
                     entry,
-                    seq,
+                    life,
                 },
             );
             continue;
@@ -374,21 +409,16 @@ fn reconcile(
         let connection = connections.fetch_add(1, Ordering::Relaxed);
         registry.register(connection, entry.clone());
         shared.owned.insert(
-            agent.terminal_id.clone(),
+            agent.identity.clone(),
             Owned {
                 connection,
                 entry,
-                seq,
+                life,
             },
         );
     }
-    shared.owned.retain(|_, owned| {
-        let keep = owned
-            .entry
-            .id
-            .rsplit(':')
-            .next()
-            .is_some_and(|terminal| present.contains(terminal));
+    shared.owned.retain(|identity, owned| {
+        let keep = present.contains(identity);
         if !keep {
             registry.disconnect(owned.connection);
         }
@@ -396,7 +426,7 @@ fn reconcile(
     });
 }
 
-/// Applies one `pane.agent_status_changed`.
+/// Applies one status event.
 ///
 /// The event carries the agent's presentation as well as its status, and
 /// they move independently: a working agent that starts on something else
@@ -404,31 +434,33 @@ fn reconcile(
 /// leave the row describing work that finished a while ago, so both travel
 /// in one patch — and the clock only restarts when the state itself moved,
 /// or every title change would reset how long the agent has been at it.
-fn apply_status(registry: &Registry, shared: &Arc<Mutex<Shared>>, data: &serde_json::Value) {
-    let Some(pane) = data.get("pane_id").and_then(|id| id.as_str()) else {
-        return;
-    };
-    let Some(status) = data.get("agent_status").and_then(|status| status.as_str()) else {
-        return;
-    };
+fn apply_status(
+    registry: &Registry,
+    shared: &Arc<Mutex<Shared>>,
+    pane: &str,
+    status: &str,
+    agent: Option<Option<String>>,
+) {
     let mut shared = lock(shared);
-    let Some(owned) = shared
-        .owned
-        .values_mut()
-        .find(|owned| owned.entry.herdr.as_ref().is_some_and(|h| h.pane == pane))
-    else {
+    let Some(owned) = shared.owned.values_mut().find(|owned| {
+        owned
+            .entry
+            .runtime
+            .as_ref()
+            .is_some_and(|r| r.pane() == pane)
+    }) else {
         return;
     };
 
     let mut patch = AgentPatch::new(owned.entry.id.clone());
     let (state, seen) = project::state_for(status);
     // `state_since` is when the agent entered this state, and being looked
-    // at is not entering anything. herdr's `done` and `idle` are one amon
-    // state either side of `seen`, so focusing a finished agent arrives here
-    // as a seen-only change — and restarting the clock for it would turn
-    // "finished twenty minutes ago" into "finished just now" for no reason
-    // but that you glanced at it. Wrapped agents keep their clock across the
-    // same moment.
+    // at is not entering anything. A runtime's `done` and `idle` are one
+    // amon state either side of `seen`, so focusing a finished agent arrives
+    // here as a seen-only change — and restarting the clock for it would
+    // turn "finished twenty minutes ago" into "finished just now" for no
+    // reason but that you glanced at it. Wrapped agents keep their clock
+    // across the same moment.
     if owned.entry.state != state {
         let since = now_ms();
         patch.state = Some(state);
@@ -440,16 +472,11 @@ fn apply_status(registry: &Registry, shared: &Arc<Mutex<Shared>>, data: &serde_j
         patch.seen = Some(seen);
         owned.entry.seen = seen;
     }
-    // Present-and-null means herdr no longer has a name for what is in the
-    // pane; absent means it did not say. The projection reads a null the
-    // same way, and the two paths must agree or the row keeps the name of an
-    // agent that has gone.
-    let label = match data.get("agent") {
-        None => None,
-        Some(serde_json::Value::Null) => Some(project::UNNAMED.to_owned()),
-        Some(agent) => agent.as_str().map(str::to_owned),
-    };
-    if let Some(label) = label {
+    // Some(None) is a runtime that no longer has a name for what is in the
+    // pane; the projection labels that the same way, and the two paths must
+    // agree or the row keeps the name of an agent that has gone.
+    if let Some(agent) = agent {
+        let label = agent.unwrap_or_else(|| project::UNNAMED.to_owned());
         if owned.entry.agent != label {
             patch.agent = Some(label.clone());
             owned.entry.agent = label;
@@ -502,7 +529,7 @@ fn spawn_stop_watch(
 }
 
 /// Follows the client's window between Hyprland workspaces, patching every
-/// entry the session owns. The agents all live in one window — the herdr
+/// entry the session owns. The agents all live in one window — the
 /// client's terminal — so one move patches them all.
 fn spawn_window_follow(
     watch: Option<WindowWatch>,
@@ -556,6 +583,11 @@ mod tests {
     /// A canned herdr: answers `session.snapshot` with the given agents,
     /// acks subscriptions and keeps them open, and fans every line pushed
     /// through the returned sender out to all live subscriptions.
+    ///
+    /// One live subscription at a time, like the luvus fake: herdr's first
+    /// attach subscribes for no panes, sees the snapshot, and re-attaches
+    /// for the panes it found — and that second subscription is refused
+    /// unless the first was closed before it was asked for.
     fn fake_herdr(
         agents: serde_json::Value,
     ) -> (tempfile::TempDir, std::path::PathBuf, mpsc::Sender<String>) {
@@ -584,11 +616,20 @@ mod tests {
                 }
                 let mut stream = stream;
                 if line.contains("events.subscribe") {
+                    let mut live = subscribers.lock().unwrap();
+                    live.retain(|stream| !peer_closed(stream));
+                    if !live.is_empty() {
+                        let _ = writeln!(
+                            stream,
+                            r#"{{"id":"s","error":{{"code":"unavailable","message":"too many subscriptions"}}}}"#
+                        );
+                        continue;
+                    }
                     let _ = writeln!(
                         stream,
                         r#"{{"id":"s","result":{{"type":"subscription_started"}}}}"#
                     );
-                    subscribers.lock().unwrap().push(stream);
+                    live.push(stream);
                 } else if line.contains("session.snapshot") {
                     let result = serde_json::json!({
                         "id": "r",
@@ -616,11 +657,206 @@ mod tests {
         // herdr's terminal id belongs to the pane, not to what runs in it.
         // Only a counter going backwards, or a different agent, marks the
         // moment one life ended and the next began.
-        assert!(!restarted(None, None), "herdr said nothing either time");
+        assert!(
+            !restarted(None, None),
+            "the runtime said nothing either time"
+        );
         assert!(!restarted(Some(4), None), "and nothing is not evidence");
         assert!(!restarted(Some(4), Some(4)), "standing still is one life");
         assert!(!restarted(Some(4), Some(9)), "counting up is one life");
         assert!(restarted(Some(9), Some(1)), "only a new agent counts down");
+    }
+
+    /// A canned luvus: pongs, acks one global subscription (counting them),
+    /// answers `agent.list` with `agents`, and fans pushed lines out.
+    ///
+    /// Capped at one live subscription, the way a runtime with a subscriber
+    /// table is in its last slot: a new subscription while the abandoned
+    /// one is still open is refused with `unavailable`. That is what makes
+    /// closing an abandoned stream *before* re-attaching load-bearing here.
+    fn fake_luvus(
+        agents: Arc<Mutex<serde_json::Value>>,
+    ) -> (
+        tempfile::TempDir,
+        std::path::PathBuf,
+        mpsc::Sender<String>,
+        Arc<AtomicU64>,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("luvus.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        let (pushes, inbox) = mpsc::channel::<String>();
+        let subscribers: Arc<Mutex<Vec<UnixStream>>> = Arc::default();
+        let subscriptions = Arc::new(AtomicU64::new(0));
+
+        let fanout = subscribers.clone();
+        std::thread::spawn(move || {
+            while let Ok(line) = inbox.recv() {
+                fanout
+                    .lock()
+                    .unwrap()
+                    .retain_mut(|stream| writeln!(stream, "{line}").is_ok());
+            }
+        });
+
+        let counted = subscriptions.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    continue;
+                }
+                let mut stream = stream;
+                if line.contains(r#""method":"ping""#) {
+                    let _ = writeln!(
+                        stream,
+                        r#"{{"id":"amon","result":{{"type":"pong","protocol":1}}}}"#
+                    );
+                } else if line.contains("events.subscribe") {
+                    let mut live = subscribers.lock().unwrap();
+                    live.retain(|stream| !peer_closed(stream));
+                    if !live.is_empty() {
+                        let _ = writeln!(
+                            stream,
+                            r#"{{"id":"s","error":{{"code":"unavailable","message":"event subscriber capacity is full"}}}}"#
+                        );
+                        continue;
+                    }
+                    counted.fetch_add(1, Ordering::Relaxed);
+                    let _ = writeln!(
+                        stream,
+                        r#"{{"id":"s","result":{{"type":"subscription_started","sequence":1}}}}"#
+                    );
+                    live.push(stream);
+                } else if line.contains("agent.list") {
+                    let result = serde_json::json!({
+                        "id": "r",
+                        "result": {"type": "agent_list", "agents": *agents.lock().unwrap()},
+                    });
+                    let _ = writeln!(stream, "{result}");
+                }
+            }
+        });
+        (dir, socket, pushes, subscriptions)
+    }
+
+    /// Whether the other end has hung up: a non-blocking read answers
+    /// `Ok(0)` for a closed peer and `WouldBlock` for a quiet open one.
+    fn peer_closed(stream: &UnixStream) -> bool {
+        use std::io::Read;
+        let _ = stream.set_nonblocking(true);
+        let mut probe = [0u8; 1];
+        let closed = matches!((&*stream).read(&mut probe), Ok(0));
+        let _ = stream.set_nonblocking(false);
+        closed
+    }
+
+    #[test]
+    fn a_luvus_status_event_patches_in_stream_without_a_fresh_attach() {
+        // The event path is what makes status changes fast; a runtime whose
+        // every status event were read as structural would still show the
+        // right state, one snapshot later, and nothing in an e2e test could
+        // tell. The subscription count can.
+        let claude_in_7 = serde_json::json!([
+            {"pane": "7", "agent": "claude", "status": "working", "cwd": "/repo"}
+        ]);
+        let agents = Arc::new(Mutex::new(claude_in_7.clone()));
+        let (_dir, socket, pushes, subscriptions) = fake_luvus(agents.clone());
+        let registry = crate::Registry::new();
+        let stop = Arc::new(AtomicBool::new(false));
+        let session = Session {
+            name: None,
+            socket,
+            client_pid: std::process::id(),
+        };
+        let handle = std::thread::spawn({
+            let registry = registry.clone();
+            let stop = stop.clone();
+            move || {
+                run_session::<Luvus>(
+                    session,
+                    registry,
+                    Arc::new(AtomicU64::new(2000)),
+                    stop,
+                    Arc::new(AtomicBool::new(false)),
+                    None,
+                )
+            }
+        });
+
+        let entry = wait_for(|| {
+            registry
+                .agents()
+                .into_iter()
+                .find(|agent| agent.id.ends_with(":7"))
+        });
+        assert_eq!(entry.state, AgentState::Working);
+        assert!(matches!(
+            entry.runtime,
+            Some(amon_protocol::Runtime::Luvus { .. })
+        ));
+        assert_eq!(subscriptions.load(Ordering::Relaxed), 1);
+
+        wait_for(|| {
+            let event = r#"{"event":"pane.agent_status_changed","sequence":2,"data":{"pane":"7","status":"blocked","agent":"claude"}}"#;
+            let _ = pushes.send(event.into());
+            registry
+                .agents()
+                .into_iter()
+                .find(|agent| agent.id.ends_with(":7") && agent.state == AgentState::Blocked)
+        });
+        assert_eq!(
+            subscriptions.load(Ordering::Relaxed),
+            1,
+            "a status change is a patch, not a resnapshot"
+        );
+
+        // The agent leaving its pane retires the row, while the session
+        // goes on watching.
+        *agents.lock().unwrap() = serde_json::json!([]);
+        let _ = pushes.send(
+            r#"{"event":"pane.agent_status_changed","sequence":3,"data":{"pane":"7","status":"idle","agent":""}}"#.into(),
+        );
+        // Two subscriptions on a fake that allows one live at a time: the
+        // abandoned stream was closed before the replacement asked. Waited
+        // for, because the claim is retired before the stream is dropped.
+        wait_for(|| (subscriptions.load(Ordering::Relaxed) == 2).then_some(()));
+        wait_for(|| registry.agents().is_empty().then_some(()));
+
+        // The same kind of agent back in the same pane is a new life, even
+        // when the snapshot already shows it by the time the departure is
+        // read: luvus has no per-life counter, so the departure event is
+        // the only thing that tells the two claudes apart.
+        *agents.lock().unwrap() = claude_in_7.clone();
+        let _ = pushes.send(
+            r#"{"event":"pane.agent_status_changed","sequence":4,"data":{"pane":"7","status":"working","agent":"claude"}}"#.into(),
+        );
+        let first = wait_for(|| {
+            registry
+                .agents()
+                .into_iter()
+                .find(|agent| agent.id.ends_with(":7"))
+        });
+        std::thread::sleep(Duration::from_millis(30));
+        let _ = pushes.send(
+            r#"{"event":"pane.agent_status_changed","sequence":5,"data":{"pane":"7","status":"idle","agent":""}}"#.into(),
+        );
+        let second = wait_for(|| {
+            registry
+                .agents()
+                .into_iter()
+                .find(|agent| agent.id.ends_with(":7") && agent.started_at > first.started_at)
+        });
+        assert_eq!(
+            second.state,
+            AgentState::Working,
+            "a first claim, from the snapshot"
+        );
+
+        stop.store(true, Ordering::Relaxed);
+        handle.join().unwrap();
+        assert!(registry.agents().is_empty());
     }
 
     #[test]
@@ -631,7 +867,7 @@ mod tests {
         ]));
         let registry = crate::Registry::new();
         let stop = Arc::new(AtomicBool::new(false));
-        let session = crate::herdr::proc::HerdrSession {
+        let session = Session {
             name: Some("work".into()),
             socket,
             client_pid: std::process::id(),
@@ -640,7 +876,7 @@ mod tests {
             let registry = registry.clone();
             let stop = stop.clone();
             move || {
-                run_session(
+                run_session::<Herdr>(
                     session,
                     registry,
                     Arc::new(AtomicU64::new(1000)),
@@ -659,7 +895,7 @@ mod tests {
                 .find(|agent| agent.id.ends_with(":t1"))
         });
         assert_eq!(entry.state, AgentState::Working);
-        assert_eq!(entry.herdr.as_ref().unwrap().pane, "w1:p1");
+        assert_eq!(entry.runtime.as_ref().unwrap().pane(), "w1:p1");
 
         // A status event lands as a patch. Sent until observed: the
         // supervisor may still be between its first and second subscription,

@@ -36,7 +36,8 @@ jobs:
 
       # The e2e fake agents report through sockets with socat, which the
       # runner image does not ship. Without it four tests hang to their
-      # timeout and take the suite down with them.
+      # timeout and take the suite down with them. (The real herdr and luvus
+      # the hosted e2e tests drive come from mise, pinned in .mise.toml.)
       - name: Install socat
         run: sudo apt-get install -y --no-install-recommends socat
 

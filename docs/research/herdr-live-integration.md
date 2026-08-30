@@ -193,3 +193,35 @@ deliberately best-effort:
 4. Nothing reports *into* herdr in this phase; `pane.report_agent` /
    `notification.show` / metadata tokens are later options, as is a tiny
    herdr plugin if the per-pane subscription bookkeeping ever grates.
+
+## luvus, the second runtime
+
+Added 2026-08-30 against luvus 0.13.2 (UHP 1.0). The shape is herdr's — a
+detached `luvus server` under setsid, the typed `luvus` as the tty-owning
+client, JSON lines on `$LUVUS_HOME/luvus.sock` (default `~/.luvus`, named
+sessions under `sessions/<name>/luvus.sock`, paths of 100+ bytes aliased into
+`/tmp/luvus-<uid>/<fnv1a>-api.sock`) — so the same discovery, supervisor and
+projection serve it behind the runtime seam (ADR-0018). Where it deviates:
+
+- **One global, sequenced subscription.** `events.subscribe {after_sequence}`
+  covers every pane; the last `sequence` seen is handed back on reconnect,
+  and `events.resync_required` means the ring overran — resnapshot.
+- **`agent.list` is the bootstrap**, not `session.snapshot`; records carry
+  `pane, agent, status, cwd`. `ping` must answer `protocol: 1`.
+- **Pane ids are stable** (a monotonic `u32` for the pane's life, unchanged
+  by moves), so the pane *is* the identity, and there is no
+  `state_change_seq`.
+- **No "agent detected" event.** A `pane.agent_status_changed` for a pane
+  amon does not own, or whose `agent` label differs from the one amon holds
+  (an agent that exited leaves an empty label), is structural.
+- **The hop is `pane.focus {pane}`**, which switches workspace and tab and
+  marks the pane seen; `done` → `idle` follows on luvus's next detection
+  tick, not synchronously.
+- **`LUVUS_ENV=1`** in every pane is the wrapper's cue to step aside.
+
+Two things the e2e tests had to learn from the runtimes themselves: typing a
+command into a freshly split pane races the shell in both, so the fake agent
+is the pane's `$SHELL` instead; and herdr suppresses the completion that
+immediately follows acquiring an agent, and counts a whole active tab as
+seen, so its `done` needs a second working stint in a background tab, while
+luvus counts the first stint in an unfocused split.

@@ -1,11 +1,12 @@
-//! Speaking herdr's socket: newline-delimited JSON, one request per
-//! connection, except a subscription, which acks and then streams.
+//! Speaking a runtime's socket: newline-delimited JSON, one request per
+//! connection, except a subscription, which acks and then streams. herdr
+//! and luvus share the framing to the byte; only method names differ.
 //!
-//! Deliberately raw the whole way down — the daemon never shells out to the
-//! `herdr` CLI, whose protocol guard hard-fails on any version mismatch,
-//! while the socket serves any client and grows additively. Parsing is
-//! permissive for the same reason: unknown fields are herdr's future, not
-//! errors.
+//! Deliberately raw the whole way down — the daemon never shells out to a
+//! runtime's CLI, whose protocol guard may hard-fail on any version
+//! mismatch, while the socket serves any client and grows additively.
+//! Parsing is permissive for the same reason: unknown fields are the
+//! runtime's future, not errors.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::Shutdown;
@@ -19,37 +20,13 @@ const IO_TIMEOUT: Duration = Duration::from_secs(5);
 /// than growing the daemon.
 const MAX_LINE: u64 = 8 * 1024 * 1024;
 
-/// One pushed event line: `{"event":"...","data":{...}}`.
-pub struct HerdrEvent {
+/// One pushed event line: `{"event":"...","data":{...}}`, with a
+/// `sequence` where the runtime numbers its events.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RawEvent {
     pub event: String,
+    pub sequence: Option<u64>,
     pub data: serde_json::Value,
-}
-
-/// The slice of herdr's agent record the projection needs. Everything else
-/// on the wire is ignored, which is what keeps this compatible across herdr
-/// releases.
-///
-/// Only what herdr's schema marks required is required here. `agent` and
-/// `cwd` are nullable *and* optional there, and `Option` is what
-/// accepts both spellings — a bare `String` with `#[serde(default)]` takes a
-/// missing field but fails on an explicit `null`, and a failed record is
-/// dropped by [`agents_from`], which is how a live agent would quietly
-/// vanish from the bar.
-#[derive(Debug, Clone, Default, PartialEq, serde::Deserialize)]
-pub struct HerdrAgent {
-    pub terminal_id: String,
-    pub agent_status: String,
-    pub pane_id: String,
-    #[serde(default)]
-    pub agent: Option<String>,
-    #[serde(default)]
-    pub cwd: Option<String>,
-    /// herdr's per-agent transition counter. It counts up through one
-    /// agent's life, so a value that went *backwards* is a different agent
-    /// in the same terminal — which is the only way to tell one claude from
-    /// the next one started in the pane it just left.
-    #[serde(default)]
-    pub state_change_seq: Option<u64>,
 }
 
 /// One request, one line back: connect, send, read the `result` value.
@@ -70,6 +47,15 @@ pub fn request(
     parse_result(&line)
 }
 
+/// The runtime's error code out of an error [`request`] or [`subscribe`]
+/// returned, if the error was the runtime's answer rather than the
+/// transport's. The error object travels as the message verbatim, so the
+/// caller can tell "your cursor is stale" from "the socket went away".
+pub fn error_code(error: &std::io::Error) -> Option<String> {
+    let object: serde_json::Value = serde_json::from_str(&error.to_string()).ok()?;
+    object.get("code")?.as_str().map(str::to_owned)
+}
+
 fn parse_result(line: &str) -> std::io::Result<serde_json::Value> {
     let response: serde_json::Value = serde_json::from_str(line)
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
@@ -86,6 +72,9 @@ fn parse_result(line: &str) -> std::io::Result<serde_json::Value> {
 pub struct EventStream {
     reader: BufReader<UnixStream>,
     stream: UnixStream,
+    /// The `sequence` the runtime's acknowledgement carried, where it
+    /// numbers its events: the fence this subscription starts after.
+    fence: Option<u64>,
 }
 
 /// Ends an [`EventStream`]'s blocking read from another thread — the reader
@@ -98,19 +87,18 @@ impl ShutdownHandle {
     }
 }
 
-/// Opens a subscription. The set is fixed for the connection's lifetime —
-/// herdr has no way to add to it — so changing it means a new call.
-pub fn subscribe(
-    socket: &Path,
-    subscriptions: Vec<serde_json::Value>,
-) -> std::io::Result<EventStream> {
+/// Opens a subscription with the given `params`. What the params mean is the
+/// runtime's business: herdr takes a fixed list of subscriptions, luvus a
+/// cursor. Either way the set is fixed for the connection's lifetime, so
+/// changing it means a new call.
+pub fn subscribe(socket: &Path, params: serde_json::Value) -> std::io::Result<EventStream> {
     let stream = UnixStream::connect(socket)?;
     stream.set_write_timeout(Some(IO_TIMEOUT))?;
     let mut writer = stream.try_clone()?;
     let line = serde_json::json!({
         "id": "amon-sub",
         "method": "events.subscribe",
-        "params": {"subscriptions": subscriptions},
+        "params": params,
     });
     writeln!(writer, "{line}")?;
     let mut reader = BufReader::new(stream.try_clone()?);
@@ -120,12 +108,22 @@ pub fn subscribe(
     stream.set_read_timeout(Some(IO_TIMEOUT))?;
     let mut ack = String::new();
     reader.by_ref().take(MAX_LINE).read_line(&mut ack)?;
-    parse_result(&ack)?;
+    let fence = parse_result(&ack)?
+        .get("sequence")
+        .and_then(|sequence| sequence.as_u64());
     stream.set_read_timeout(None)?;
-    Ok(EventStream { reader, stream })
+    Ok(EventStream {
+        reader,
+        stream,
+        fence,
+    })
 }
 
 impl EventStream {
+    pub fn fence(&self) -> Option<u64> {
+        self.fence
+    }
+
     pub fn shutdown_handle(&self) -> ShutdownHandle {
         ShutdownHandle(
             self.stream
@@ -136,12 +134,12 @@ impl EventStream {
 }
 
 impl Iterator for EventStream {
-    type Item = HerdrEvent;
+    type Item = RawEvent;
 
     /// The next event, skipping lines that are not one. `None` is the end of
     /// the stream, however it ended — the caller's answer to that is a fresh
     /// connection, not a diagnosis.
-    fn next(&mut self) -> Option<HerdrEvent> {
+    fn next(&mut self) -> Option<RawEvent> {
         loop {
             let mut line = String::new();
             match self.reader.by_ref().take(MAX_LINE).read_line(&mut line) {
@@ -154,8 +152,9 @@ impl Iterator for EventStream {
             let Some(event) = value.get("event").and_then(|event| event.as_str()) else {
                 continue;
             };
-            return Some(HerdrEvent {
+            return Some(RawEvent {
                 event: event.to_owned(),
+                sequence: value.get("sequence").and_then(|seq| seq.as_u64()),
                 data: value
                     .get("data")
                     .cloned()
@@ -165,39 +164,20 @@ impl Iterator for EventStream {
     }
 }
 
-/// The agents out of a `session.snapshot` result. herdr 0.8.0 nests the
-/// payload under `snapshot`; the docs draw it flat — read both, prefer what
-/// the live server actually sends. Records missing a required field are
-/// herdr's future, not our problem — skipped, never guessed at.
-pub fn agents_from(result: &serde_json::Value) -> Vec<HerdrAgent> {
-    result
-        .get("snapshot")
-        .and_then(|snapshot| snapshot.get("agents"))
-        .or_else(|| result.get("agents"))
-        .and_then(|agents| agents.as_array())
-        .map(|agents| {
-            agents
-                .iter()
-                .filter_map(|agent| serde_json::from_value(agent.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::io::{BufRead, BufReader, Write};
     use std::os::unix::net::UnixListener;
 
-    /// One canned herdr: answers the first line per `replies`, then streams
+    /// One canned runtime: answers the first line per `replies`, then streams
     /// `pushes`, then holds the connection open until dropped.
-    fn fake_herdr(
+    pub(crate) fn fake_runtime(
         replies: impl Fn(&str) -> String + Send + 'static,
         pushes: Vec<String>,
     ) -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempfile::tempdir().unwrap();
-        let socket = dir.path().join("herdr.sock");
+        let socket = dir.path().join("runtime.sock");
         let listener = UnixListener::bind(&socket).unwrap();
         std::thread::spawn(move || {
             for stream in listener.incoming().flatten() {
@@ -220,7 +200,7 @@ mod tests {
 
     #[test]
     fn a_request_returns_the_result_value() {
-        let (_dir, socket) = fake_herdr(
+        let (_dir, socket) = fake_runtime(
             |_| r#"{"id":"r","result":{"type":"pong","protocol":21}}"#.into(),
             vec![],
         );
@@ -229,17 +209,25 @@ mod tests {
     }
 
     #[test]
-    fn an_error_response_is_an_error() {
-        let (_dir, socket) = fake_herdr(
+    fn an_error_response_is_an_error_that_keeps_its_code() {
+        let (_dir, socket) = fake_runtime(
             |_| r#"{"id":"r","error":{"code":"not_found","message":"no"}}"#.into(),
             vec![],
         );
-        assert!(request(&socket, "pane.get", serde_json::json!({})).is_err());
+        let error = request(&socket, "pane.get", serde_json::json!({})).unwrap_err();
+        assert_eq!(error_code(&error).as_deref(), Some("not_found"));
+        let transport = request(
+            Path::new("/nonexistent/x.sock"),
+            "ping",
+            serde_json::json!({}),
+        )
+        .unwrap_err();
+        assert_eq!(error_code(&transport), None, "not the runtime's answer");
     }
 
     #[test]
     fn a_request_names_its_method_and_params_on_the_wire() {
-        let (_dir, socket) = fake_herdr(
+        let (_dir, socket) = fake_runtime(
             |line| {
                 let request: serde_json::Value = serde_json::from_str(line).unwrap();
                 assert_eq!(request["method"], "agent.focus");
@@ -258,96 +246,48 @@ mod tests {
     }
 
     #[test]
-    fn a_subscription_acks_then_streams_events() {
-        let (_dir, socket) = fake_herdr(
+    fn a_subscription_acks_then_streams_events_with_their_sequence() {
+        let (_dir, socket) = fake_runtime(
             |line| {
                 assert!(line.contains("events.subscribe"));
+                assert!(line.contains(r#""after_sequence":3"#));
                 r#"{"id":"s","result":{"type":"subscription_started"}}"#.into()
             },
             vec![
-                r#"{"event":"pane.agent_status_changed","data":{"pane_id":"w1:p1","agent_status":"blocked"}}"#.into(),
+                r#"{"event":"pane.agent_status_changed","sequence":4,"data":{"pane":"7","status":"blocked"}}"#.into(),
+                r#"{"event":"pane.closed","data":{"pane_id":"w1:p1"}}"#.into(),
             ],
         );
-        let mut events =
-            subscribe(&socket, vec![serde_json::json!({"type": "pane.closed"})]).unwrap();
+        let mut events = subscribe(&socket, serde_json::json!({"after_sequence": 3})).unwrap();
+        assert_eq!(events.fence(), None, "herdr's ack carries no sequence");
         let event = events.next().unwrap();
         assert_eq!(event.event, "pane.agent_status_changed");
-        assert_eq!(event.data["agent_status"], "blocked");
+        assert_eq!(event.sequence, Some(4));
+        assert_eq!(event.data["status"], "blocked");
+        let event = events.next().unwrap();
+        assert_eq!(event.sequence, None, "herdr numbers nothing");
+    }
+
+    #[test]
+    fn an_acknowledgement_with_a_sequence_is_the_streams_fence() {
+        let (_dir, socket) = fake_runtime(
+            |_| r#"{"id":"s","result":{"type":"subscription_started","sequence":41}}"#.into(),
+            vec![],
+        );
+        let events = subscribe(&socket, serde_json::json!({})).unwrap();
+        assert_eq!(events.fence(), Some(41));
     }
 
     #[test]
     fn shutdown_unblocks_a_waiting_reader() {
-        let (_dir, socket) = fake_herdr(
+        let (_dir, socket) = fake_runtime(
             |_| r#"{"id":"s","result":{"type":"subscription_started"}}"#.into(),
             vec![],
         );
-        let mut events = subscribe(&socket, vec![]).unwrap();
+        let mut events = subscribe(&socket, serde_json::json!({})).unwrap();
         let handle = events.shutdown_handle();
         let reader = std::thread::spawn(move || events.next());
         handle.shutdown();
         assert!(reader.join().unwrap().is_none());
-    }
-
-    #[test]
-    fn snapshot_agents_are_extracted_and_partial_records_skipped() {
-        // The shape herdr 0.8.0 actually sends: the payload nested under
-        // "snapshot" (verified against a live server).
-        let snapshot: serde_json::Value = serde_json::json!({
-            "type": "session_snapshot",
-            "snapshot": {
-                "version": "0.8.0",
-                "agents": [
-                    {"terminal_id":"t1","agent":"claude","agent_status":"working",
-                     "pane_id":"w1:p1","cwd":"/repo"},
-                    {"agent":"mystery"}
-                ]
-            }
-        });
-        let agents = agents_from(&snapshot);
-        assert_eq!(agents.len(), 1);
-        assert_eq!(agents[0].terminal_id, "t1");
-        assert_eq!(agents[0].agent_status, "working");
-        assert_eq!(agents[0].pane_id, "w1:p1");
-    }
-
-    #[test]
-    fn an_agent_survives_the_fields_herdr_is_allowed_to_leave_out() {
-        // herdr's schema requires only terminal_id, pane_id and
-        // agent_status; `agent` and `cwd` are nullable and
-        // optional. A null there must not delete the agent from amon —
-        // silently dropping the record is how a live agent vanishes from
-        // the bar for a reason nobody can see.
-        let snapshot = serde_json::json!({
-            "agents": [
-                {"terminal_id":"t1","pane_id":"w1:p1","agent_status":"blocked",
-                 "agent": null, "cwd": null},
-                {"terminal_id":"t2","pane_id":"w1:p2","agent_status":"idle"},
-            ]
-        });
-        let agents = agents_from(&snapshot);
-        assert_eq!(agents.len(), 2, "nullable fields are not required fields");
-        assert_eq!(agents[0].agent, None);
-        assert_eq!(agents[0].cwd, None);
-        assert_eq!(agents[1].terminal_id, "t2");
-    }
-
-    #[test]
-    fn a_record_missing_what_herdr_always_sends_is_still_skipped() {
-        let snapshot = serde_json::json!({"agents": [{"agent": "mystery"}]});
-        assert!(agents_from(&snapshot).is_empty());
-    }
-
-    #[test]
-    fn a_snapshot_with_agents_at_the_top_level_reads_the_same() {
-        // The 0.8.2 docs draw the response flat; accept both spellings so a
-        // future herdr un-nesting it costs nothing.
-        let snapshot: serde_json::Value = serde_json::json!({
-            "type": "session_snapshot",
-            "agents": [
-                {"terminal_id":"t1","agent":"claude","agent_status":"idle",
-                 "pane_id":"w1:p1"}
-            ]
-        });
-        assert_eq!(agents_from(&snapshot).len(), 1);
     }
 }

@@ -19,9 +19,9 @@ use amon_protocol::{
 };
 
 mod config;
-mod herdr;
 mod manifests;
 mod registry;
+mod runtime;
 mod sound;
 mod updates;
 
@@ -72,11 +72,12 @@ pub fn run(version: String) -> std::io::Result<()> {
     // keys ownership by connection id and two allocators would collide.
     let next_connection = Arc::new(AtomicU64::new(0));
 
-    // Agents inside herdr sessions surface through the same registry as
-    // wrapped ones. AMON_HERDR=0 exists for tests: an e2e daemon on a
-    // machine with a live herdr must not see the developer's real agents.
-    if std::env::var_os("AMON_HERDR").is_none_or(|value| value != "0") {
-        herdr::spawn(registry.clone(), next_connection.clone());
+    // Agents inside runtime sessions (herdr, luvus) surface through the same
+    // registry as wrapped ones. AMON_RUNTIMES=0 exists for tests: an e2e
+    // daemon on a machine with a live session must not see the developer's
+    // real agents.
+    if std::env::var_os("AMON_RUNTIMES").is_none_or(|value| value != "0") {
+        runtime::spawn(registry.clone(), next_connection.clone());
     }
 
     for stream in listener.incoming() {
