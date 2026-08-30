@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 
 pub mod discover;
 pub mod herdr;
+pub mod luvus;
 pub mod project;
 mod supervisor;
 pub mod wire;
@@ -71,7 +72,12 @@ pub enum HostedEvent {
         status: String,
         agent: Option<Option<String>>,
     },
-    /// Anything that changes the set of agents or panes: resnapshot.
+    /// The agent in `pane` is gone — exited, or replaced by another. Its
+    /// claim is retired before the resnapshot, so whatever the snapshot
+    /// finds there is a first claim with its own clocks, not a continuation
+    /// of a life that has ended.
+    Departed { pane: String },
+    /// Anything else that changes the set of agents or panes: resnapshot.
     Structural,
     /// Not about agents at all.
     Ignore,

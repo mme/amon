@@ -21,6 +21,7 @@ use std::time::Duration;
 use amon_protocol::{AgentEntry, AgentPatch};
 
 use super::herdr::Herdr;
+use super::luvus::Luvus;
 use super::{discover, project, wire, Hosted, HostedAgent, HostedEvent, Session};
 use crate::Registry;
 
@@ -34,7 +35,11 @@ const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 /// and real socket connections draw from one id space, because the registry
 /// keys ownership by connection id and two allocators would collide.
 pub fn spawn(registry: Registry, connections: Arc<AtomicU64>) {
-    std::thread::spawn(move || watch::<Herdr>(registry, connections));
+    std::thread::spawn({
+        let (registry, connections) = (registry.clone(), connections.clone());
+        move || watch::<Herdr>(registry, connections)
+    });
+    std::thread::spawn(move || watch::<Luvus>(registry, connections));
 }
 
 struct Live {
@@ -250,11 +255,13 @@ pub(crate) fn run_session<H: Hosted>(
             current_panes.sort();
             subscribed.sort();
             if current_panes != subscribed {
+                drop_stream(&current, events);
                 continue;
             }
         }
 
-        for event in events {
+        let mut events = events;
+        for event in events.by_ref() {
             if stop.load(Ordering::Relaxed) {
                 break;
             }
@@ -272,17 +279,58 @@ pub(crate) fn run_session<H: Hosted>(
                     status,
                     agent,
                 } => apply_status(&registry, &shared, &pane, &status, agent),
+                // The claim goes first, so the snapshot's find in that pane
+                // — even the same kind of agent, restarted — arrives as what
+                // it is: a first claim, with clocks of its own.
+                HostedEvent::Departed { pane } => {
+                    retire_pane(&registry, &shared, &pane);
+                    break;
+                }
                 // Structural: start over with a fresh snapshot.
                 HostedEvent::Structural => break,
                 HostedEvent::Ignore => {}
             }
         }
+        drop_stream(&current, events);
     }
 
     for owned in lock(&shared).owned.drain().map(|(_, owned)| owned) {
         registry.disconnect(owned.connection);
     }
     done.store(true, Ordering::Relaxed);
+}
+
+/// Ends an abandoned stream now rather than when the next one replaces it.
+/// The handle in `current` is a second descriptor on the same connection,
+/// so dropping the stream alone leaves the subscription — and the runtime's
+/// thread behind it — alive for as long as the next attach takes; against a
+/// runtime with a subscriber cap, that is the slot the next attach needs.
+fn drop_stream(current: &Arc<Mutex<Option<wire::ShutdownHandle>>>, events: wire::EventStream) {
+    if let Some(handle) = lock(current).take() {
+        handle.shutdown();
+    }
+    drop(events);
+}
+
+fn retire_pane(registry: &Registry, shared: &Arc<Mutex<Shared>>, pane: &str) {
+    let mut shared = lock(shared);
+    let Some(identity) = shared
+        .owned
+        .iter()
+        .find(|(_, owned)| {
+            owned
+                .entry
+                .runtime
+                .as_ref()
+                .is_some_and(|r| r.pane() == pane)
+        })
+        .map(|(identity, _)| identity.clone())
+    else {
+        return;
+    };
+    if let Some(owned) = shared.owned.remove(&identity) {
+        registry.disconnect(owned.connection);
+    }
 }
 
 fn owned_panes(shared: &Arc<Mutex<Shared>>) -> Vec<String> {
@@ -535,6 +583,11 @@ mod tests {
     /// A canned herdr: answers `session.snapshot` with the given agents,
     /// acks subscriptions and keeps them open, and fans every line pushed
     /// through the returned sender out to all live subscriptions.
+    ///
+    /// One live subscription at a time, like the luvus fake: herdr's first
+    /// attach subscribes for no panes, sees the snapshot, and re-attaches
+    /// for the panes it found — and that second subscription is refused
+    /// unless the first was closed before it was asked for.
     fn fake_herdr(
         agents: serde_json::Value,
     ) -> (tempfile::TempDir, std::path::PathBuf, mpsc::Sender<String>) {
@@ -563,11 +616,20 @@ mod tests {
                 }
                 let mut stream = stream;
                 if line.contains("events.subscribe") {
+                    let mut live = subscribers.lock().unwrap();
+                    live.retain(|stream| !peer_closed(stream));
+                    if !live.is_empty() {
+                        let _ = writeln!(
+                            stream,
+                            r#"{{"id":"s","error":{{"code":"unavailable","message":"too many subscriptions"}}}}"#
+                        );
+                        continue;
+                    }
                     let _ = writeln!(
                         stream,
                         r#"{{"id":"s","result":{{"type":"subscription_started"}}}}"#
                     );
-                    subscribers.lock().unwrap().push(stream);
+                    live.push(stream);
                 } else if line.contains("session.snapshot") {
                     let result = serde_json::json!({
                         "id": "r",
@@ -603,6 +665,198 @@ mod tests {
         assert!(!restarted(Some(4), Some(4)), "standing still is one life");
         assert!(!restarted(Some(4), Some(9)), "counting up is one life");
         assert!(restarted(Some(9), Some(1)), "only a new agent counts down");
+    }
+
+    /// A canned luvus: pongs, acks one global subscription (counting them),
+    /// answers `agent.list` with `agents`, and fans pushed lines out.
+    ///
+    /// Capped at one live subscription, the way a runtime with a subscriber
+    /// table is in its last slot: a new subscription while the abandoned
+    /// one is still open is refused with `unavailable`. That is what makes
+    /// closing an abandoned stream *before* re-attaching load-bearing here.
+    fn fake_luvus(
+        agents: Arc<Mutex<serde_json::Value>>,
+    ) -> (
+        tempfile::TempDir,
+        std::path::PathBuf,
+        mpsc::Sender<String>,
+        Arc<AtomicU64>,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("luvus.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        let (pushes, inbox) = mpsc::channel::<String>();
+        let subscribers: Arc<Mutex<Vec<UnixStream>>> = Arc::default();
+        let subscriptions = Arc::new(AtomicU64::new(0));
+
+        let fanout = subscribers.clone();
+        std::thread::spawn(move || {
+            while let Ok(line) = inbox.recv() {
+                fanout
+                    .lock()
+                    .unwrap()
+                    .retain_mut(|stream| writeln!(stream, "{line}").is_ok());
+            }
+        });
+
+        let counted = subscriptions.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    continue;
+                }
+                let mut stream = stream;
+                if line.contains(r#""method":"ping""#) {
+                    let _ = writeln!(
+                        stream,
+                        r#"{{"id":"amon","result":{{"type":"pong","protocol":1}}}}"#
+                    );
+                } else if line.contains("events.subscribe") {
+                    let mut live = subscribers.lock().unwrap();
+                    live.retain(|stream| !peer_closed(stream));
+                    if !live.is_empty() {
+                        let _ = writeln!(
+                            stream,
+                            r#"{{"id":"s","error":{{"code":"unavailable","message":"event subscriber capacity is full"}}}}"#
+                        );
+                        continue;
+                    }
+                    counted.fetch_add(1, Ordering::Relaxed);
+                    let _ = writeln!(
+                        stream,
+                        r#"{{"id":"s","result":{{"type":"subscription_started","sequence":1}}}}"#
+                    );
+                    live.push(stream);
+                } else if line.contains("agent.list") {
+                    let result = serde_json::json!({
+                        "id": "r",
+                        "result": {"type": "agent_list", "agents": *agents.lock().unwrap()},
+                    });
+                    let _ = writeln!(stream, "{result}");
+                }
+            }
+        });
+        (dir, socket, pushes, subscriptions)
+    }
+
+    /// Whether the other end has hung up: a non-blocking read answers
+    /// `Ok(0)` for a closed peer and `WouldBlock` for a quiet open one.
+    fn peer_closed(stream: &UnixStream) -> bool {
+        use std::io::Read;
+        let _ = stream.set_nonblocking(true);
+        let mut probe = [0u8; 1];
+        let closed = matches!((&*stream).read(&mut probe), Ok(0));
+        let _ = stream.set_nonblocking(false);
+        closed
+    }
+
+    #[test]
+    fn a_luvus_status_event_patches_in_stream_without_a_fresh_attach() {
+        // The event path is what makes status changes fast; a runtime whose
+        // every status event were read as structural would still show the
+        // right state, one snapshot later, and nothing in an e2e test could
+        // tell. The subscription count can.
+        let claude_in_7 = serde_json::json!([
+            {"pane": "7", "agent": "claude", "status": "working", "cwd": "/repo"}
+        ]);
+        let agents = Arc::new(Mutex::new(claude_in_7.clone()));
+        let (_dir, socket, pushes, subscriptions) = fake_luvus(agents.clone());
+        let registry = crate::Registry::new();
+        let stop = Arc::new(AtomicBool::new(false));
+        let session = Session {
+            name: None,
+            socket,
+            client_pid: std::process::id(),
+        };
+        let handle = std::thread::spawn({
+            let registry = registry.clone();
+            let stop = stop.clone();
+            move || {
+                run_session::<Luvus>(
+                    session,
+                    registry,
+                    Arc::new(AtomicU64::new(2000)),
+                    stop,
+                    Arc::new(AtomicBool::new(false)),
+                    None,
+                )
+            }
+        });
+
+        let entry = wait_for(|| {
+            registry
+                .agents()
+                .into_iter()
+                .find(|agent| agent.id.ends_with(":7"))
+        });
+        assert_eq!(entry.state, AgentState::Working);
+        assert!(matches!(
+            entry.runtime,
+            Some(amon_protocol::Runtime::Luvus { .. })
+        ));
+        assert_eq!(subscriptions.load(Ordering::Relaxed), 1);
+
+        wait_for(|| {
+            let event = r#"{"event":"pane.agent_status_changed","sequence":2,"data":{"pane":"7","status":"blocked","agent":"claude"}}"#;
+            let _ = pushes.send(event.into());
+            registry
+                .agents()
+                .into_iter()
+                .find(|agent| agent.id.ends_with(":7") && agent.state == AgentState::Blocked)
+        });
+        assert_eq!(
+            subscriptions.load(Ordering::Relaxed),
+            1,
+            "a status change is a patch, not a resnapshot"
+        );
+
+        // The agent leaving its pane retires the row, while the session
+        // goes on watching.
+        *agents.lock().unwrap() = serde_json::json!([]);
+        let _ = pushes.send(
+            r#"{"event":"pane.agent_status_changed","sequence":3,"data":{"pane":"7","status":"idle","agent":""}}"#.into(),
+        );
+        // Two subscriptions on a fake that allows one live at a time: the
+        // abandoned stream was closed before the replacement asked. Waited
+        // for, because the claim is retired before the stream is dropped.
+        wait_for(|| (subscriptions.load(Ordering::Relaxed) == 2).then_some(()));
+        wait_for(|| registry.agents().is_empty().then_some(()));
+
+        // The same kind of agent back in the same pane is a new life, even
+        // when the snapshot already shows it by the time the departure is
+        // read: luvus has no per-life counter, so the departure event is
+        // the only thing that tells the two claudes apart.
+        *agents.lock().unwrap() = claude_in_7.clone();
+        let _ = pushes.send(
+            r#"{"event":"pane.agent_status_changed","sequence":4,"data":{"pane":"7","status":"working","agent":"claude"}}"#.into(),
+        );
+        let first = wait_for(|| {
+            registry
+                .agents()
+                .into_iter()
+                .find(|agent| agent.id.ends_with(":7"))
+        });
+        std::thread::sleep(Duration::from_millis(30));
+        let _ = pushes.send(
+            r#"{"event":"pane.agent_status_changed","sequence":5,"data":{"pane":"7","status":"idle","agent":""}}"#.into(),
+        );
+        let second = wait_for(|| {
+            registry
+                .agents()
+                .into_iter()
+                .find(|agent| agent.id.ends_with(":7") && agent.started_at > first.started_at)
+        });
+        assert_eq!(
+            second.state,
+            AgentState::Working,
+            "a first claim, from the snapshot"
+        );
+
+        stop.store(true, Ordering::Relaxed);
+        handle.join().unwrap();
+        assert!(registry.agents().is_empty());
     }
 
     #[test]

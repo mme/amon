@@ -47,6 +47,15 @@ pub fn request(
     parse_result(&line)
 }
 
+/// The runtime's error code out of an error [`request`] or [`subscribe`]
+/// returned, if the error was the runtime's answer rather than the
+/// transport's. The error object travels as the message verbatim, so the
+/// caller can tell "your cursor is stale" from "the socket went away".
+pub fn error_code(error: &std::io::Error) -> Option<String> {
+    let object: serde_json::Value = serde_json::from_str(&error.to_string()).ok()?;
+    object.get("code")?.as_str().map(str::to_owned)
+}
+
 fn parse_result(line: &str) -> std::io::Result<serde_json::Value> {
     let response: serde_json::Value = serde_json::from_str(line)
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
@@ -63,6 +72,9 @@ fn parse_result(line: &str) -> std::io::Result<serde_json::Value> {
 pub struct EventStream {
     reader: BufReader<UnixStream>,
     stream: UnixStream,
+    /// The `sequence` the runtime's acknowledgement carried, where it
+    /// numbers its events: the fence this subscription starts after.
+    fence: Option<u64>,
 }
 
 /// Ends an [`EventStream`]'s blocking read from another thread — the reader
@@ -96,12 +108,22 @@ pub fn subscribe(socket: &Path, params: serde_json::Value) -> std::io::Result<Ev
     stream.set_read_timeout(Some(IO_TIMEOUT))?;
     let mut ack = String::new();
     reader.by_ref().take(MAX_LINE).read_line(&mut ack)?;
-    parse_result(&ack)?;
+    let fence = parse_result(&ack)?
+        .get("sequence")
+        .and_then(|sequence| sequence.as_u64());
     stream.set_read_timeout(None)?;
-    Ok(EventStream { reader, stream })
+    Ok(EventStream {
+        reader,
+        stream,
+        fence,
+    })
 }
 
 impl EventStream {
+    pub fn fence(&self) -> Option<u64> {
+        self.fence
+    }
+
     pub fn shutdown_handle(&self) -> ShutdownHandle {
         ShutdownHandle(
             self.stream
@@ -187,12 +209,20 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn an_error_response_is_an_error() {
+    fn an_error_response_is_an_error_that_keeps_its_code() {
         let (_dir, socket) = fake_runtime(
             |_| r#"{"id":"r","error":{"code":"not_found","message":"no"}}"#.into(),
             vec![],
         );
-        assert!(request(&socket, "pane.get", serde_json::json!({})).is_err());
+        let error = request(&socket, "pane.get", serde_json::json!({})).unwrap_err();
+        assert_eq!(error_code(&error).as_deref(), Some("not_found"));
+        let transport = request(
+            Path::new("/nonexistent/x.sock"),
+            "ping",
+            serde_json::json!({}),
+        )
+        .unwrap_err();
+        assert_eq!(error_code(&transport), None, "not the runtime's answer");
     }
 
     #[test]
@@ -229,12 +259,23 @@ pub(crate) mod tests {
             ],
         );
         let mut events = subscribe(&socket, serde_json::json!({"after_sequence": 3})).unwrap();
+        assert_eq!(events.fence(), None, "herdr's ack carries no sequence");
         let event = events.next().unwrap();
         assert_eq!(event.event, "pane.agent_status_changed");
         assert_eq!(event.sequence, Some(4));
         assert_eq!(event.data["status"], "blocked");
         let event = events.next().unwrap();
         assert_eq!(event.sequence, None, "herdr numbers nothing");
+    }
+
+    #[test]
+    fn an_acknowledgement_with_a_sequence_is_the_streams_fence() {
+        let (_dir, socket) = fake_runtime(
+            |_| r#"{"id":"s","result":{"type":"subscription_started","sequence":41}}"#.into(),
+            vec![],
+        );
+        let events = subscribe(&socket, serde_json::json!({})).unwrap();
+        assert_eq!(events.fence(), Some(41));
     }
 
     #[test]
