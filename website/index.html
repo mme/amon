@@ -219,17 +219,17 @@
                       mask:url(herdr-logo.svg) center/contain no-repeat}
   .mark-luvus{-webkit-mask:url(luvus-logo.svg) center/contain no-repeat;
                       mask:url(luvus-logo.svg) center/contain no-repeat}
-  /* the note card: a ruled box, no ground of its own, a line of marks above
-     a heading and one line - quieter than the panel card, since it speaks to
-     one kind of reader and the rest should pass it by. The plate's column
-     stands, with the gap pulled in so marks, heading and line read as one
-     small thing; the heading drops to body size because it names a card,
-     not a chapter. */
-  .plate.note{gap:10px;
+  /* the note card: a ruled box, no ground of its own, a heading and one
+     line - quieter than the panel card, since it speaks to one kind of
+     reader and the rest should pass it by. The marks ride inline in the
+     sentence, each just before the name it belongs to, sized to the text;
+     the heading drops to body size because it names a card, not a
+     chapter. */
+  .plate.note{gap:8px;
               border:1px solid var(--rule); border-radius:8px; padding:14px 16px}
-  .plate.note .marks{display:flex; align-items:center; gap:12px}
-  .plate.note .mark-herdr, .plate.note .mark-luvus{width:26px; height:26px;
-              color:var(--muted)}
+  .plate.note .mark-herdr, .plate.note .mark-luvus{display:inline-block;
+              width:17px; height:17px; vertical-align:-3px; margin-right:3px;
+              color:var(--ink)}
   .plate.note h2{font-size:14px}
   .plate.note p{margin:.25rem 0 0; color:var(--muted); font-size:13.5px; max-width:62ch}
   .cta .mark-check{display:none}
@@ -931,23 +931,19 @@
   </section>
 
   <!--
-    An aside, not a section: one card with a line of marks above the heading,
-    the same border and ground as the panel card, no rule above it. It
-    addresses the reader who already runs herdr or luvus and says nothing to
-    anyone else.
+    An aside, not a section: one ruled card, the same border and ground as
+    the panel card, no rule above it. It addresses the reader who already
+    runs herdr or luvus and says nothing to anyone else; each runtime's mark
+    rides in the sentence just before its name.
   -->
   <!-- the card was #herdr before luvus joined it; links in the wild keep landing. -->
   <span id="herdr"></span>
   <aside class="plate note" aria-labelledby="runtimes">
-    <div class="marks" aria-hidden="true">
-      <span class="mark-herdr"></span>
-      <span class="mark-luvus"></span>
-    </div>
     <div>
       <h2><a class="h-anchor" id="runtimes" href="#runtimes">using herdr or luvus with omarchy? you'll love this!</a></h2>
       <p>Nothing to set up. <span class="lift">amon</span> finds your
-         <a href="https://github.com/herdrdev/herdr">herdr</a> and
-         <a href="https://github.com/RizRiyz/luvus">luvus</a> sessions and just
+         <span class="mark-herdr" aria-hidden="true"></span><a href="https://github.com/herdrdev/herdr">herdr</a> and
+         <span class="mark-luvus" aria-hidden="true"></span><a href="https://github.com/RizRiyz/luvus">luvus</a> sessions and just
          works out of the box.</p>
     </div>
   </aside>
