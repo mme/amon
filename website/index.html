@@ -219,16 +219,17 @@
                       mask:url(herdr-logo.svg) center/contain no-repeat}
   .mark-luvus{-webkit-mask:url(luvus-logo.svg) center/contain no-repeat;
                       mask:url(luvus-logo.svg) center/contain no-repeat}
-  /* the note card: a ruled box, no ground of its own, the mark beside a
-     heading and one line - quieter than the panel card, since it speaks to
-     one kind of reader and the rest should pass it by. Flex overrides the
-     plate's column so the two sit side by side; the heading drops to body
-     size because it names a card, not a chapter. */
-  .plate.note{flex-direction:row; align-items:flex-start; gap:14px;
+  /* the note card: a ruled box, no ground of its own, a line of marks above
+     a heading and one line - quieter than the panel card, since it speaks to
+     one kind of reader and the rest should pass it by. The plate's column
+     stands, with the gap pulled in so marks, heading and line read as one
+     small thing; the heading drops to body size because it names a card,
+     not a chapter. */
+  .plate.note{gap:10px;
               border:1px solid var(--rule); border-radius:8px; padding:14px 16px}
-  .plate.note .marks{display:flex; align-items:center; gap:10px; flex:none}
+  .plate.note .marks{display:flex; align-items:center; gap:12px}
   .plate.note .mark-herdr, .plate.note .mark-luvus{width:26px; height:26px;
-              color:var(--muted); margin-top:1px}
+              color:var(--muted)}
   .plate.note h2{font-size:14px}
   .plate.note p{margin:.25rem 0 0; color:var(--muted); font-size:13.5px; max-width:62ch}
   .cta .mark-check{display:none}
@@ -930,9 +931,10 @@
   </section>
 
   <!--
-    An aside, not a section: one card with the marks on the left, the same
-    border and ground as the panel card, no rule above it. It addresses the
-    reader who already runs herdr or luvus and says nothing to anyone else.
+    An aside, not a section: one card with a line of marks above the heading,
+    the same border and ground as the panel card, no rule above it. It
+    addresses the reader who already runs herdr or luvus and says nothing to
+    anyone else.
   -->
   <!-- the card was #herdr before luvus joined it; links in the wild keep landing. -->
   <span id="herdr"></span>
