@@ -8,6 +8,8 @@ the machinery, not decoration.
 
 <!-- next -->
 
+## v0.3.0
+
 - **Agents in luvus show up**: amon watches for
   [luvus](https://github.com/RizRiyz/luvus) sessions the way it does herdr's
   — their agents join the bar and the panel, `amon focus` lands on the pane,
@@ -18,8 +20,6 @@ the machinery, not decoration.
 - **Protocol**: `AgentEntry.herdr` is now `AgentEntry.runtime`, tagged by
   `kind` (`herdr` | `luvus`). Nothing outside amon read the old field.
   `AMON_HERDR=0` is now `AMON_RUNTIMES=0`.
-- The end-to-end suite drives real herdr and luvus binaries, pinned in
-  `.mise.toml`.
 
 ## v0.2.0
 
