@@ -70,29 +70,34 @@ pub fn agent(id: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Takes the user to `agent`, reporting whether the compositor went.
+/// Takes the user to `agent`, reporting whether anything moved.
 ///
 /// The one place amon moves anyone to an agent — see the module note. Both
 /// halves of the jump live here so no caller can do one without the other.
 fn go_to(agent: &AgentEntry) -> Result<bool, Box<dyn std::error::Error>> {
     // Checked here rather than trusted from the caller: this interpolates
     // into a Lua expression, and the token arrives over a socket.
-    let Some(address) = agent.window.as_deref().filter(|window| is_address(window)) else {
-        return Ok(false);
+    let address = agent.window.as_deref().filter(|window| is_address(window));
+    let moved = match address {
+        Some(address) => dispatch(&format!(
+            "hl.dsp.focus({{ window = \"address:0x{address}\" }})"
+        ))?,
+        None => false,
     };
-    if !dispatch(&format!(
-        "hl.dsp.focus({{ window = \"address:0x{address}\" }})"
-    ))? {
+    // A window that was there and is not now — closed in between, or the
+    // compositor never knew it — ends the jump: the pane hop marks the agent
+    // seen, and an agent nobody was taken to has not been seen.
+    if address.is_some() && !moved {
         return Ok(false);
     }
     // Inside a runtime the window is only half the jump: every agent in a
     // session shares the client's terminal, and the pane this one lives in
-    // still has to come to the front. Only after the window actually moved —
-    // the hop marks the agent seen, and an agent nobody was taken to has not
-    // been seen.
-    if let Some(runtime) = &agent.runtime {
-        runtime_hop(runtime);
-    }
+    // still has to come to the front. With no window at all — over ssh, no
+    // compositor — the hop is the whole jump, and the only part amon can make.
+    let Some(runtime) = &agent.runtime else {
+        return Ok(moved);
+    };
+    runtime_hop(runtime);
     Ok(true)
 }
 
@@ -209,6 +214,65 @@ mod tests {
         let request = served.join().unwrap();
         assert_eq!(request["method"], "agent.focus");
         assert_eq!(request["params"]["target"], "w1:p2");
+    }
+
+    fn plain_entry() -> AgentEntry {
+        AgentEntry {
+            id: "x".into(),
+            agent: "claude".into(),
+            state: amon_protocol::AgentState::Idle,
+            state_since: 0,
+            cwd: String::new(),
+            pid: 0,
+            args: vec![],
+            hostname: String::new(),
+            started_at: 0,
+            agent_session_id: None,
+            agent_session_path: None,
+            window: None,
+            workspace: None,
+            project: None,
+            subpath: None,
+            branch: None,
+            focused: None,
+            seen: None,
+            runtime: None,
+        }
+    }
+
+    #[test]
+    fn a_hosted_agent_without_a_window_still_gets_its_hop() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("luvus.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        let served = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            let request: serde_json::Value = serde_json::from_str(&line).unwrap();
+            let mut stream = stream;
+            let _ = writeln!(stream, r#"{{"id":"r","result":{{"type":"ok"}}}}"#);
+            request
+        });
+
+        let agent = AgentEntry {
+            runtime: Some(Runtime::Luvus {
+                socket: socket.to_string_lossy().into_owned(),
+                session: None,
+                pane: "7".into(),
+            }),
+            ..plain_entry()
+        };
+        assert!(go_to(&agent).unwrap(), "the hop is the whole jump here");
+        let request = served.join().unwrap();
+        assert_eq!(request["method"], "pane.focus");
+        assert_eq!(request["params"]["pane"], "7");
+    }
+
+    #[test]
+    fn a_plain_agent_without_a_window_is_nothing_to_jump_to() {
+        assert!(!go_to(&plain_entry()).unwrap());
     }
 
     #[test]
