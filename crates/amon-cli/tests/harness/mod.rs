@@ -90,6 +90,7 @@ impl Sandbox {
         command.env_remove("AMON_AGENT_ID");
         command.env_remove("AMON_SOCKET_PATH");
         command.env_remove("HERDR_ENV");
+        command.env_remove("LUVUS_ENV");
         command
     }
 
@@ -419,6 +420,7 @@ impl PtySession {
         command.env_remove("AMON_AGENT_ID");
         command.env_remove("AMON_SOCKET_PATH");
         command.env_remove("HERDR_ENV");
+        command.env_remove("LUVUS_ENV");
         let child = pty.slave.spawn_command(command).expect("spawn");
         drop(pty.slave);
 

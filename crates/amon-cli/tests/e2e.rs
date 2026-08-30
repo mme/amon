@@ -71,27 +71,46 @@ fn the_agents_exit_code_is_the_wrappers_exit_code() {
 
 #[test]
 fn inside_herdr_the_wrapper_steps_aside() {
-    // Inside a herdr pane the user's alias still expands `claude` to
-    // `amon claude`, but wrapping there would hide the agent from herdr and
-    // give amon a row with no window. amon execs the agent bare instead;
-    // herdr detects it, and the daemon's herdr module brings it back onto
-    // the bar. A wrapped agent sees AMON_ENV=1 — a bypassed one must not.
-    let sandbox = Sandbox::new();
-    let agent = sandbox.fake_agent(
-        "claude",
-        "#!/bin/sh\necho \"amon_env=${AMON_ENV:-unset} id=${AMON_AGENT_ID:-unset} \
-         sock=${AMON_SOCKET_PATH:-unset}\"\nexit 7\n",
-    );
+    inside_a_runtime_pane_the_wrapper_steps_aside("HERDR_ENV");
+}
 
+#[test]
+fn inside_luvus_the_wrapper_steps_aside() {
+    inside_a_runtime_pane_the_wrapper_steps_aside("LUVUS_ENV");
+}
+
+/// What a fake agent prints so a test can tell wrapped from bare.
+const REPORTS_ITS_WRAPPING: &str = "#!/bin/sh\necho \"amon_env=${AMON_ENV:-unset} \
+                                    id=${AMON_AGENT_ID:-unset} \
+                                    sock=${AMON_SOCKET_PATH:-unset}\"\nexit 7\n";
+
+/// Inside a runtime's pane the user's alias still expands `claude` to
+/// `amon claude`, but wrapping there would hide the agent from the runtime
+/// and give amon a row with no window. amon execs the agent bare instead;
+/// the runtime detects it, and the daemon's runtime module brings it back
+/// onto the bar. A wrapped agent sees AMON_ENV=1 — a bypassed one must not.
+fn inside_a_runtime_pane_the_wrapper_steps_aside(pane_env: &str) {
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", REPORTS_ITS_WRAPPING);
+
+    // A terminal on stdin, or amon steps aside for a different reason
+    // (ADR-0016) and the test passes without exercising the runtime rule.
+    let (stdin, controller) = harness::open_terminal_stdin();
     let mut command = sandbox.command(&[&path_str(&agent)]);
-    command.env("HERDR_ENV", "1");
-    // As if herdr had been started from inside a wrapped agent: its server
-    // and every pane inherit that wrapper's routing, and this agent would
-    // otherwise report its state into a wrapper watching something else.
+    command.env(pane_env, "1");
+    // As if the runtime had been started from inside a wrapped agent: its
+    // server and every pane inherit that wrapper's routing, and this agent
+    // would otherwise report its state into a wrapper watching something else.
     command.env("AMON_ENV", "1");
     command.env("AMON_AGENT_ID", "outer-agent");
     command.env("AMON_SOCKET_PATH", "/nonexistent/outer.sock");
-    let output = command.output().expect("amon runs");
+    let output = command
+        .stdin(stdin)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .expect("amon runs");
+    unsafe { libc::close(controller) };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
@@ -105,11 +124,6 @@ fn inside_herdr_the_wrapper_steps_aside() {
     // Exec fidelity: the agent's exit code is the process's exit code.
     assert_eq!(output.status.code(), Some(7));
 }
-
-/// What a fake agent prints so a test can tell wrapped from bare.
-const REPORTS_ITS_WRAPPING: &str = "#!/bin/sh\necho \"amon_env=${AMON_ENV:-unset} \
-                                    id=${AMON_AGENT_ID:-unset} \
-                                    sock=${AMON_SOCKET_PATH:-unset}\"\nexit 7\n";
 
 #[test]
 fn without_a_terminal_the_wrapper_steps_aside() {

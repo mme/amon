@@ -57,4 +57,10 @@ pub mod env {
     /// here descends the whole process tree, so presence alone cannot carry
     /// that distinction and a pid to compare against `$PPID` can (ADR-0016).
     pub const WRAPPER_PID: &str = "AMON_WRAPPER_PID";
+    /// Set to `"1"` by an agent runtime in every pane process it manages —
+    /// herdr's `HERDR_ENV`, luvus's `LUVUS_ENV`. Their contracts, not ours:
+    /// the exact names each documents for its integrations. The wrapper steps
+    /// aside when any is set, because inside a runtime the runtime is the
+    /// detection authority (ADR-0016, and the daemon's runtime seam).
+    pub const RUNTIME_PANE_ENVS: &[&str] = &["HERDR_ENV", "LUVUS_ENV"];
 }
