@@ -54,6 +54,15 @@ pub struct AgentEntry {
     pub agent_session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_path: Option<String>,
+    /// What the agent is doing, in the harness's own words: the line it last
+    /// put on screen to narrate its own step. Read from the rendered terminal,
+    /// never composed here — a phrase amon wrote itself would say no more than
+    /// the state column already does (ADR-0017).
+    ///
+    /// Absent for an agent whose harness amon cannot yet read, and for one
+    /// whose screen cannot be believed right now.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activity: Option<String>,
     /// The compositor window hosting the agent's terminal, as an opaque
     /// compositor-native token. Absent off a supported compositor, or when the
     /// wrapper could not identify its window unambiguously — never guessed.
@@ -221,6 +230,15 @@ pub struct AgentPatch {
     pub agent_session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_path: Option<String>,
+    /// Two levels deep, like [`AgentPatch::window`]: a session that ended took
+    /// its activity with it, and the row has to be able to say so rather than
+    /// keep narrating the session before it.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_or_null"
+    )]
+    pub activity: Option<Option<String>>,
     /// Two levels deep because "no longer known" has to be expressible:
     /// absent means leave alone, `null` means clear, a string means set. A
     /// window that closed has to be able to say so rather than be left stale.
@@ -314,6 +332,9 @@ impl AgentPatch {
         }
         if self.agent_session_path.is_some() {
             entry.agent_session_path = self.agent_session_path.clone();
+        }
+        if let Some(activity) = &self.activity {
+            entry.activity = activity.clone();
         }
         if let Some(window) = &self.window {
             entry.window = window.clone();

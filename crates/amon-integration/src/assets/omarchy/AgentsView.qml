@@ -154,12 +154,19 @@ FocusScope {
 
   // Left to right. Position is priority: what sits further right goes first
   // when the pane is too narrow to hold everything.
-  readonly property var columnOrder: ["glyph", "identity", "branch", "age", "state", "kind"]
+  readonly property var columnOrder: ["glyph", "identity", "branch", "age", "state", "kind", "activity"]
 
   // Everything except the glyph and the identity, rightmost first. Whatever
   // else goes, a row still says whether it wants you and which agent it is —
   // which is the whole question the pane exists to answer.
-  readonly property var droppable: ["state", "kind", "age", "branch"]
+  readonly property var droppable: ["activity", "state", "kind", "age", "branch"]
+
+  // Activity is the one column whose content has no natural length: a harness
+  // writes whatever sentence it likes. Sized to a budget rather than to the
+  // longest one present, so a single verbose line cannot push the columns that
+  // identify a row off the pane — it elides instead, which costs its own tail
+  // and nothing else.
+  readonly property int activityBudget: view.textWidth("m".repeat(32))
 
   // Where the agent is, split into the one segment that identifies it and the
   // qualification around it. Inside a repository that is the Project, and the
@@ -211,7 +218,8 @@ FocusScope {
       // one showing now, so the row does not shuffle when 59s becomes 1m.
       age: view.textWidth("9999h"),
       kind: 0,
-      state: 0
+      state: 0,
+      activity: 0
     }
 
     for (let i = 0; i < rows.length; i++) {
@@ -220,7 +228,9 @@ FocusScope {
       natural.branch = Math.max(natural.branch, view.textWidth(entry.branch))
       natural.state = Math.max(natural.state, view.textWidth(view.cellText(entry, "state")))
       natural.kind = Math.max(natural.kind, view.textWidth(entry.agent))
+      natural.activity = Math.max(natural.activity, view.textWidth(entry.activity))
     }
+    natural.activity = Math.min(natural.activity, view.activityBudget)
 
     let present = view.columnOrder.filter(column => natural[column] > 0)
     const width = {}
@@ -748,6 +758,27 @@ FocusScope {
       anchors.verticalCenter: parent.verticalCenter
       width: view.columnWidth("state")
       text: view.labels[row.entry.state] || row.entry.state
+      color: view.dim
+      font.family: view.fontFamily
+      font.pixelSize: Style.font.body
+      elide: Text.ElideRight
+    }
+
+    // What the agent says it is doing, in the harness's own words — "Reading 5
+    // files", "Bash(cargo test)", the opening line of a reply. Never a phrase
+    // amon composed: a column that said "Working…" would repeat the glyph and
+    // the state beside it, which is the mistake ADR-0017 records.
+    //
+    // Rightmost, and so the first column to go when the pane narrows. It is
+    // the elaboration on a row, never what identifies one, and a row that has
+    // lost it still answers the question the pane exists for.
+    Text {
+      id: activityText
+      visible: view.columnVisible("activity")
+      x: Style.space(10) + view.columnX("activity")
+      anchors.verticalCenter: parent.verticalCenter
+      width: view.columnWidth("activity")
+      text: row.entry.activity
       color: view.dim
       font.family: view.fontFamily
       font.pixelSize: Style.font.body

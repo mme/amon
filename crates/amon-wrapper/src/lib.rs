@@ -148,6 +148,9 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
         started_at: now_millis(),
         agent_session_id: None,
         agent_session_path: None,
+        // Nothing has been rendered yet; the observer fills this in once the
+        // agent has drawn a screen worth reading.
+        activity: None,
         window: None,
         workspace: None,
         // Resolved before the agent is registered, so a row never appears

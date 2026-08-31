@@ -246,6 +246,7 @@ mod tests {
             started_at: 0,
             agent_session_id: None,
             agent_session_path: None,
+            activity: None,
             project: None,
             subpath: None,
             window: None,

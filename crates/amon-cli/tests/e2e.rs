@@ -323,6 +323,62 @@ fn amons_own_subcommands_reject_unknown_flags() {
     );
 }
 
+/// Draws what Claude draws: a marker line naming the step, then the input box
+/// between two horizontal rules. Octal escapes rather than literals so the
+/// bytes on the wire are unambiguous — `●` (U+25CF), `─` (U+2500), `❯`
+/// (U+276F).
+const NARRATES_A_STEP: &str = r#"#!/bin/sh
+printf '\342\227\217 Bash(cargo test)\r\n'
+printf '\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\r\n'
+printf '\342\235\257 \r\n'
+printf '\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\r\n'
+sleep 10
+"#;
+
+#[test]
+fn what_the_agent_says_it_is_doing_reaches_status() {
+    // The whole path in one go: the wrapper's shadow terminal renders the
+    // screen, the carrier reads the line off it, the patch carries it, and the
+    // daemon hands it to a client. Every other test of this reads a screen
+    // amon built for itself.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", NARRATES_A_STEP);
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    let agents = sandbox.wait_for_status("the agent to narrate a step", |agents| {
+        agent_named(agents, "claude").is_some_and(|entry| entry["activity"].is_string())
+    });
+
+    let entry = agent_named(&agents, "claude").expect("registered");
+    assert_eq!(
+        entry["activity"],
+        serde_json::json!("Bash(cargo test)"),
+        "the harness's own words, marker stripped: {entry:#?}"
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn an_agent_that_narrates_nothing_says_nothing() {
+    // The field is absent rather than empty or invented. A row with no
+    // activity has to look different from one narrating an empty string.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", WORKING_THEN_IDLE);
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent), "5", "5"]);
+
+    let agents = sandbox.wait_for_status("the agent to register", |agents| {
+        agent_named(agents, "claude").is_some()
+    });
+
+    let entry = agent_named(&agents, "claude").expect("registered");
+    assert!(entry["activity"].is_null(), "{entry:#?}");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 #[test]
 fn a_running_agent_is_visible_in_status() {
     let sandbox = Sandbox::new();

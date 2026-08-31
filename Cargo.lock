@@ -92,8 +92,11 @@ version = "0.3.0"
 dependencies = [
  "amon-detect",
  "libghostty-vt",
+ "portable-pty",
+ "regex",
  "schemars",
  "serde",
+ "toml",
 ]
 
 [[package]]

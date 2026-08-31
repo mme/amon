@@ -396,6 +396,11 @@ Item {
       project: entry.project || "",
       subpath: entry.subpath || "",
       stateSince: entry.state_since || 0,
+      // What the agent last said it was doing, in its own harness's words.
+      // Empty for a harness amon cannot read yet, and for one whose screen
+      // cannot be believed right now — the pane draws an empty cell for both,
+      // since neither is a thing to announce.
+      activity: entry.activity || "",
       // Opaque, and handed back to the compositor rather than parsed (ADR-0011
       // and the note on AgentEntry::window). Absent off a supported compositor,
       // which is why every use of it is guarded.

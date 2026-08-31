@@ -3,6 +3,13 @@
     "AgentEntry": {
       "description": "One connected agent. Lives exactly as long as its wrapper's connection to\nthe daemon; nothing here is persisted.",
       "properties": {
+        "activity": {
+          "description": "What the agent is doing, in the harness's own words: the line it last\nput on screen to narrate its own step. Read from the rendered terminal,\nnever composed here — a phrase amon wrote itself would say no more than\nthe state column already does (ADR-0017).\n\nAbsent for an agent whose harness amon cannot yet read, and for one\nwhose screen cannot be believed right now.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "agent": {
           "description": "Agent kind, e.g. `claude`. Free-form so that a wrapper built against a\nnewer agent list still registers against an older daemon.",
           "type": "string"
@@ -135,6 +142,13 @@
     "AgentPatch": {
       "description": "A partial update to an entry. Absent fields are left alone, which is what\nlets an old wrapper omit fields a newer daemon knows about.",
       "properties": {
+        "activity": {
+          "description": "Two levels deep, like [`AgentPatch::window`]: a session that ended took\nits activity with it, and the row has to be able to say so rather than\nkeep narrating the session before it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "agent": {
           "type": [
             "string",

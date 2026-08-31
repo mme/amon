@@ -296,6 +296,19 @@ fn run_status(json: bool) -> Result<(), Box<dyn std::error::Error>> {
         .filter_map(|agent| agent.branch.as_deref())
         .map(|branch| branch.chars().count())
         .max();
+    // The kind was the last column and needed no width of its own. It does now
+    // that something follows it — and only while something does, so a run with
+    // nothing to say about activity prints exactly what it printed before.
+    let kind_width = agents
+        .iter()
+        .any(|agent| agent.activity.is_some())
+        .then(|| {
+            agents
+                .iter()
+                .map(|agent| agent.agent.chars().count())
+                .max()
+                .unwrap_or(0)
+        });
 
     let column = |value: Option<&str>, width: Option<usize>| match width {
         Some(width) => format!("{:<width$}  ", value.unwrap_or(""), width = width),
@@ -303,16 +316,25 @@ fn run_status(json: bool) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     for (agent, identity) in agents.iter().zip(&identities) {
-        println!(
-            "{}{:<identity_width$}  {}{:>5}  {:<8}  {}",
+        // Trimmed at the end because the columns before the last one pad to a
+        // shared width, and a row whose last columns are empty would otherwise
+        // trail spaces into whatever this is piped to.
+        let line = format!(
+            "{}{:<identity_width$}  {}{:>5}  {:<8}  {}{}",
             column(agent.workspace.as_deref(), workspace_width),
             identity,
             column(agent.branch.as_deref(), branch_width),
             age(agent.state_since),
             agent.state.as_str(),
-            agent.agent,
+            // Padded only when an activity follows it; bare otherwise.
+            match kind_width {
+                Some(width) => format!("{:<width$}  ", agent.agent, width = width),
+                None => agent.agent.clone(),
+            },
+            agent.activity.as_deref().unwrap_or(""),
             identity_width = identity_width,
         );
+        println!("{}", line.trim_end());
     }
     Ok(())
 }

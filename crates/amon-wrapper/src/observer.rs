@@ -87,6 +87,13 @@ pub struct Observer {
     /// sequence — only a *different* session needs to prove it is newer.
     last_session_id: Option<String>,
     focus: crate::focus::Tracker,
+    /// What the agent says it is doing, read off the same screen detection
+    /// reads. Held across frames it cannot read, so a blinking marker does
+    /// not make the row flicker.
+    activity: amon_term::ActivityTracker,
+    /// The activity last reported, so the daemon sees changes rather than a
+    /// heartbeat — the same rule the state field follows.
+    last_activity: Option<String>,
 }
 
 /// What the observer needs to know about the agent it is watching.
@@ -131,6 +138,8 @@ impl Observer {
             identity_seqs: std::collections::HashMap::new(),
             last_session_id: None,
             focus: crate::focus::Tracker::default(),
+            activity: amon_term::ActivityTracker::new(),
+            last_activity: None,
         })
     }
 
@@ -247,6 +256,13 @@ impl Observer {
                 // it gets filled in even when the session report lost the race.
                 let same_session = self.last_session_id.as_deref() == Some(session_id.as_str());
                 if self.identity_report_is_fresh(&source, seq) || same_session {
+                    // A different session is a different piece of work, and
+                    // what the last one was doing is not a fact about this
+                    // one. Only a *replaced* session clears: the first report
+                    // names the session the screen was already showing.
+                    if !same_session && self.last_session_id.is_some() {
+                        self.activity.clear();
+                    }
                     self.last_session_id = Some(session_id.clone());
                     let mut patch = AgentPatch::new(&self.agent_id);
                     patch.agent = Some(agent.clone());
@@ -308,12 +324,9 @@ impl Observer {
         self.dirty = false;
 
         let title = self.shadow.title();
-        let detection = detect_agent_with_osc(
-            self.agent,
-            &self.shadow.detection_text(),
-            title.as_deref().unwrap_or_default(),
-            "",
-        );
+        let title = title.as_deref().unwrap_or_default();
+        let screen = self.shadow.detection_text();
+        let detection = detect_agent_with_osc(self.agent, &screen, title, "");
 
         if !detection.skip_state_update {
             self.state.set_detected_state_with_screen_signals_at(
@@ -327,25 +340,52 @@ impl Observer {
             );
         }
 
+        // Read from the same frame detection just read, so the row's state
+        // and the row's account of itself can never describe different
+        // screens. An agent amon could not identify has no carrier and would
+        // read nothing anyway.
+        if let Some(agent) = self.agent {
+            self.activity.observe(
+                agent,
+                amon_detect::detect::manifest::DetectionInput {
+                    screen: &screen,
+                    osc_title: title,
+                    osc_progress: "",
+                },
+            );
+        }
+
         self.publish();
     }
 
-    /// Reports the arbitrated state, but only when it actually changed — the
-    /// daemon's subscribers should see transitions, not a heartbeat.
+    /// Reports the arbitrated state and the activity line, but only what
+    /// actually changed — the daemon's subscribers should see transitions,
+    /// not a heartbeat. The two move independently: an agent working its way
+    /// through a long turn narrates several steps without changing state, and
+    /// a state change can arrive on a frame whose activity is unchanged.
     fn publish(&mut self) {
         let state = from_detect_state(self.state.state);
-        if state == self.last_reported {
+        let activity = self.activity.current().map(str::to_string);
+        let state_changed = state != self.last_reported;
+        let activity_changed = activity != self.last_activity;
+        if !state_changed && !activity_changed {
             return;
         }
-        self.last_reported = state;
-        // Seen is per-state: whatever the user saw of the last state says
-        // nothing about this one.
-        self.focus.state_began();
 
         let mut patch = AgentPatch::new(&self.agent_id);
-        patch.state = Some(state);
-        patch.state_since = Some(crate::now_millis());
-        patch.seen = Some(self.focus.seen());
+        if state_changed {
+            self.last_reported = state;
+            // Seen is per-state: whatever the user saw of the last state says
+            // nothing about this one.
+            self.focus.state_began();
+            patch.state = Some(state);
+            patch.state_since = Some(crate::now_millis());
+            patch.seen = Some(self.focus.seen());
+        }
+        if activity_changed {
+            self.last_activity = activity.clone();
+            patch.activity = Some(activity);
+        }
         self.link.update(patch);
     }
 }

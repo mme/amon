@@ -1,0 +1,12 @@
+diff --git i/crates/amon-detect/src/vendor/detect/manifest.rs w/crates/amon-detect/src/vendor/detect/manifest.rs
+--- i/crates/amon-detect/src/vendor/detect/manifest.rs
++++ w/crates/amon-detect/src/vendor/detect/manifest.rs
+@@ -1288,7 +1288,7 @@
+     true
+ }
+ 
+-fn region<'a>(input: DetectionInput<'a>, spec: &str) -> &'a str {
++pub fn region<'a>(input: DetectionInput<'a>, spec: &str) -> &'a str {
+     let trimmed = spec.trim();
+     // OSC regions source from their dedicated fields, not the screen.
+     match trimmed {

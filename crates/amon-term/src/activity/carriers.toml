@@ -1,0 +1,35 @@
+# Which line on screen says what an agent is doing.
+#
+# One entry names a region of the rendered screen and a pattern that
+# recognises the line inside it. Both halves are borrowed rather than
+# invented: `region` is evaluated by herdr's own accessor, so the structural
+# knowledge of where a harness draws its input box stays in the vendored
+# engine, and `pattern` is an ordinary regex over the lines that come back.
+#
+# `pattern` may name a `text` group to keep only part of the line; without one
+# the whole match is kept. The engine never sees these patterns, so a group
+# here costs nothing.
+#
+# Entries are tried in file order and the first that yields a line wins, so a
+# precise carrier can be listed above a broader fallback for the same agent.
+#
+# Adding an agent is adding an entry. There is no per-agent code.
+
+# Claude prefixes every tool call and every reply with a filled circle, and
+# what follows it is the harness's own one-line account of the step — "Read 5
+# files", "Bash(cargo test)", the opening line of an answer. The marker blinks
+# while a call is in flight, which is why a frame that fails to match holds the
+# previous line instead of clearing it.
+#
+# The region stops at the input box rather than counting lines back through it,
+# so text the user is still typing can never be read back to them as something
+# the agent did. The last match in it is the newest.
+#
+# The trailing "(ctrl+o to expand)" is a keyboard hint, not something the agent
+# is doing, so the pattern drops it. Trimming chrome belongs here rather than
+# in the reader: it is knowledge about one harness's wording, which is exactly
+# what this file is for.
+[[carrier]]
+agent = "claude"
+region = "above_prompt_box"
+pattern = '^\s*●\s+(?<text>\S.*?)(?:\s*\(ctrl\+[a-z] to [a-z]+\))?\s*$'

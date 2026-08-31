@@ -65,3 +65,10 @@ evidence that it is worth showing. What matters is whether it stays true, and a
 value can be perfectly stable because it is frozen rather than because it is
 tracking anything — which is how this one read as a good source right up until
 it was on screen next to work it no longer described.
+
+## Superseded in part
+
+ADR-0020 adds the column back from a different source: the line the harness
+draws to narrate its own step, read off the rendered screen. The reasoning
+here stands — it is why that one had to arrive with evidence that its source
+tracks the work rather than freezing.
