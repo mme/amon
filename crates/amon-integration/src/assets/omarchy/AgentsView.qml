@@ -171,6 +171,120 @@ FocusScope {
   // width rather than added to the row, which keeps the age against the edge.
   readonly property int activityInset: Style.space(4)
 
+  // A band of light crossing the message while an agent is working.
+  //
+  // One phase drives every row, and the band is measured against the message
+  // *column* rather than against each row's own sentence — the column is one
+  // width for the whole list, so the highlight is at the same place on every
+  // working row at the same instant. What crosses the pane is one wave, not
+  // several rows each animating on their own clock. A short message simply
+  // stops being lit sooner than a long one, which is what a single wave
+  // passing over text of different lengths looks like.
+  //
+  // Nothing moves: the glyphs are fixed and only their colour travels, which
+  // is what keeps this readable rather than distracting. The colours are the
+  // row's own two tokens, so the effect follows any theme instead of naming
+  // colours of its own.
+  // The glimmer crosses quickly and then the row rests. Named as two spans
+  // rather than as a period the sweep is subtracted from, because the wait is
+  // the thing being chosen — a band drawn out to fill a period would not read
+  // as a glimmer at all, it would read as text slowly changing colour. 900ms
+  // is a duration the shell already animates at elsewhere.
+  readonly property int shimmerSweep: 900
+  readonly property int shimmerRest: 2000
+
+  // Parked at 1, which is the band already past the right edge: nothing is lit
+  // between glimmers, and nothing is lit before the first one.
+  property real shimmerPhase: 1
+  property bool shimmerRunning: false
+  property bool sweeping: false
+
+  // Raised as each glimmer finishes. A row that has stopped working waits for
+  // this rather than dropping out under a band that is still crossing it.
+  signal sweepFinished()
+
+  readonly property bool anyWorking: {
+    const rows = view.agents.rows
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].state === "working") return true
+    }
+    return false
+  }
+
+  onAnyWorkingChanged: {
+    if (view.anyWorking) view.shimmerRunning = true
+    else if (!view.sweeping) view.shimmerRunning = false
+  }
+  Component.onCompleted: if (view.anyWorking) view.shimmerRunning = true
+
+  // Stopped outright when no agent is working, so an idle pane costs nothing —
+  // but never mid-glimmer: the run ends where a band has finished crossing.
+  SequentialAnimation {
+    running: view.shimmerRunning
+    loops: Animation.Infinite
+
+    ScriptAction { script: view.sweeping = true }
+    NumberAnimation {
+      target: view
+      property: "shimmerPhase"
+      from: 0
+      to: 1
+      duration: view.shimmerSweep
+    }
+    ScriptAction {
+      script: {
+        view.sweeping = false
+        view.sweepFinished()
+        if (!view.anyWorking) view.shimmerRunning = false
+      }
+    }
+    PauseAnimation { duration: view.shimmerRest }
+  }
+
+  // Wide enough to feather over several characters — a hard edge would read as
+  // a bar sliding across rather than as the text lighting up.
+  readonly property int shimmerBand: Math.max(
+    view.textWidth("m".repeat(8)),
+    Math.round(view.columnWidth("activity") * 0.28))
+
+  // How lit a chunk is, from 0 at the band's edge to 1 at its centre. The
+  // cosine is what feathers it; a linear falloff leaves a visible seam where
+  // the band ends.
+  function shimmerAt(centerX) {
+    const band = view.shimmerBand
+    if (band <= 0) return 0
+    // Starts and ends off the column, so the band enters and leaves rather
+    // than appearing mid-message.
+    const head = -band + view.shimmerPhase * (view.columnWidth("activity") + 2 * band)
+    const distance = Math.abs(centerX - head) / band
+    if (distance >= 1) return 0
+    return (1 + Math.cos(distance * Math.PI)) / 2
+  }
+
+  function shimmerColor(centerX) {
+    const lit = view.shimmerAt(centerX)
+    if (lit <= 0) return view.dim
+    const from = view.dim
+    const to = view.foreground
+    return Qt.rgba(
+      from.r + (to.r - from.r) * lit,
+      from.g + (to.g - from.g) * lit,
+      from.b + (to.b - from.b) * lit,
+      1)
+  }
+
+  // The message split into pieces small enough that the band steps smoothly
+  // across it. Per-character would be exact and costs five times the items for
+  // a difference the eye cannot find, the band being feathered over roughly
+  // twenty characters.
+  function shimmerChunks(text) {
+    if (!text) return []
+    const size = Math.max(2, Math.ceil(text.length / 14))
+    const out = []
+    for (let i = 0; i < text.length; i += size) out.push(text.slice(i, i + size))
+    return out
+  }
+
   // Where the agent is, split into the one segment that identifies it and the
   // qualification around it. Inside a repository that is the Project, and the
   // subpath trails it; outside one there is no Project, and the directory the
@@ -749,17 +863,85 @@ FocusScope {
     // The elastic column. It takes whatever the fixed ones leave and elides
     // into it, so a narrow pane costs this column its tail rather than costing
     // a row something that identifies it.
+    //
+    // Drawn two ways. A working agent's message is split into chunks so a band
+    // of light can cross it; everything else is one plain Text. The split is
+    // not the layout — Qt still does the eliding, through the TextMetrics
+    // below, and the chunks are cut from the string it hands back. So both
+    // paths break the sentence in the same place, with Qt's own ellipsis,
+    // whatever font the theme resolves to.
+    readonly property int activityWidth:
+      Math.max(0, view.columnWidth("activity") - view.activityInset)
+
+    // Whether this row is drawn in chunks so a glimmer can cross it. It is not
+    // simply "is working": a row that stops mid-glimmer keeps its chunks until
+    // the band has finished crossing, because cutting the light off half way
+    // over a sentence is more noticeable than the glimmer itself. Stopping
+    // between glimmers takes effect at once, there being nothing to finish.
+    readonly property bool working: row.entry.state === "working"
+    property bool shimmering: false
+
+    onWorkingChanged: {
+      if (row.working) row.shimmering = true
+      else if (!view.sweeping) row.shimmering = false
+    }
+    Component.onCompleted: if (row.working) row.shimmering = true
+
+    Connections {
+      target: view
+      function onSweepFinished() {
+        if (!row.working) row.shimmering = false
+      }
+    }
+
+    // Qt's elision, asked for rather than left implicit. Reaching for
+    // `Math.floor(width / advanceWidth)` instead would be a second answer to a
+    // question the other columns already answer one way, and would hold only
+    // while the theme's font stayed monospace.
+    TextMetrics {
+      id: activityMetrics
+      font.family: view.fontFamily
+      font.pixelSize: Style.font.body
+      text: row.entry.activity
+      elide: Text.ElideRight
+      elideWidth: row.activityWidth
+    }
+
     Text {
       id: activityText
-      visible: view.columnVisible("activity")
+      visible: view.columnVisible("activity") && !row.shimmering
       x: Style.space(10) + view.columnX("activity") + view.activityInset
       anchors.verticalCenter: parent.verticalCenter
-      width: Math.max(0, view.columnWidth("activity") - view.activityInset)
+      width: row.activityWidth
       text: row.entry.activity
       color: view.dim
       font.family: view.fontFamily
       font.pixelSize: Style.font.body
       elide: Text.ElideRight
+    }
+
+    Row {
+      id: activityShimmer
+      visible: view.columnVisible("activity") && row.shimmering
+      x: Style.space(10) + view.columnX("activity") + view.activityInset
+      anchors.verticalCenter: parent.verticalCenter
+      width: row.activityWidth
+
+      Repeater {
+        // Built from the elided string, so the chunks are exactly what the
+        // plain Text would have drawn.
+        model: activityShimmer.visible ? view.shimmerChunks(activityMetrics.elidedText) : []
+
+        Text {
+          text: modelData
+          // Measured at the chunk's middle, in the message column's own
+          // coordinates — the same coordinates every other working row uses,
+          // which is what puts them all in step.
+          color: view.shimmerColor(x + width / 2 + view.activityInset)
+          font.family: view.fontFamily
+          font.pixelSize: Style.font.body
+        }
+      }
     }
 
     // How long the agent has been in the state it is in — not how long it has
