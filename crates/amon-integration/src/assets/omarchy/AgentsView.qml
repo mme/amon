@@ -166,6 +166,11 @@ FocusScope {
   // better as nothing at all.
   readonly property int activityMinimum: view.textWidth("m".repeat(10))
 
+  // A little air before the message, so a sentence does not start hard against
+  // the branch the way a short fixed value can. Taken out of the column's own
+  // width rather than added to the row, which keeps the age against the edge.
+  readonly property int activityInset: Style.space(4)
+
   // Where the agent is, split into the one segment that identifies it and the
   // qualification around it. Inside a repository that is the Project, and the
   // subpath trails it; outside one there is no Project, and the directory the
@@ -747,9 +752,9 @@ FocusScope {
     Text {
       id: activityText
       visible: view.columnVisible("activity")
-      x: Style.space(10) + view.columnX("activity")
+      x: Style.space(10) + view.columnX("activity") + view.activityInset
       anchors.verticalCenter: parent.verticalCenter
-      width: view.columnWidth("activity")
+      width: Math.max(0, view.columnWidth("activity") - view.activityInset)
       text: row.entry.activity
       color: view.dim
       font.family: view.fontFamily
