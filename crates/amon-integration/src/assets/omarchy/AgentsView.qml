@@ -241,24 +241,44 @@ FocusScope {
     PauseAnimation { duration: view.shimmerRest }
   }
 
-  // Wide enough to feather over several characters — a hard edge would read as
-  // a bar sliding across rather than as the text lighting up.
-  readonly property int shimmerBand: Math.max(
-    view.textWidth("m".repeat(8)),
-    Math.round(view.columnWidth("activity") * 0.28))
+  // The band's shape, in characters. It is flat across the peak and falls off
+  // either side — a single cosine bump, which is what this was, only ever
+  // reaches full brightness at one point, so the light read as a moving dot
+  // rather than as a lit word.
+  //
+  // Flat top plus cosine shoulders is a Tukey window. The plateau is what you
+  // set when you want "three characters lit"; the shoulders are what keep it
+  // from looking like a rectangle sliding past.
+  readonly property int shimmerPeakChars: 3
+  readonly property int shimmerFalloffChars: 8
 
-  // How lit a chunk is, from 0 at the band's edge to 1 at its centre. The
-  // cosine is what feathers it; a linear falloff leaves a visible seam where
-  // the band ends.
+  // One character per piece, because a three-character plateau cannot be drawn
+  // by pieces five characters wide — the band would land inside a single piece
+  // and light all of it. The font is monospace, so a piece per character costs
+  // nothing in layout: every glyph is one advance and the Row rebuilds the same
+  // line the plain Text would have drawn.
+  readonly property int shimmerChunkChars: 1
+
+  readonly property real shimmerCharWidth: Math.max(1, view.textWidth("m"))
+  readonly property real shimmerPeak: view.shimmerPeakChars * view.shimmerCharWidth
+  readonly property real shimmerFalloff: view.shimmerFalloffChars * view.shimmerCharWidth
+  readonly property real shimmerReach: view.shimmerPeak / 2 + view.shimmerFalloff
+
+  // How lit a character is: 1 across the plateau, a cosine shoulder down to 0,
+  // nothing beyond. Distance is measured in the message column's own
+  // coordinates, which every working row shares — that is what puts them in
+  // step.
   function shimmerAt(centerX) {
-    const band = view.shimmerBand
-    if (band <= 0) return 0
+    const half = view.shimmerPeak / 2
+    const falloff = view.shimmerFalloff
     // Starts and ends off the column, so the band enters and leaves rather
     // than appearing mid-message.
-    const head = -band + view.shimmerPhase * (view.columnWidth("activity") + 2 * band)
-    const distance = Math.abs(centerX - head) / band
-    if (distance >= 1) return 0
-    return (1 + Math.cos(distance * Math.PI)) / 2
+    const head = -view.shimmerReach
+      + view.shimmerPhase * (view.columnWidth("activity") + 2 * view.shimmerReach)
+    const distance = Math.abs(centerX - head)
+    if (distance <= half) return 1
+    if (distance >= half + falloff || falloff <= 0) return 0
+    return (1 + Math.cos((distance - half) / falloff * Math.PI)) / 2
   }
 
   function shimmerColor(centerX) {
@@ -273,13 +293,10 @@ FocusScope {
       1)
   }
 
-  // The message split into pieces small enough that the band steps smoothly
-  // across it. Per-character would be exact and costs five times the items for
-  // a difference the eye cannot find, the band being feathered over roughly
-  // twenty characters.
+  // The message split into pieces the band can resolve.
   function shimmerChunks(text) {
     if (!text) return []
-    const size = Math.max(2, Math.ceil(text.length / 14))
+    const size = Math.max(1, view.shimmerChunkChars)
     const out = []
     for (let i = 0; i < text.length; i += size) out.push(text.slice(i, i + size))
     return out
