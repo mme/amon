@@ -6,20 +6,30 @@
 # knowledge of where a harness draws its input box stays in the vendored
 # engine, and `pattern` is an ordinary regex over the lines that come back.
 #
-# `pattern` may name a `text` group to keep only part of the line; without one
-# the whole match is kept. The engine never sees these patterns, so a group
-# here costs nothing.
+# Fields:
+#   agent           which harness this describes
+#   prompt_region   where to look for proof the agent's own prompt is on
+#                   screen; defaults to herdr's "prompt_box_body"
+#   prompt_pattern  what that proof looks like; absent means the region just
+#                   has to hold something
+#   region          where the narration lives
+#   pattern         what a narration line looks like; may name a `text` group
+#                   to keep only part of it
+#   reject          lines to skip even when `pattern` matches, for a harness
+#                   that marks its steps and its notices the same way
 #
-# Entries are tried in file order and the first that yields a line wins, so a
-# precise carrier can be listed above a broader fallback for the same agent.
+# The engine never sees these patterns, so a capture group here costs nothing.
+# Entries are tried in file order and the first that yields a line wins.
 #
 # Adding an agent is adding an entry. There is no per-agent code.
+# `cargo run -p amon-term --example carrier-scout -- <capture> <agent>` says
+# what a harness offers before one is written.
 
 # Claude prefixes every tool call and every reply with a filled circle, and
-# what follows it is the harness's own one-line account of the step — "Read 5
-# files", "Bash(cargo test)", the opening line of an answer. The marker blinks
-# while a call is in flight, which is why a frame that fails to match holds the
-# previous line instead of clearing it.
+# what follows it is the harness's own one-line account of the step — "Reading
+# 1 file…", "Bash(cargo test)", the opening line of an answer. The marker
+# blinks while a call is in flight, which is why a frame that fails to match
+# holds the previous line instead of clearing it.
 #
 # The region stops at the input box rather than counting lines back through it,
 # so text the user is still typing can never be read back to them as something
@@ -33,3 +43,23 @@
 agent = "claude"
 region = "above_prompt_box"
 pattern = '^\s*●\s+(?<text>\S.*?)(?:\s*\(ctrl\+[a-z] to [a-z]+\))?\s*$'
+
+# Codex draws no box around its prompt — it is a bare "›" line — so the
+# default proof does not apply. Worse than not applying: herdr's box finder
+# latches onto the two rules Codex draws around an *answer* and reports that
+# as the input box, which is true on 2 frames of a 47-frame session and wrong
+# in a different way on the rest. The marker line is the honest signal, and it
+# is present on 38 of those 47.
+#
+# Codex marks its steps with a bullet, but it marks its status line and its
+# system notices with the same bullet. "Working (7s • esc to interrupt)" is
+# both the generic label this column exists to avoid and a value that changes
+# every second, so it is rejected along with the startup notices; scanning
+# continues past them to the newest real step.
+[[carrier]]
+agent = "codex"
+prompt_region = "bottom_non_empty_lines(4)"
+prompt_pattern = '^\s*›\s'
+region = "bottom_non_empty_lines(12)"
+pattern = '^\s*[•■✗✓]\s+(?<text>\S.*?)\s*$'
+reject = 'esc to interrupt|usage limit reset|^\s*[•■✗✓]\s+(?:Starting|Updating|Loading)\b'

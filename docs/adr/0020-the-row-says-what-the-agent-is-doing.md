@@ -101,8 +101,30 @@ instead of pushing the columns that identify a row off the pane. It is
 rightmost and the first column dropped when the pane narrows — the
 elaboration on a row, never what identifies one.
 
-**Claude only, deliberately.** `carriers.toml` has one entry. Codex, pi and
-omp read nothing rather than guess, since their screens are characterised but
-their carriers are not written. The captures under
-`crates/amon-term/tests/fixtures/` and `examples/harness-probe.rs` are how the
-next one gets added, and a replayed capture is how it stays added.
+**Proof that the prompt is on screen is per-agent data, not code.** The first
+version hardcoded herdr's `prompt_box_body`, which was Claude's box passing
+for every agent's. Codex draws no box: its prompt is a bare `›` line, and
+herdr's box finder latches onto the two rules Codex puts around an *answer*
+and reports that as the input box — right on 2 frames of a 47-frame session
+and wrong in a more misleading way on the rest, since the "box" it finds holds
+the reply. The marker line is present on 38 of those 47. So an entry names
+where to look and what to look for, defaulting to the box when a harness draws
+one.
+
+**A harness that marks its steps and its notices alike needs the difference
+spelled out.** Codex bullets `• Explored` and `• Working (7s · esc to
+interrupt)` identically, and the second is both the generic label this column
+exists to avoid and a value that changes every second. An entry may carry a
+`reject` pattern; scanning continues past a rejected line to the step behind
+it. This is herdr's own `not` gate in a smaller form, and it is per-agent
+wording, so it belongs in the data.
+
+**Claude and Codex, deliberately not more.** pi is the reason to stop: its
+prompts, tool calls and replies are identical as text and told apart purely by
+background colour (`#343541`, `#283228`, unset), which no text region can
+express — `detection_text()` discards attributes. Reading pi means either a
+colour-aware region built on the emulator's cell attributes or its hook, which
+today sends text only when blocked. Neither is an entry in this file. omp is
+simply unmeasured. `examples/carrier-scout.rs` reports what a harness offers
+before an entry is written for it, and a replayed capture is how it stays
+written.

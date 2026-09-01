@@ -10,7 +10,7 @@
 
 use amon_detect::detect::manifest::DetectionInput;
 use amon_detect::identify_agent;
-use amon_term::{read_activity, ActivityTracker, ShadowTerminal};
+use amon_term::{ActivityTracker, ShadowTerminal};
 
 const COLS: u16 = 100;
 const ROWS: u16 = 30;
@@ -47,9 +47,16 @@ fn replay(name: &str, agent: &str) -> Vec<String> {
 fn assert_reads_as_the_agents_own_words(seen: &[String]) {
     assert!(!seen.is_empty(), "read nothing from a whole session");
     for line in seen {
-        assert!(!line.starts_with('●'), "marker was left on {line:?}");
+        assert!(
+            !line.starts_with(['●', '•', '■', '✗', '✓']),
+            "marker was left on {line:?}"
+        );
         assert!(!line.contains("esc to interrupt"), "status line: {line:?}");
         assert!(!line.contains("ctrl+o"), "kept a keyboard hint: {line:?}");
+        assert!(
+            !line.starts_with("Working"),
+            "the label we exist to avoid: {line:?}"
+        );
         assert!(line.len() <= 200, "unbounded: {line:?}");
     }
 }
@@ -111,29 +118,21 @@ fn a_claude_session_never_reads_the_user_own_prompt() {
 }
 
 #[test]
-fn an_agent_with_no_carrier_reads_nothing() {
-    // Only claude has an entry today. The reader has to be silent for the
-    // rest rather than guess, since every other agent's screen is still
-    // uncharacterised.
-    let agent = identify_agent("codex").expect("known agent");
-    let path = format!(
-        "{}/tests/fixtures/codex-prompt.raw",
-        env!("CARGO_MANIFEST_DIR")
+fn a_codex_session_reads_as_the_steps_it_took() {
+    // Codex narrates a step in the present tense while it runs and in the
+    // past tense once it is done, then states the answer. The tense shift is
+    // the harness's; amon relays both rather than flattening them.
+    let seen = replay("codex-prompt.raw", "codex");
+    assert_reads_as_the_agents_own_words(&seen);
+    assert!(
+        seen.iter().any(|line| line.starts_with("Explor")),
+        "never saw the step it took: {seen:?}"
     );
-    let bytes = std::fs::read(&path).expect("fixture");
-    let mut shadow = ShadowTerminal::new(COLS, ROWS).expect("shadow terminal");
-    shadow.feed(&bytes);
-    let screen = shadow.detection_text();
-    assert_eq!(
-        read_activity(
-            agent,
-            DetectionInput {
-                screen: &screen,
-                osc_title: "",
-                osc_progress: "",
-            }
-        ),
-        None
+    assert!(
+        seen.last()
+            .is_some_and(|line| line.contains("Apache License")),
+        "closed on {:?}",
+        seen.last()
     );
 }
 

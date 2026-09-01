@@ -9,8 +9,9 @@
 //! # Nothing here knows about any particular agent
 //!
 //! Which line to read is an entry in `carriers.toml`, not code: a region of
-//! the screen and a pattern that recognises the line inside it. Adding an
-//! agent is adding an entry.
+//! the screen, a pattern that recognises the line inside it, and how to tell
+//! that the agent's own prompt is on screen at all. Adding an agent is adding
+//! an entry.
 //!
 //! Neither half is amon's own invention. The region is evaluated by herdr's
 //! accessor, so the structural knowledge — where a harness draws its input
@@ -118,31 +119,56 @@ pub fn read(agent: Agent, input: DetectionInput<'_>) -> Option<String> {
         return None;
     }
 
-    // An agent not showing its input box is not showing its transcript
-    // either — it has handed the terminal to a pager, a diff viewer or an
-    // editor, and whatever is on screen belongs to that, not to the agent.
-    if region(input, "prompt_box_body").trim().is_empty() {
-        return None;
-    }
-
     carriers::for_agent(agent)
         .find_map(|carrier| carrier.read(input))
         .and_then(clean)
 }
 
-/// One entry of `carriers.toml`, with its pattern compiled.
+/// One entry of `carriers.toml`, with its patterns compiled.
 #[derive(Debug)]
 struct Carrier {
+    prompt_region: String,
+    prompt_pattern: Option<Regex>,
     region: String,
     pattern: Regex,
+    reject: Option<Regex>,
 }
 
 impl Carrier {
-    /// The last line of the carrier's region that its pattern matches — last
-    /// because the newest line is the current one, and the region reaches
-    /// back far enough to hold more than one turn.
     fn read(&self, input: DetectionInput<'_>) -> Option<String> {
+        if !self.shows_its_prompt(input) {
+            return None;
+        }
+        self.newest_line(input)
+    }
+
+    /// Whether the agent's own prompt is on screen.
+    ///
+    /// An agent that is not showing its prompt is not showing its transcript
+    /// either — it has handed the terminal to a pager, a diff viewer or an
+    /// editor, and whatever is on screen belongs to that, not to the agent.
+    ///
+    /// What the prompt looks like is per-agent, which is why it is data.
+    /// herdr's `prompt_box_body` finds Claude's box because Claude draws one;
+    /// on Codex it finds two rules around an *answer* and reports that as the
+    /// box, so an agent whose prompt is a bare marker line has to say where to
+    /// look and what to look for.
+    fn shows_its_prompt(&self, input: DetectionInput<'_>) -> bool {
+        let text = region(input, &self.prompt_region);
+        match &self.prompt_pattern {
+            Some(pattern) => text.lines().any(|line| pattern.is_match(line)),
+            None => !text.trim().is_empty(),
+        }
+    }
+
+    /// The last line of the carrier's region that its pattern matches and its
+    /// reject pattern does not — last because the newest line is the current
+    /// one, and the region reaches back far enough to hold more than one turn.
+    fn newest_line(&self, input: DetectionInput<'_>) -> Option<String> {
         region(input, &self.region).lines().rev().find_map(|line| {
+            if self.reject.as_ref().is_some_and(|it| it.is_match(line)) {
+                return None;
+            }
             let captures = self.pattern.captures(line)?;
             let kept = captures.name(TEXT_GROUP).or_else(|| captures.get(0))?;
             Some(kept.as_str().to_string())

@@ -360,6 +360,42 @@ fn what_the_agent_says_it_is_doing_reaches_status() {
     let _ = child.wait();
 }
 
+/// Codex's shape: bullets for the steps, a bare marker line for the prompt,
+/// no box drawn around anything, and its live status wearing the same bullet
+/// as a real step. `\342\200\272` is `›`, `\342\200\242` is `•`.
+const NARRATES_LIKE_CODEX: &str = r#"#!/bin/sh
+printf '\342\200\242 Explored\r\n'
+printf '\342\200\242 Working (7s \342\200\242 esc to interrupt)\r\n'
+printf '\342\200\272 Ask Codex to do anything\r\n'
+sleep 10
+"#;
+
+#[test]
+fn a_second_harness_needs_no_code_of_its_own() {
+    // Codex reaches status through the same reader as Claude, on an entry that
+    // supplies its own proof-of-prompt because herdr finds no box for it. This
+    // is the claim the design rests on: a harness is data.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("codex", NARRATES_LIKE_CODEX);
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    let agents = sandbox.wait_for_status("codex to narrate a step", |agents| {
+        agent_named(agents, "codex").is_some_and(|entry| entry["activity"].is_string())
+    });
+
+    // The newest bullet is the status line, which is rejected — so the step
+    // behind it is what a row shows.
+    let entry = agent_named(&agents, "codex").expect("registered");
+    assert_eq!(
+        entry["activity"],
+        serde_json::json!("Explored"),
+        "{entry:#?}"
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 #[test]
 fn an_agent_that_narrates_nothing_says_nothing() {
     // The field is absent rather than empty or invented. A row with no

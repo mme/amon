@@ -5,6 +5,20 @@ fn claude() -> Agent {
     identify_agent("claude").expect("claude is a known agent")
 }
 
+fn codex() -> Agent {
+    identify_agent("codex").expect("codex is a known agent")
+}
+
+/// A codex screen: bullets for the steps, a bare marker line for the prompt,
+/// and no box drawn around anything.
+fn codex_screen(transcript: &str) -> String {
+    format!(
+        "{transcript}\n\
+         › Ask Codex to do anything\n\
+         gpt-5.6-sol high · ~/somewhere\n"
+    )
+}
+
 fn input(screen: &str) -> DetectionInput<'_> {
     DetectionInput {
         screen,
@@ -38,11 +52,18 @@ fn every_carrier_names_an_agent_and_a_pattern_this_build_understands() {
             "carrier names unknown agent {:?}",
             entry.agent
         );
-        assert!(
-            regex::Regex::new(&entry.pattern).is_ok(),
-            "carrier for {} has an uncompilable pattern",
-            entry.agent
-        );
+        for (field, pattern) in [
+            ("pattern", Some(entry.pattern.as_str())),
+            ("prompt_pattern", entry.prompt_pattern.as_deref()),
+            ("reject", entry.reject.as_deref()),
+        ] {
+            let Some(pattern) = pattern else { continue };
+            assert!(
+                regex::Regex::new(pattern).is_ok(),
+                "carrier for {} has an uncompilable {field}",
+                entry.agent
+            );
+        }
     }
 }
 
@@ -53,12 +74,16 @@ fn every_carrier_names_a_region_the_engine_resolves() {
     let screen = screen("● something happened");
     let table: carriers::Table = toml::from_str(carriers::TABLE).expect("valid TOML");
     for entry in &table.carrier {
-        assert!(
-            !region(input(&screen), &entry.region).is_empty(),
-            "carrier for {} names region {:?}, which resolved to nothing",
-            entry.agent,
-            entry.region
-        );
+        for (field, spec) in [
+            ("region", &entry.region),
+            ("prompt_region", &entry.prompt_region),
+        ] {
+            assert!(
+                !region(input(&screen), spec).is_empty(),
+                "carrier for {} names {field} {spec:?}, which resolved to nothing",
+                entry.agent
+            );
+        }
     }
 }
 
@@ -178,4 +203,55 @@ fn a_finished_session_clears() {
     assert!(tracker.clear());
     assert_eq!(tracker.current(), None);
     assert!(!tracker.clear());
+}
+
+#[test]
+fn an_agent_with_no_carrier_reads_nothing() {
+    // pi has no entry. Its screen tells prompts, tool calls and replies apart
+    // by background colour alone, which no text region can express — so the
+    // reader stays silent rather than reading a line back that might be the
+    // user's own.
+    let pi = identify_agent("pi").expect("pi is a known agent");
+    assert_eq!(read(pi, input(&screen("● Read 5 files"))), None);
+}
+
+#[test]
+fn codex_proves_its_prompt_without_a_box() {
+    // herdr finds no box here, which is the whole point: the marker line is
+    // what says codex still owns the terminal.
+    let screen = codex_screen("• Explored");
+    assert!(
+        region(input(&screen), "prompt_box_body").trim().is_empty(),
+        "the fixture stopped being box-less, which is what it is for"
+    );
+    assert_eq!(read(codex(), input(&screen)).as_deref(), Some("Explored"));
+}
+
+#[test]
+fn codex_without_its_marker_line_says_nothing() {
+    // A pager or an editor has the terminal: the bullets are still on screen,
+    // but the line that proves codex is listening is gone.
+    let taken_over = "• Explored\n(END)\n";
+    assert_eq!(read(codex(), input(taken_over)), None);
+}
+
+#[test]
+fn codex_skips_its_own_status_line_for_the_step_behind_it() {
+    // Codex marks its live status with the same bullet it marks steps with,
+    // and that status is both the generic label this column exists to avoid
+    // and a value that changes every second.
+    let screen = codex_screen(
+        "• Explored\n\
+         • Working (7s • esc to interrupt)",
+    );
+    assert_eq!(read(codex(), input(&screen)).as_deref(), Some("Explored"));
+}
+
+#[test]
+fn codex_skips_a_system_notice_too() {
+    let screen = codex_screen(
+        "• Explored\n\
+         • You have 1 usage limit reset available. Run /usage to use one.",
+    );
+    assert_eq!(read(codex(), input(&screen)).as_deref(), Some("Explored"));
 }

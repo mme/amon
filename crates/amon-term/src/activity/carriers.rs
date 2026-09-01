@@ -23,8 +23,23 @@ pub(super) struct Table {
 #[derive(Deserialize)]
 pub(super) struct Entry {
     pub(super) agent: String,
+    /// Where to look for proof that the agent's own prompt is on screen.
+    /// Defaults to herdr's Claude-shaped input box.
+    #[serde(default = "default_prompt_region")]
+    pub(super) prompt_region: String,
+    /// What that proof looks like. Absent means the region merely has to hold
+    /// something, which is how a drawn box answers for itself.
+    pub(super) prompt_pattern: Option<String>,
     pub(super) region: String,
     pub(super) pattern: String,
+    /// Lines to skip over even when `pattern` matches them: an agent that
+    /// marks its steps and its notices the same way needs the difference
+    /// spelled out. Scanning continues past a rejected line.
+    pub(super) reject: Option<String>,
+}
+
+fn default_prompt_region() -> String {
+    "prompt_box_body".to_string()
 }
 
 /// The carriers for one agent, in file order.
@@ -40,6 +55,16 @@ pub(super) fn for_agent(agent: Agent) -> impl Iterator<Item = &'static Carrier> 
         .map(|(_, carrier)| carrier)
 }
 
+/// `None` for a pattern that is present but will not compile, so the entry is
+/// dropped whole rather than silently losing the half that guards it — a
+/// carrier missing its reject would narrate the noise it was written to skip.
+fn compile_optional(pattern: Option<&str>) -> Option<Option<Regex>> {
+    match pattern {
+        None => Some(None),
+        Some(pattern) => Regex::new(pattern).ok().map(Some),
+    }
+}
+
 fn load() -> Vec<(Agent, Carrier)> {
     let table: Table = toml::from_str(TABLE).expect("carriers.toml ships with this binary");
     table
@@ -48,11 +73,16 @@ fn load() -> Vec<(Agent, Carrier)> {
         .filter_map(|entry| {
             let agent = identify_agent(&entry.agent)?;
             let pattern = Regex::new(&entry.pattern).ok()?;
+            let prompt_pattern = compile_optional(entry.prompt_pattern.as_deref())?;
+            let reject = compile_optional(entry.reject.as_deref())?;
             Some((
                 agent,
                 Carrier {
+                    prompt_region: entry.prompt_region,
+                    prompt_pattern,
                     region: entry.region,
                     pattern,
+                    reject,
                 },
             ))
         })
