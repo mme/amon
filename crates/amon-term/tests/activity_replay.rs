@@ -141,7 +141,8 @@ fn an_agent_with_no_carrier_reads_nothing() {
 #[ignore = "prints the sequence a capture produces, for eyeballing a new fixture"]
 fn show() {
     let fixture = std::env::var("FIXTURE").unwrap_or("claude-directory-listing.raw".into());
-    for (index, line) in replay(&fixture, "claude").iter().enumerate() {
+    let agent = std::env::var("AGENT").unwrap_or("claude".into());
+    for (index, line) in replay(&fixture, &agent).iter().enumerate() {
         println!("{index:3}  {line}");
     }
 }
