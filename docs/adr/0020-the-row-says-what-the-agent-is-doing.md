@@ -94,12 +94,18 @@ frames. That is what the user's own terminal displayed at that instant, so
 reproducing it is right; smoothing it would mean amon disagreeing with the
 screen.
 
-**The elastic column is back, bounded.** ADR-0017 left every column
-fixed-width. Activity has no natural length, so it is sized to a budget rather
-than to the longest line present: a verbose harness elides its own tail
-instead of pushing the columns that identify a row off the pane. It is
-rightmost and the first column dropped when the pane narrows — the
-elaboration on a row, never what identifies one.
+**The elastic column is back, and it is the one that gives way.** ADR-0017
+left every column fixed-width, so a narrow pane could only drop columns whole.
+The message has no natural length and takes whatever the fixed columns leave,
+which turns that around: slack now has somewhere to go, and a pane that
+narrows costs the message its tail rather than costing a row something that
+identifies it. Only when the remainder is more ellipsis than words does the
+column come out, and the branch is the only thing droppable behind it.
+
+**The kind and the state columns came out to pay for it.** Both were words for
+something already on the row — the glyph says the state, and a machine running
+one kind of agent wrote the same name down the whole list. The age moves to
+the far edge, where short right-aligned values read down as one column.
 
 **Proof that the prompt is on screen is per-agent data, not code.** The first
 version hardcoded herdr's `prompt_box_body`, which was Claude's box passing

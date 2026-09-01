@@ -152,21 +152,19 @@ FocusScope {
 
   readonly property int columnGap: Style.space(10)
 
-  // Left to right. Position is priority: what sits further right goes first
-  // when the pane is too narrow to hold everything.
-  readonly property var columnOrder: ["glyph", "identity", "branch", "age", "state", "kind", "activity"]
+  // Left to right. The age sits at the far edge, where a column of short
+  // right-aligned values reads down cleanly, and the message runs between the
+  // branch and it.
+  readonly property var columnOrder: ["glyph", "identity", "branch", "activity", "age"]
 
-  // Everything except the glyph and the identity, rightmost first. Whatever
-  // else goes, a row still says whether it wants you and which agent it is —
-  // which is the whole question the pane exists to answer.
-  readonly property var droppable: ["activity", "state", "kind", "age", "branch"]
+  // Only the branch. Every other column either identifies a row or gives way
+  // by shrinking, and a pane too narrow for the branch has already given up
+  // the message.
+  readonly property var droppable: ["branch"]
 
-  // Activity is the one column whose content has no natural length: a harness
-  // writes whatever sentence it likes. Sized to a budget rather than to the
-  // longest one present, so a single verbose line cannot push the columns that
-  // identify a row off the pane — it elides instead, which costs its own tail
-  // and nothing else.
-  readonly property int activityBudget: view.textWidth("m".repeat(32))
+  // Below this the message is more ellipsis than words, and the space reads
+  // better as nothing at all.
+  readonly property int activityMinimum: view.textWidth("m".repeat(10))
 
   // Where the agent is, split into the one segment that identifies it and the
   // qualification around it. Inside a repository that is the Project, and the
@@ -196,8 +194,6 @@ FocusScope {
       return parts.prefix + parts.bold + parts.suffix
     }
     if (column === "branch") return entry.branch
-    if (column === "kind") return entry.agent
-    if (column === "state") return view.labels[entry.state] || entry.state
     return ""
   }
 
@@ -214,33 +210,51 @@ FocusScope {
       glyph: Style.space(18),
       identity: 0,
       branch: 0,
+      activity: 0,
       // Sized for the longest age this column can hold rather than for the
       // one showing now, so the row does not shuffle when 59s becomes 1m.
-      age: view.textWidth("9999h"),
-      kind: 0,
-      state: 0,
-      activity: 0
+      age: view.textWidth("9999h")
     }
 
     for (let i = 0; i < rows.length; i++) {
       const entry = rows[i]
       natural.identity = Math.max(natural.identity, view.textWidth(view.cellText(entry, "identity")))
       natural.branch = Math.max(natural.branch, view.textWidth(entry.branch))
-      natural.state = Math.max(natural.state, view.textWidth(view.cellText(entry, "state")))
-      natural.kind = Math.max(natural.kind, view.textWidth(entry.agent))
       natural.activity = Math.max(natural.activity, view.textWidth(entry.activity))
     }
-    natural.activity = Math.min(natural.activity, view.activityBudget)
 
     let present = view.columnOrder.filter(column => natural[column] > 0)
     const width = {}
     for (let i = 0; i < present.length; i++) width[present[i]] = natural[present[i]]
 
+    // Every column but the message keeps its natural width. The message takes
+    // whatever is left and elides into it, which is why nothing else has to be
+    // dropped to make a pane fit: the slack has somewhere to go, and a long
+    // sentence costs its own tail rather than a column that identifies a row.
     while (true) {
       const gaps = Math.max(0, present.length - 1) * gap
-      let total = 0
-      for (let i = 0; i < present.length; i++) total += width[present[i]]
-      if (total + gaps <= available) break
+      let fixed = 0
+      for (let i = 0; i < present.length; i++) {
+        if (present[i] !== "activity") fixed += width[present[i]]
+      }
+
+      const carries = present.indexOf("activity")
+      if (carries >= 0) {
+        const slack = available - gaps - fixed
+        if (slack >= view.activityMinimum) {
+          // All of it, not just what the longest message needs. Taking the
+          // slack is what puts the age against the pane's edge, and a message
+          // shorter than its column simply does not fill it.
+          width.activity = slack
+          break
+        }
+        // Not enough room left to read one. Take it out and let the columns
+        // that identify a row use the space.
+        present.splice(carries, 1)
+        continue
+      }
+
+      if (fixed + gaps <= available) break
 
       let dropped = false
       for (let i = present.length - 1; i >= 0; i--) {
@@ -253,7 +267,11 @@ FocusScope {
       // Nothing left that may go. The identity takes what remains and elides
       // its dim half; the bold segment is never truncated away.
       if (!dropped) {
-        width.identity = Math.max(0, available - gaps - natural.glyph)
+        let others = 0
+        for (let i = 0; i < present.length; i++) {
+          if (present[i] !== "identity") others += width[present[i]]
+        }
+        width.identity = Math.max(0, available - gaps - others)
         break
       }
     }
@@ -263,6 +281,12 @@ FocusScope {
     for (let i = 0; i < present.length; i++) {
       x[present[i]] = cursor
       cursor += width[present[i]] + gap
+    }
+    // The age belongs at the edge whether or not a message pushed it there, so
+    // that a list with nothing to narrate still reads down the same way. When
+    // the message did take the slack this changes nothing.
+    if (present.indexOf("age") >= 0) {
+      x.age = Math.max(x.age, available - width.age)
     }
     return { present: present, width: width, x: x }
   }
@@ -712,66 +736,14 @@ FocusScope {
       elide: Text.ElideRight
     }
 
-    // How long the agent has been in the state it is in — not how long it has
-    // been running. A row that has wanted you for forty minutes is a different
-    // thing from one that has wanted you for one, and the glyph cannot say so.
-    Text {
-      id: ageText
-      visible: view.columnVisible("age")
-      x: Style.space(10) + view.columnX("age")
-      anchors.verticalCenter: parent.verticalCenter
-      width: view.columnWidth("age")
-      text: view.agents.age(row.entry.stateSince, view.now)
-      color: view.dim
-      font.family: view.fontFamily
-      font.pixelSize: Style.font.body
-      // The column is sized for a very old agent, but age() counts hours
-      // without end. Eliding rather than overflowing keeps a row that has been
-      // idle for years from drawing over the column beside it.
-      elide: Text.ElideRight
-    }
-
-    // Which agent it is. Last, and so the first thing to go when the pane
-    // narrows: on a machine running one kind of agent it writes the same word
-    // down the list, and it is only worth its width while there is width to
-    // spare.
-    Text {
-      id: kindText
-      visible: view.columnVisible("kind")
-      x: Style.space(10) + view.columnX("kind")
-      anchors.verticalCenter: parent.verticalCenter
-      width: view.columnWidth("kind")
-      text: row.entry.agent
-      color: view.dim
-      font.family: view.fontFamily
-      font.pixelSize: Style.font.body
-      elide: Text.ElideRight
-    }
-
-    // The state in words. First to go when the pane narrows, because the glyph
-    // beside the identity already carries it — this is the elaboration, and
-    // "needs input" is worth the width only while there is width to spare.
-    Text {
-      id: stateText
-      visible: view.columnVisible("state")
-      x: Style.space(10) + view.columnX("state")
-      anchors.verticalCenter: parent.verticalCenter
-      width: view.columnWidth("state")
-      text: view.labels[row.entry.state] || row.entry.state
-      color: view.dim
-      font.family: view.fontFamily
-      font.pixelSize: Style.font.body
-      elide: Text.ElideRight
-    }
-
     // What the agent says it is doing, in the harness's own words — "Reading 5
     // files", "Bash(cargo test)", the opening line of a reply. Never a phrase
-    // amon composed: a column that said "Working…" would repeat the glyph and
-    // the state beside it, which is the mistake ADR-0017 records.
+    // amon composed: a column that said "Working…" would repeat the glyph
+    // beside it, which is the mistake ADR-0017 records.
     //
-    // Rightmost, and so the first column to go when the pane narrows. It is
-    // the elaboration on a row, never what identifies one, and a row that has
-    // lost it still answers the question the pane exists for.
+    // The elastic column. It takes whatever the fixed ones leave and elides
+    // into it, so a narrow pane costs this column its tail rather than costing
+    // a row something that identifies it.
     Text {
       id: activityText
       visible: view.columnVisible("activity")
@@ -782,6 +754,29 @@ FocusScope {
       color: view.dim
       font.family: view.fontFamily
       font.pixelSize: Style.font.body
+      elide: Text.ElideRight
+    }
+
+    // How long the agent has been in the state it is in — not how long it has
+    // been running. A row that has wanted you for forty minutes is a different
+    // thing from one that has wanted you for one, and the glyph cannot say so.
+    //
+    // Last, and right-aligned: these are short values of varying length, and
+    // flushing them to the pane's edge makes the column read down as one.
+    Text {
+      id: ageText
+      visible: view.columnVisible("age")
+      x: Style.space(10) + view.columnX("age")
+      anchors.verticalCenter: parent.verticalCenter
+      width: view.columnWidth("age")
+      text: view.agents.age(row.entry.stateSince, view.now)
+      color: view.dim
+      font.family: view.fontFamily
+      font.pixelSize: Style.font.body
+      horizontalAlignment: Text.AlignRight
+      // The column is sized for a very old agent, but age() counts hours
+      // without end. Eliding rather than overflowing keeps a row that has been
+      // idle for years from drawing over the column beside it.
       elide: Text.ElideRight
     }
   }
