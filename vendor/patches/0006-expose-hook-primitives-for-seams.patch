@@ -1,8 +1,8 @@
 diff --git c/crates/amon-integration/src/vendor/integration/mod.rs w/crates/amon-integration/src/vendor/integration/mod.rs
-index 760945d..9e561d1 100644
+index 760945d..5620a2b 100644
 --- c/crates/amon-integration/src/vendor/integration/mod.rs
 +++ w/crates/amon-integration/src/vendor/integration/mod.rs
-@@ -27,6 +27,14 @@ pub(crate) use registry::{
+@@ -27,6 +27,16 @@ pub(crate) use registry::{
  };
  pub(crate) use types::{IntegrationRecommendation, IntegrationStatus, IntegrationStatusKind};
  
@@ -11,8 +11,10 @@ index 760945d..9e561d1 100644
 +// editor. A mechanical widening, so a patch and not a hand-edit (ADR-0005).
 +pub(crate) use claude_settings::strict_parse_options;
 +pub(crate) use command::hook_command;
-+pub(crate) use config_edit::is_matching_command_hook;
-+pub(crate) use env::claude_dir;
++pub(crate) use config_edit::{
++    ensure_command_hook, ensure_hooks_object, is_matching_command_hook, remove_command_hook,
++};
++pub(crate) use env::{claude_dir, codex_dir, omp_extension_dir, pi_extension_dir};
 +
  const PI_EXTENSION_INSTALL_NAME: &str = "amon-agent-state.ts";
  const PI_EXTENSION_ASSET: &str = include_str!("assets/pi/amon-agent-state.ts");

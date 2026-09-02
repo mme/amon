@@ -23,8 +23,13 @@ pub fn install(target: IntegrationTarget) -> io::Result<Vec<String>> {
     // fallback, and herdr's state hook has already installed by now. A failure
     // here — an unwritable settings file, say — must not fail the whole
     // integration and take the alias down with it; it degrades to the screen.
-    if matches!(target, IntegrationTarget::Claude) {
-        match crate::prompt_hook::install() {
+    let extra: Option<Result<Option<String>, io::Error>> = match target {
+        IntegrationTarget::Claude => Some(crate::prompt_hook::install()),
+        IntegrationTarget::Codex => Some(crate::activity_hooks::codex::install()),
+        _ => None,
+    };
+    if let Some(result) = extra {
+        match result {
             Ok(Some(note)) => notes.push(note),
             Ok(None) => {}
             Err(error) => notes.push(format!(
@@ -41,8 +46,14 @@ pub fn uninstall(target: IntegrationTarget) -> io::Result<Vec<String>> {
     // the settings file is edited by our step while its hooks object is still
     // whole. Best-effort: a failure here must not stop herdr's uninstall from
     // running, or a remove could strand the state hook it was meant to take.
-    if matches!(target, IntegrationTarget::Claude) {
-        let _ = crate::prompt_hook::uninstall();
+    match target {
+        IntegrationTarget::Claude => {
+            let _ = crate::prompt_hook::uninstall();
+        }
+        IntegrationTarget::Codex => {
+            let _ = crate::activity_hooks::codex::uninstall();
+        }
+        _ => {}
     }
     integration::uninstall_target(target)
 }

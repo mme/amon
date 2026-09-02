@@ -32,8 +32,10 @@ pub(crate) use types::{IntegrationRecommendation, IntegrationStatus, Integration
 // editor. A mechanical widening, so a patch and not a hand-edit (ADR-0005).
 pub(crate) use claude_settings::strict_parse_options;
 pub(crate) use command::hook_command;
-pub(crate) use config_edit::is_matching_command_hook;
-pub(crate) use env::claude_dir;
+pub(crate) use config_edit::{
+    ensure_command_hook, ensure_hooks_object, is_matching_command_hook, remove_command_hook,
+};
+pub(crate) use env::{claude_dir, codex_dir, omp_extension_dir, pi_extension_dir};
 
 const PI_EXTENSION_INSTALL_NAME: &str = "amon-agent-state.ts";
 const PI_EXTENSION_ASSET: &str = include_str!("assets/pi/amon-agent-state.ts");
