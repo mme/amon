@@ -12,8 +12,8 @@ use std::os::unix::net::UnixStream;
 use std::process::ExitCode;
 
 use amon_protocol::{
-    AgentEntry, AgentState, Hello, Method, ReportSession, ReportState, Request, Response, Role,
-    StatusResult, PROTOCOL_VERSION,
+    AgentEntry, AgentState, Hello, Method, ReportPrompt, ReportSession, ReportState, Request,
+    Response, Role, StatusResult, PROTOCOL_VERSION,
 };
 use clap::{Parser, Subcommand};
 
@@ -144,6 +144,23 @@ enum HookReport {
         state: AgentState,
         #[arg(long)]
         seq: u64,
+        #[arg(long)]
+        agent_session_id: Option<String>,
+    },
+    /// Report the prompt a turn is working on (amon-only; ADR-0021)
+    #[command(name = "report-prompt")]
+    Prompt {
+        /// The `AMON_AGENT_ID` the hook was given
+        agent_id: String,
+        #[arg(long)]
+        source: String,
+        #[arg(long)]
+        agent: String,
+        #[arg(long)]
+        seq: u64,
+        /// The submitted prompt, exactly as typed
+        #[arg(long)]
+        prompt: String,
         #[arg(long)]
         agent_session_id: Option<String>,
     },
@@ -526,6 +543,21 @@ fn run_hook(report: HookReport) -> Result<(), Box<dyn std::error::Error>> {
             agent,
             state,
             seq,
+            agent_session_id,
+        }),
+        HookReport::Prompt {
+            agent_id,
+            source,
+            agent,
+            seq,
+            prompt,
+            agent_session_id,
+        } => Method::AgentReportPrompt(ReportPrompt {
+            agent_id,
+            source,
+            agent,
+            seq,
+            prompt,
             agent_session_id,
         }),
     };

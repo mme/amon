@@ -14,11 +14,36 @@ use crate::integration;
 /// print. Idempotent: reinstalling replaces the managed file and leaves
 /// anything else in the agent's config alone.
 pub fn install(target: IntegrationTarget) -> io::Result<Vec<String>> {
-    integration::install_target(target)
+    let mut notes = integration::install_target(target)?;
+    // amon's own additions run after herdr's install, which for Claude
+    // removes the very event the prompt hook needs (ADR-0021). Idempotent, so
+    // safe on every setup and upgrade.
+    //
+    // Non-fatal on purpose: the prompt hook is an enhancement over the screen
+    // fallback, and herdr's state hook has already installed by now. A failure
+    // here — an unwritable settings file, say — must not fail the whole
+    // integration and take the alias down with it; it degrades to the screen.
+    if matches!(target, IntegrationTarget::Claude) {
+        match crate::prompt_hook::install() {
+            Ok(Some(note)) => notes.push(note),
+            Ok(None) => {}
+            Err(error) => notes.push(format!(
+                "prompt hook not installed ({error}); turns still read from the screen"
+            )),
+        }
+    }
+    Ok(notes)
 }
 
 /// Reverts exactly what [`install`] did.
 pub fn uninstall(target: IntegrationTarget) -> io::Result<Vec<String>> {
+    // What amon added, amon removes (ADR-0021) — before herdr's uninstall, so
+    // the settings file is edited by our step while its hooks object is still
+    // whole. Best-effort: a failure here must not stop herdr's uninstall from
+    // running, or a remove could strand the state hook it was meant to take.
+    if matches!(target, IntegrationTarget::Claude) {
+        let _ = crate::prompt_hook::uninstall();
+    }
     integration::uninstall_target(target)
 }
 

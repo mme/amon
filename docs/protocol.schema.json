@@ -579,6 +579,43 @@
       ],
       "type": "object"
     },
+    "ReportPrompt": {
+      "description": "A hook reporting the prompt a turn is working on. amon-only: herdr has no\ncounterpart, because herdr collects state, not content (ADR-0021 — a seam,\nnot a modified vendored asset). The wrapper turns it into the turn's\nopening Activity.",
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "agent_id": {
+          "type": "string"
+        },
+        "agent_session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt": {
+          "description": "The submitted prompt, exactly as typed. The wrapper bounds it.",
+          "type": "string"
+        },
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_id",
+        "source",
+        "agent",
+        "seq",
+        "prompt"
+      ],
+      "type": "object"
+    },
     "ReportSession": {
       "description": "A hook reporting session identity. Mirrors herdr's\n`pane.report_agent_session`.",
       "properties": {
@@ -792,6 +829,23 @@
             },
             "params": {
               "$ref": "#/$defs/ReportSession"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Hook → wrapper. amon-only (ADR-0021).",
+          "properties": {
+            "method": {
+              "const": "agent.report_prompt",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/ReportPrompt"
             }
           },
           "required": [

@@ -28,6 +28,18 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
             &where_it_is(status.state, &status.path),
         );
     }
+    // amon's own Claude prompt hook (ADR-0021) — reported beside the vendored
+    // integrations, since amon owns its lifecycle and doctor is where that
+    // shows.
+    if let Ok(state) = amon_integration::prompt_hook::state() {
+        use amon_integration::prompt_hook::PromptHookState;
+        let note = match state {
+            PromptHookState::Current => "installed (reports what each turn is working on)",
+            PromptHookState::Outdated => "outdated (amon setup claude reinstalls it)",
+            PromptHookState::NotInstalled => "not installed (amon setup claude adds it)",
+        };
+        print_line("claude prompt hook", note, "");
+    }
     for status in desktop::statuses() {
         let installed = status.installed_version.unwrap_or_else(|| "?".into());
         print_line(

@@ -11,7 +11,11 @@ rule is written in those terms.
 
 **A mechanical change is a patch.** Text edits that carry no judgment: widen a
 visibility for the crate split, stub a platform module, ignore a test that
-cannot run here. Patches live in `vendor/patches/`, apply with `git apply`,
+cannot run here. `vendor/patches/0006` and `0007` are the pattern — they widen
+herdr's JSON and CST-splice primitives to `pub(crate)` so an amon seam can edit
+`settings.json` with herdr's own formatting-preserving code rather than a lossy
+reserialize; not one line of herdr's behaviour changes, only what amon may
+call. Patches live in `vendor/patches/`, apply with `git apply`,
 and fail loudly when upstream moves. A patch that encodes an opinion — a
 different behaviour, a rewritten function — is in the wrong tier: it will
 conflict on every re-vendor and the conflict will need that opinion re-argued

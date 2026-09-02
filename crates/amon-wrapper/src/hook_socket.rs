@@ -110,6 +110,12 @@ fn handle(request: Request, signals: &Sender<Signal>) {
                 session_start_source: report.session_start_source,
             });
         }
+        Method::AgentReportPrompt(report) => {
+            let _ = signals.send(Signal::HookPrompt {
+                prompt: report.prompt,
+                session_id: report.agent_session_id,
+            });
+        }
         // Everything else belongs to the daemon's socket, not this one.
         _ => {}
     }

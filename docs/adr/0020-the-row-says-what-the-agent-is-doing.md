@@ -98,6 +98,20 @@ being typed belongs to no turn and appears nowhere. Two prompt-shaped lines
 that are not asks are rejected in data: Claude's startup `Try "…"` tip and a
 slash command, which would open a turn no work closes.
 
+Where a harness offers a prompt hook, that is the better source than the
+screen: exact text rather than a wrapped rendering, an event rather than an
+inferred boundary, and no startup-tip or slash-command noise to reject. Claude
+has one — `UserPromptSubmit`, which herdr registers only to *remove*, having
+used it for state before screen detection replaced it. amon installs its own
+script for it beside the vendored hook (ADR-0021: a seam, editing `settings.json` through herdr's own
+formatting-preserving CST splice — only the bytes that change are touched,
+never a whole-file reserialize; `vendor/patches/0006` and `0007` widen the
+primitives a seam needs, which is a mechanical visibility change and so a
+patch), runs after herdr's install since that strips the event, and owns the
+script's removal and doctor line. The screen prompt stays the fallback for
+every harness without such a hook. A new wire method, `agent.report_prompt`,
+carries it — amon-only, since herdr collects state, not content.
+
 `AgentEntry::activity` is now `{ text, kind }` rather than a bare string,
 because the panel styles a prompt differently from a narration — a `❯` marker
 and italic — and a string cannot carry which it is. Nothing had shipped, so it

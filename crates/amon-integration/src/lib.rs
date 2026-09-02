@@ -35,6 +35,7 @@ pub mod bindings;
 pub mod desktop;
 pub mod ducking;
 mod fence;
+pub mod prompt_hook;
 pub mod shims;
 
 pub use api::schema::IntegrationTarget;

@@ -85,6 +85,22 @@ pub struct ReportSession {
     pub session_start_source: Option<String>,
 }
 
+/// A hook reporting the prompt a turn is working on. amon-only: herdr has no
+/// counterpart, because herdr collects state, not content (ADR-0021 — a seam,
+/// not a modified vendored asset). The wrapper turns it into the turn's
+/// opening Activity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ReportPrompt {
+    pub agent_id: String,
+    pub source: String,
+    pub agent: String,
+    pub seq: u64,
+    /// The submitted prompt, exactly as typed. The wrapper bounds it.
+    pub prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_session_id: Option<String>,
+}
+
 /// Every request either socket accepts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "method", content = "params")]
@@ -117,6 +133,9 @@ pub enum Method {
     /// Hook → wrapper.
     #[serde(rename = "agent.report_session")]
     AgentReportSession(ReportSession),
+    /// Hook → wrapper. amon-only (ADR-0021).
+    #[serde(rename = "agent.report_prompt")]
+    AgentReportPrompt(ReportPrompt),
 }
 
 impl Method {
@@ -131,6 +150,7 @@ impl Method {
             Self::DaemonShutdown => "daemon.shutdown",
             Self::AgentReportState(_) => "agent.report_state",
             Self::AgentReportSession(_) => "agent.report_session",
+            Self::AgentReportPrompt(_) => "agent.report_prompt",
         }
     }
 
@@ -161,6 +181,7 @@ const KNOWN_METHODS: &[&str] = &[
     "daemon.shutdown",
     "agent.report_state",
     "agent.report_session",
+    "agent.report_prompt",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]

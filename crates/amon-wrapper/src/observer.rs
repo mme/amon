@@ -59,6 +59,13 @@ pub enum Signal {
         /// hook knows.
         session_start_source: Option<String>,
     },
+    /// An amon hook reported the prompt a turn is working on (ADR-0021). Only
+    /// where amon installed a prompt hook — the screen is the fallback
+    /// everywhere else.
+    HookPrompt {
+        prompt: String,
+        session_id: Option<String>,
+    },
     /// Where the agent is working changed: it moved, or HEAD moved under it.
     /// Carries all of it at once, because a row showing a branch from one
     /// checkout beside a Project from another would be wrong about both.
@@ -291,6 +298,19 @@ impl Observer {
                     amon_term::normalize_session_start_source(session_start_source),
                 );
                 if change.is_some() {
+                    self.publish();
+                }
+            }
+            Signal::HookPrompt { prompt, session_id } => {
+                // A hook prompt is authoritative for the turn boundary — an
+                // event, where the screen only ever infers one. Scope it to
+                // the reported session, as the screen tracker's clear() is
+                // scoped, so a prompt from a session that has since been
+                // replaced cannot reopen it.
+                let stale = session_id.is_some()
+                    && self.last_session_id.is_some()
+                    && session_id != self.last_session_id;
+                if !stale && self.activity.begin_turn(&prompt) {
                     self.publish();
                 }
             }

@@ -776,6 +776,35 @@ sleep 5
 }
 
 #[test]
+fn a_prompt_hook_report_becomes_the_turns_activity() {
+    // The amon-only prompt hook (ADR-0021): a UserPromptSubmit report over the
+    // wrapper socket opens a turn, and its exact text — not the screen's
+    // rendering — is what the row shows, marked as the user's words.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent(
+        "claude",
+        r#"#!/bin/sh
+printf '{"id":"p1","method":"agent.report_prompt","params":{"agent_id":"%s","source":"amon:claude","agent":"claude","seq":1,"prompt":"refactor the auth module and keep the tests green"}}\n' "$AMON_AGENT_ID" \
+  | timeout 5 socat - "UNIX-CONNECT:$AMON_SOCKET_PATH" >/dev/null 2>&1
+sleep 5
+"#,
+    );
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    let want = serde_json::json!({
+        "text": "refactor the auth module and keep the tests green",
+        "kind": "prompt"
+    });
+    let agents = sandbox.wait_for_status("the prompt hook's report", |agents| {
+        agent_named(agents, "claude").is_some_and(|agent| agent["activity"] == want)
+    });
+    assert!(agent_named(&agents, "claude").is_some());
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
 fn a_state_reports_session_id_also_reaches_the_registry() {
     let sandbox = Sandbox::new();
     // Hooks stamp the session id on every state report; if the one-shot

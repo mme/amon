@@ -347,17 +347,17 @@ fn handle(
         }
         Method::DaemonShutdown => Outcome::Shutdown,
         // Hook reports belong to a wrapper's socket, not here.
-        Method::AgentReportState(_) | Method::AgentReportSession(_) => {
-            Outcome::Reply(Box::new(move |id| {
-                Response::err(
-                    id,
-                    Error::new(
-                        ErrorCode::UnsupportedMethod,
-                        "hook reports go to the wrapper's socket, not the daemon",
-                    ),
-                )
-            }))
-        }
+        Method::AgentReportState(_)
+        | Method::AgentReportSession(_)
+        | Method::AgentReportPrompt(_) => Outcome::Reply(Box::new(move |id| {
+            Response::err(
+                id,
+                Error::new(
+                    ErrorCode::UnsupportedMethod,
+                    "hook reports go to the wrapper's socket, not the daemon",
+                ),
+            )
+        })),
     }
 }
 

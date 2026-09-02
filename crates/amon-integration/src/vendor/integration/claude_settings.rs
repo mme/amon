@@ -419,7 +419,10 @@ fn append_session_entry_compact(
     ))
 }
 
-fn parse_ast_root_object<'a>(content: &'a str, settings_path: &Path) -> io::Result<AstObject<'a>> {
+pub(crate) fn parse_ast_root_object<'a>(
+    content: &'a str,
+    settings_path: &Path,
+) -> io::Result<AstObject<'a>> {
     let parsed = parse_to_ast(content, &CollectOptions::default(), &strict_parse_options())
         .map_err(|err| {
             io::Error::other(format!(
@@ -436,7 +439,7 @@ fn parse_ast_root_object<'a>(content: &'a str, settings_path: &Path) -> io::Resu
     }
 }
 
-fn append_object_property(
+pub(crate) fn append_object_property(
     content: &str,
     object: &AstObject<'_>,
     name: &str,
@@ -459,7 +462,7 @@ fn append_object_property(
     )
 }
 
-fn append_array_element(content: &str, array: &AstArray<'_>, value: &str) -> String {
+pub(crate) fn append_array_element(content: &str, array: &AstArray<'_>, value: &str) -> String {
     let delimiter = array_delimiter(content, array);
     append_to_container(
         content,
@@ -575,7 +578,7 @@ fn reject_duplicate_keys(node: &CstNode, settings_path: &Path) -> io::Result<()>
     Ok(())
 }
 
-fn strict_parse_options() -> ParseOptions {
+pub(crate) fn strict_parse_options() -> ParseOptions {
     ParseOptions {
         allow_comments: false,
         allow_loose_object_property_names: false,
