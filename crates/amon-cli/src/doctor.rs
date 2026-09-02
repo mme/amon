@@ -49,6 +49,15 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
         };
         print_line("codex prompt hook", note, "");
     }
+    if let Ok(state) = amon_integration::activity_hooks::pi::state() {
+        use amon_integration::activity_hooks::HookState;
+        let note = match state {
+            HookState::Current => "installed (reports the prompt and each tool call)",
+            HookState::Outdated => "outdated (amon setup pi reinstalls it)",
+            HookState::NotInstalled => "not installed (amon setup pi adds it)",
+        };
+        print_line("pi activity extension", note, "");
+    }
     for status in desktop::statuses() {
         let installed = status.installed_version.unwrap_or_else(|| "?".into());
         print_line(

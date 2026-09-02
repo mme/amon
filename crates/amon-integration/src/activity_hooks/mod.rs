@@ -14,6 +14,7 @@
 //! uninstall so nothing is orphaned.
 
 pub mod codex;
+pub mod pi;
 
 /// Whether an installed piece is absent, stale, or current — what `doctor`
 /// reports for each of these hooks.
