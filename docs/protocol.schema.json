@@ -863,6 +863,23 @@
             "params"
           ],
           "type": "object"
+        },
+        {
+          "description": "Wrapper (in a runtime pane) → daemon. amon-only (ADR-0022).",
+          "properties": {
+            "method": {
+              "const": "runtime.activity",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/RuntimeActivity"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
         }
       ],
       "properties": {
@@ -977,6 +994,33 @@
           "type": "object"
         }
       ]
+    },
+    "RuntimeActivity": {
+      "description": "A wrapper running inside a runtime pane reporting the agent's activity\n(ADR-0022). It carries no row of its own — the runtime owns the row — so the\ndaemon joins this to the adopted entry by `kind` and `pane`, the id both\nruntimes stamp on the entry and inject into the pane.",
+      "properties": {
+        "activity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Activity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The activity, or `None` to clear it (the turn ended, the session\nchanged)."
+        },
+        "kind": {
+          "type": "string"
+        },
+        "pane": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "pane"
+      ],
+      "type": "object"
     },
     "SoundConfig": {
       "description": "When to make a noise, and which one.",

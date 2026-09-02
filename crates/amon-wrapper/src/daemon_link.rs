@@ -48,6 +48,11 @@ const IO_TIMEOUT: Duration = Duration::from_secs(2);
 pub enum Message {
     Register(Box<AgentEntry>),
     Update(Box<AgentPatch>),
+    RuntimeActivity {
+        kind: String,
+        pane: String,
+        activity: Option<amon_protocol::Activity>,
+    },
 }
 
 /// Handle held by the rest of the wrapper. Sending never blocks and never
@@ -72,10 +77,28 @@ impl DaemonLink {
     pub fn update(&self, patch: AgentPatch) {
         let _ = self.tx.send(Message::Update(Box::new(patch)));
     }
+
+    /// Report activity for a runtime-hosted agent (ADR-0022): no row of our
+    /// own, joined to the runtime's by `(kind, pane)`.
+    pub fn runtime_activity(
+        &self,
+        kind: String,
+        pane: String,
+        activity: Option<amon_protocol::Activity>,
+    ) {
+        let _ = self.tx.send(Message::RuntimeActivity {
+            kind,
+            pane,
+            activity,
+        });
+    }
 }
 
 fn run(rx: mpsc::Receiver<Message>, version: String) {
     let mut entry: Option<AgentEntry> = None;
+    // The last runtime activity, replayed on reconnect the way the entry is —
+    // a wrapper in a runtime holds no entry, so this is its state to restore.
+    let mut runtime_activity: Option<amon_protocol::RuntimeActivity> = None;
     let mut connection: Option<Connection> = None;
     let mut retry = FIRST_RETRY;
 
@@ -95,6 +118,23 @@ fn run(rx: mpsc::Receiver<Message>, version: String) {
                         if link.send(Method::AgentRegister(entry.clone())).is_err() {
                             connection = None;
                         }
+                    }
+                }
+            }
+            Ok(Message::RuntimeActivity {
+                kind,
+                pane,
+                activity,
+            }) => {
+                let report = amon_protocol::RuntimeActivity {
+                    kind,
+                    pane,
+                    activity,
+                };
+                runtime_activity = Some(report.clone());
+                if let Some(link) = connection.as_mut() {
+                    if link.send(Method::RuntimeActivity(report)).is_err() {
+                        connection = None;
                     }
                 }
             }
@@ -128,19 +168,28 @@ fn run(rx: mpsc::Receiver<Message>, version: String) {
             Err(RecvTimeoutError::Disconnected) => return,
         }
 
-        if connection.is_none() {
-            if let Some(entry) = entry.as_ref() {
-                match connect(&version) {
-                    Some(mut link) => {
-                        if link.send(Method::AgentRegister(entry.clone())).is_ok() {
-                            connection = Some(link);
-                            retry = FIRST_RETRY;
-                        } else {
-                            retry = (retry * 2).min(MAX_RETRY);
+        // Reconnect when there is something to restore: a registered entry, or
+        // — for a wrapper inside a runtime — the last runtime activity.
+        if connection.is_none() && (entry.is_some() || runtime_activity.is_some()) {
+            match connect(&version) {
+                Some(mut link) => {
+                    let mut ok = true;
+                    if let Some(entry) = entry.as_ref() {
+                        ok &= link.send(Method::AgentRegister(entry.clone())).is_ok();
+                    }
+                    if ok {
+                        if let Some(report) = runtime_activity.as_ref() {
+                            ok &= link.send(Method::RuntimeActivity(report.clone())).is_ok();
                         }
                     }
-                    None => retry = (retry * 2).min(MAX_RETRY),
+                    if ok {
+                        connection = Some(link);
+                        retry = FIRST_RETRY;
+                    } else {
+                        retry = (retry * 2).min(MAX_RETRY);
+                    }
                 }
+                None => retry = (retry * 2).min(MAX_RETRY),
             }
         }
     }

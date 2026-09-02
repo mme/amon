@@ -27,6 +27,22 @@ struct Inner {
     /// The newer release the last check found, as (installed, latest).
     /// Held so a subscriber arriving after the check hears about it too.
     update: Option<(String, String)>,
+    /// Activity a wrapper inside a runtime pane reported for the agent the
+    /// runtime hosts, keyed by `(kind, pane)` (ADR-0022). Held here so it
+    /// survives the runtime's re-registration of the entry on every resnapshot
+    /// and can be re-applied.
+    runtime_activity: HashMap<(String, String), amon_protocol::Activity>,
+}
+
+/// The stored activity for an entry's `(kind, pane)`, if any.
+fn runtime_activity_for(
+    store: &HashMap<(String, String), amon_protocol::Activity>,
+    entry: &AgentEntry,
+) -> Option<amon_protocol::Activity> {
+    let runtime = entry.runtime.as_ref()?;
+    store
+        .get(&(runtime.kind().to_string(), runtime.pane().to_string()))
+        .cloned()
 }
 
 #[derive(Clone, Default)]
@@ -47,8 +63,14 @@ impl Registry {
     /// arbitration [`Registry::update`] does — otherwise a state learned this
     /// way is both silent and unable to cancel what an earlier crossing had
     /// pending, so an agent that stopped being blocked still rings.
-    pub fn register(&self, connection: ConnectionId, entry: AgentEntry) {
+    pub fn register(&self, connection: ConnectionId, mut entry: AgentEntry) {
         let mut inner = self.lock();
+        // A runtime-hosted entry carries no activity of its own; re-attach
+        // whatever a wrapper in its pane last reported, so the runtime's
+        // re-registration on each resnapshot does not wipe it.
+        if let Some(activity) = runtime_activity_for(&inner.runtime_activity, &entry) {
+            entry.activity = Some(activity);
+        }
         let existing = inner.agents.insert(connection, entry.clone());
         // The agent as the registry last knew it, from this connection or
         // from one still handing it over. Pending noises are tracked per
@@ -92,6 +114,45 @@ impl Registry {
         // follows waits a second before it makes any noise.
         drop(inner);
         sounds.record(&agent, crossing, &sound_config);
+    }
+
+    /// A wrapper inside a runtime pane reported activity for the agent the
+    /// runtime hosts (ADR-0022). Stored by `(kind, pane)` so it survives the
+    /// runtime re-registering the entry, and applied now to whichever adopted
+    /// entry is in that pane. No row of the wrapper's own is involved.
+    pub fn set_runtime_activity(
+        &self,
+        kind: String,
+        pane: String,
+        activity: Option<amon_protocol::Activity>,
+    ) {
+        let mut inner = self.lock();
+        let key = (kind, pane);
+        match &activity {
+            Some(activity) => {
+                inner.runtime_activity.insert(key.clone(), activity.clone());
+            }
+            None => {
+                inner.runtime_activity.remove(&key);
+            }
+        }
+        // Apply to the adopted entry in this pane, if one is here yet. If it
+        // is not, the store above carries the activity onto it when it
+        // registers.
+        let target = inner.agents.iter_mut().find(|(_, entry)| {
+            entry
+                .runtime
+                .as_ref()
+                .is_some_and(|runtime| runtime.kind() == key.0 && runtime.pane() == key.1)
+        });
+        if let Some((_, entry)) = target {
+            if entry.activity == activity {
+                return;
+            }
+            entry.activity = activity;
+            let event = Event::AgentUpdated(entry.clone());
+            Self::broadcast(&mut inner, event);
+        }
     }
 
     /// Applies a patch to this connection's entry. Patches from a connection
@@ -349,5 +410,84 @@ mod tests {
             ),
             Some(None)
         );
+    }
+
+    fn herdr_entry(pane: &str) -> AgentEntry {
+        let mut entry = entry(AgentState::Working, None);
+        entry.id = format!("herdr:d:{pane}");
+        entry.runtime = Some(amon_protocol::Runtime::Herdr {
+            socket: "/tmp/h.sock".into(),
+            session: None,
+            pane: pane.into(),
+        });
+        entry
+    }
+
+    fn a(text: &str) -> amon_protocol::Activity {
+        amon_protocol::Activity {
+            text: text.into(),
+            kind: amon_protocol::ActivityKind::Narration,
+        }
+    }
+
+    #[test]
+    fn runtime_activity_joins_the_adopted_row_by_pane() {
+        let registry = Registry::new();
+        registry.register(1, herdr_entry("w1:p1"));
+        registry.set_runtime_activity("herdr".into(), "w1:p1".into(), Some(a("Reading 1 file")));
+
+        let inner = registry.lock();
+        let entry = inner.agents.values().next().expect("the adopted entry");
+        assert_eq!(
+            entry.activity.as_ref().map(|x| x.text.as_str()),
+            Some("Reading 1 file")
+        );
+    }
+
+    #[test]
+    fn runtime_activity_survives_the_runtimes_re_registration() {
+        // The runtime re-registers its entry on every resnapshot; the stored
+        // activity must be re-applied rather than wiped.
+        let registry = Registry::new();
+        registry.register(1, herdr_entry("w1:p1"));
+        registry.set_runtime_activity("herdr".into(), "w1:p1".into(), Some(a("Bash(cargo test)")));
+        // Resnapshot: a fresh entry with no activity of its own.
+        registry.register(1, herdr_entry("w1:p1"));
+
+        let inner = registry.lock();
+        let entry = inner.agents.values().next().expect("the adopted entry");
+        assert_eq!(
+            entry.activity.as_ref().map(|x| x.text.as_str()),
+            Some("Bash(cargo test)"),
+            "the resnapshot wiped the runtime activity"
+        );
+    }
+
+    #[test]
+    fn activity_for_a_pane_with_no_row_yet_is_carried_on_at_register() {
+        // The wrapper can report before the runtime has adopted the agent; the
+        // store carries the activity onto the entry when it arrives.
+        let registry = Registry::new();
+        registry.set_runtime_activity("herdr".into(), "w1:p1".into(), Some(a("Exploring")));
+        registry.register(1, herdr_entry("w1:p1"));
+
+        let inner = registry.lock();
+        let entry = inner.agents.values().next().expect("the adopted entry");
+        assert_eq!(
+            entry.activity.as_ref().map(|x| x.text.as_str()),
+            Some("Exploring")
+        );
+    }
+
+    #[test]
+    fn clearing_runtime_activity_clears_the_row() {
+        let registry = Registry::new();
+        registry.register(1, herdr_entry("w1:p1"));
+        registry.set_runtime_activity("herdr".into(), "w1:p1".into(), Some(a("Reading")));
+        registry.set_runtime_activity("herdr".into(), "w1:p1".into(), None);
+
+        let inner = registry.lock();
+        let entry = inner.agents.values().next().expect("the adopted entry");
+        assert_eq!(entry.activity, None);
     }
 }

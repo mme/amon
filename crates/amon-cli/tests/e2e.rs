@@ -70,13 +70,13 @@ fn the_agents_exit_code_is_the_wrappers_exit_code() {
 }
 
 #[test]
-fn inside_herdr_the_wrapper_steps_aside() {
-    inside_a_runtime_pane_the_wrapper_steps_aside("HERDR_ENV");
+fn inside_herdr_the_wrapper_wraps_for_activity() {
+    inside_a_runtime_pane_the_wrapper_wraps_for_activity("HERDR_ENV", "HERDR_PANE_ID");
 }
 
 #[test]
-fn inside_luvus_the_wrapper_steps_aside() {
-    inside_a_runtime_pane_the_wrapper_steps_aside("LUVUS_ENV");
+fn inside_luvus_the_wrapper_wraps_for_activity() {
+    inside_a_runtime_pane_the_wrapper_wraps_for_activity("LUVUS_ENV", "LUVUS_PANE_ID");
 }
 
 /// What a fake agent prints so a test can tell wrapped from bare.
@@ -85,11 +85,14 @@ const REPORTS_ITS_WRAPPING: &str = "#!/bin/sh\necho \"amon_env=${AMON_ENV:-unset
                                     sock=${AMON_SOCKET_PATH:-unset}\"\nexit 7\n";
 
 /// Inside a runtime's pane the user's alias still expands `claude` to
-/// `amon claude`, but wrapping there would hide the agent from the runtime
-/// and give amon a row with no window. amon execs the agent bare instead;
-/// the runtime detects it, and the daemon's runtime module brings it back
-/// onto the bar. A wrapped agent sees AMON_ENV=1 — a bypassed one must not.
-fn inside_a_runtime_pane_the_wrapper_steps_aside(pane_env: &str) {
+/// `amon claude`, and amon now wraps rather than stepping aside (ADR-0022):
+/// it needs the PTY for the activity it reads and the control it will add.
+/// It reports activity, not state — the runtime owns the row it adopts by
+/// pane id — and registers no row of its own. So the agent must see
+/// AMON_ENV=1, and its routing must be *this* wrapper's, not an outer one's:
+/// the fresh AGENT_ID and SOCKET_PATH overwrite whatever a runtime that was
+/// itself started under a wrapper left in the environment.
+fn inside_a_runtime_pane_the_wrapper_wraps_for_activity(pane_env: &str, pane_id_env: &str) {
     let sandbox = Sandbox::new();
     let agent = sandbox.fake_agent("claude", REPORTS_ITS_WRAPPING);
 
@@ -98,9 +101,13 @@ fn inside_a_runtime_pane_the_wrapper_steps_aside(pane_env: &str) {
     let (stdin, controller) = harness::open_terminal_stdin();
     let mut command = sandbox.command(&[&path_str(&agent)]);
     command.env(pane_env, "1");
+    // The pane id is what the daemon joins the wrapper's activity to the
+    // runtime's adopted row on; without it there is nothing to join to and
+    // amon has no reason to wrap.
+    command.env(pane_id_env, "w1:p1");
     // As if the runtime had been started from inside a wrapped agent: its
     // server and every pane inherit that wrapper's routing, and this agent
-    // would otherwise report its state into a wrapper watching something else.
+    // would otherwise report into a wrapper watching something else.
     command.env("AMON_ENV", "1");
     command.env("AMON_AGENT_ID", "outer-agent");
     command.env("AMON_SOCKET_PATH", "/nonexistent/outer.sock");
@@ -114,14 +121,18 @@ fn inside_a_runtime_pane_the_wrapper_steps_aside(pane_env: &str) {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("amon_env=unset"),
-        "the agent should run bare, not wrapped: {stdout:?}"
+        stdout.contains("amon_env=1"),
+        "inside a runtime pane the agent is wrapped, not bare: {stdout:?}"
     );
     assert!(
-        stdout.contains("id=unset") && stdout.contains("sock=unset"),
-        "an outer wrapper's routing must not follow the agent in: {stdout:?}"
+        !stdout.contains("id=outer-agent") && !stdout.contains("id=unset"),
+        "the wrapper's own routing must replace the outer one's, not vanish: {stdout:?}"
     );
-    // Exec fidelity: the agent's exit code is the process's exit code.
+    assert!(
+        !stdout.contains("sock=/nonexistent/outer.sock") && !stdout.contains("sock=unset"),
+        "hooks must reach this wrapper's socket, not the outer one's: {stdout:?}"
+    );
+    // Wrapping preserves the agent's exit code.
     assert_eq!(output.status.code(), Some(7));
 }
 

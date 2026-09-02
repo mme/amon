@@ -30,7 +30,7 @@ pub use event::Event;
 pub use frame::{Error, ErrorCode, ParseError, Request, Response, ServerFrame};
 pub use method::{
     ConfigResult, Hello, HelloResult, Method, MethodError, ReportActivity, ReportSession,
-    ReportState, Role, StatusResult,
+    ReportState, Role, RuntimeActivity, StatusResult,
 };
 pub use schema::protocol_schema;
 
@@ -63,4 +63,28 @@ pub mod env {
     /// aside when any is set, because inside a runtime the runtime is the
     /// detection authority (ADR-0016, and the daemon's runtime seam).
     pub const RUNTIME_PANE_ENVS: &[&str] = &["HERDR_ENV", "LUVUS_ENV"];
+
+    /// Per runtime: the marker env (`"1"` in a pane), the runtime kind, and the
+    /// env var carrying the pane id. The pane id is the key the daemon joins
+    /// wrapper activity to an adopted row on (ADR-0022) — both runtimes stamp
+    /// this same id on the entry they adopt.
+    pub const RUNTIME_PANES: &[(&str, &str, &str)] = &[
+        ("HERDR_ENV", "herdr", "HERDR_PANE_ID"),
+        ("LUVUS_ENV", "luvus", "LUVUS_PANE_ID"),
+    ];
+
+    /// The runtime pane amon is running in, if any: `(kind, pane_id)`, read
+    /// from the runtime's own environment.
+    pub fn runtime_pane() -> Option<(&'static str, String)> {
+        RUNTIME_PANES.iter().find_map(|(marker, kind, pane_env)| {
+            let is_pane = std::env::var_os(marker).is_some_and(|value| value == "1");
+            let pane = std::env::var(pane_env)
+                .ok()
+                .filter(|value| !value.is_empty());
+            match (is_pane, pane) {
+                (true, Some(pane)) => Some((*kind, pane)),
+                _ => None,
+            }
+        })
+    }
 }

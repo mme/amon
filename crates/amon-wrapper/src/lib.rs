@@ -18,6 +18,7 @@ mod focus;
 mod git;
 mod hook_socket;
 mod hypr;
+mod naming;
 mod observer;
 mod tty;
 
@@ -52,21 +53,12 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     // the same — step aside and let the agent be itself — so both end in
     // `exec_bare`.
 
-    // Inside a runtime's pane (herdr, luvus), amon steps aside entirely. The
-    // user's alias still expands `claude` to `amon claude` there, but wrapping
-    // would be the worst of both worlds: the runtime sees an unrecognized
-    // `amon` process and shows no agent, while the wrapper's window walk
-    // climbs pane shell → runtime server → init and registers a row with
-    // nowhere to jump to. Run bare instead: the runtime detects the agent
-    // natively, and the daemon's runtime module carries it onto the bar with
-    // the client's window — one detection authority per context
-    // (docs/research/herdr-live-integration.md).
-    if protocol_env::RUNTIME_PANE_ENVS
-        .iter()
-        .any(|name| std::env::var_os(name).is_some_and(|value| value == "1"))
-    {
-        return Err(exec_bare(program, args));
-    }
+    // Inside a runtime's pane (herdr, luvus), amon no longer steps aside: it
+    // wraps for the activity it collects and the control it will (ADR-0022).
+    // But it reports activity, not state — the runtime owns the row — and it
+    // wears the agent's name so the runtime's name-based scan still recognises
+    // the agent instead of seeing `amon`. Captured here; applied below.
+    let runtime_pane = protocol_env::runtime_pane();
 
     // With a terminal on neither side there is no window to jump to, so a row
     // would be a line you cannot act on. That is what an agent started by
@@ -132,37 +124,46 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     // Where the agent starts. It can walk away from here — into a worktree,
     // into a sibling checkout — which is what the watcher below follows.
     let location = git::location(&cwd);
-    link.register(AgentEntry {
-        id: agent_id.clone(),
-        agent: agent_label,
-        state: AgentState::Unknown,
-        state_since: now_millis(),
-        cwd: cwd.to_string_lossy().into_owned(),
-        pid: agent_pid,
-        args: launch
-            .argv
-            .iter()
-            .map(|arg| arg.to_string_lossy().into_owned())
-            .collect(),
-        hostname: hostname(),
-        started_at: now_millis(),
-        agent_session_id: None,
-        agent_session_path: None,
-        // Nothing has been rendered yet; the observer fills this in once the
-        // agent has drawn a screen worth reading.
-        activity: None,
-        window: None,
-        workspace: None,
-        // Resolved before the agent is registered, so a row never appears
-        // without its Project and branch and then acquires them a second
-        // later.
-        branch: location.branch.clone(),
-        project: location.project.clone(),
-        subpath: location.subpath.clone(),
-        focused: None,
-        seen: None,
-        runtime: None,
-    });
+    // Inside a runtime, wear the agent's name so herdr/luvus keep recognising
+    // it, and register no row — the runtime's adopted entry is the only one.
+    if let Some((_kind, _pane)) = &runtime_pane {
+        if let Some(name) = naming::agent_command_name(agent, program) {
+            naming::wear_comm(&name);
+        }
+    }
+    if runtime_pane.is_none() {
+        link.register(AgentEntry {
+            id: agent_id.clone(),
+            agent: agent_label,
+            state: AgentState::Unknown,
+            state_since: now_millis(),
+            cwd: cwd.to_string_lossy().into_owned(),
+            pid: agent_pid,
+            args: launch
+                .argv
+                .iter()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect(),
+            hostname: hostname(),
+            started_at: now_millis(),
+            agent_session_id: None,
+            agent_session_path: None,
+            // Nothing has been rendered yet; the observer fills this in once the
+            // agent has drawn a screen worth reading.
+            activity: None,
+            window: None,
+            workspace: None,
+            // Resolved before the agent is registered, so a row never appears
+            // without its Project and branch and then acquires them a second
+            // later.
+            branch: location.branch.clone(),
+            project: location.project.clone(),
+            subpath: location.subpath.clone(),
+            focused: None,
+            seen: None,
+            runtime: None,
+        });
+    }
 
     let focus_shared = focus::Shared::default();
     let observer_thread = observer::spawn(
@@ -172,6 +173,7 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
             cwd,
             cols,
             rows,
+            runtime_pane: runtime_pane.map(|(kind, pane)| (kind.to_string(), pane)),
         },
         link,
         inbox,

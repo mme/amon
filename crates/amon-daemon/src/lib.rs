@@ -347,6 +347,12 @@ fn handle(
         }
         Method::DaemonShutdown => Outcome::Shutdown,
         // Hook reports belong to a wrapper's socket, not here.
+        Method::RuntimeActivity(report) => {
+            // A wrapper inside a runtime pane, joined to the runtime's own row
+            // by pane (ADR-0022). No entry of the wrapper's own.
+            registry.set_runtime_activity(report.kind, report.pane, report.activity);
+            Outcome::Reply(Box::new(Response::ack))
+        }
         Method::AgentReportState(_)
         | Method::AgentReportSession(_)
         | Method::AgentReportActivity(_) => Outcome::Reply(Box::new(move |id| {

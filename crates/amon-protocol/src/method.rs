@@ -108,6 +108,20 @@ pub struct ReportActivity {
     pub agent_session_id: Option<String>,
 }
 
+/// A wrapper running inside a runtime pane reporting the agent's activity
+/// (ADR-0022). It carries no row of its own — the runtime owns the row — so the
+/// daemon joins this to the adopted entry by `kind` and `pane`, the id both
+/// runtimes stamp on the entry and inject into the pane.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RuntimeActivity {
+    pub kind: String,
+    pub pane: String,
+    /// The activity, or `None` to clear it (the turn ended, the session
+    /// changed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activity: Option<crate::Activity>,
+}
+
 /// Every request either socket accepts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "method", content = "params")]
@@ -143,6 +157,9 @@ pub enum Method {
     /// Hook → wrapper. amon-only (ADR-0021).
     #[serde(rename = "agent.report_activity")]
     AgentReportActivity(ReportActivity),
+    /// Wrapper (in a runtime pane) → daemon. amon-only (ADR-0022).
+    #[serde(rename = "runtime.activity")]
+    RuntimeActivity(RuntimeActivity),
 }
 
 impl Method {
@@ -158,6 +175,7 @@ impl Method {
             Self::AgentReportState(_) => "agent.report_state",
             Self::AgentReportSession(_) => "agent.report_session",
             Self::AgentReportActivity(_) => "agent.report_activity",
+            Self::RuntimeActivity(_) => "runtime.activity",
         }
     }
 
@@ -189,6 +207,7 @@ const KNOWN_METHODS: &[&str] = &[
     "agent.report_state",
     "agent.report_session",
     "agent.report_activity",
+    "runtime.activity",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]

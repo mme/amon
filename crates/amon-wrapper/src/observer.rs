@@ -106,6 +106,9 @@ pub struct Observer {
     /// The activity last reported, so the daemon sees changes rather than a
     /// heartbeat — the same rule the state field follows.
     last_activity: Option<amon_protocol::Activity>,
+    /// Set inside a runtime pane: activity is routed to the runtime's row by
+    /// this `(kind, pane_id)`, and state is left to the runtime (ADR-0022).
+    runtime_pane: Option<(String, String)>,
     /// The session a hook-opened Turn belongs to, when a hook opened the
     /// current one. A hook prompt can arrive before the first session report,
     /// so it cannot be scoped by `last_session_id` alone; this lets the first
@@ -120,6 +123,10 @@ pub struct Setup {
     pub cwd: PathBuf,
     pub cols: u16,
     pub rows: u16,
+    /// `(kind, pane_id)` when amon is wrapping inside a runtime pane. There the
+    /// observer reports activity, not state, and routes it to the runtime's
+    /// adopted row by pane rather than to a row of its own (ADR-0022).
+    pub runtime_pane: Option<(String, String)>,
 }
 
 /// Starts the observer on its own thread.
@@ -158,6 +165,7 @@ impl Observer {
             activity: amon_term::ActivityTracker::new(),
             last_activity: None,
             hook_turn_session: None,
+            runtime_pane: setup.runtime_pane,
         })
     }
 
@@ -423,8 +431,19 @@ impl Observer {
     /// through a long turn narrates several steps without changing state, and
     /// a state change can arrive on a frame whose activity is unchanged.
     fn publish(&mut self) {
-        let state = from_detect_state(self.state.state);
         let activity = self.activity.current().map(to_wire_activity);
+
+        // Inside a runtime the row is the runtime's: report only activity, and
+        // route it there by pane rather than to a row of our own (ADR-0022).
+        if let Some((kind, pane)) = self.runtime_pane.clone() {
+            if activity != self.last_activity {
+                self.last_activity = activity.clone();
+                self.link.runtime_activity(kind, pane, activity);
+            }
+            return;
+        }
+
+        let state = from_detect_state(self.state.state);
         let state_changed = state != self.last_reported;
         let activity_changed = activity != self.last_activity;
         if !state_changed && !activity_changed {
