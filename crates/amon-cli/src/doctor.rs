@@ -203,6 +203,25 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // An integration set up but not aliased is the silent trap: typing the
+    // agent's own name runs it bare, so it never registers and never appears
+    // on the bar — which looks like amon being broken, not a missing alias.
+    // Flag every installed integration whose alias is absent, so the cause is
+    // named rather than guessed. (`amon setup <agent> --no-alias` is a
+    // deliberate way to reach this, so it is a caution, not an error.)
+    for status in amon_integration::statuses() {
+        if status.state != InstallState::NotInstalled && !alias::is_installed(status.target) {
+            print_line(
+                status.label,
+                &format!(
+                    "set up but not aliased — typing its name runs it unwrapped                      (amon setup {} re-adds the alias)",
+                    status.label
+                ),
+                "",
+            );
+        }
+    }
+
     // Reported beside the aliases because they are the same decision for a
     // different context: an agent aliased but not shimmed is wrapped when you
     // type its name and bare when Omarchy launches it, which is exactly the
