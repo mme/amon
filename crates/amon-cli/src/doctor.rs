@@ -76,6 +76,15 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
         };
         print_line("opencode activity plugin", note, "");
     }
+    if let Ok(state) = amon_integration::activity_hooks::grok::state() {
+        use amon_integration::activity_hooks::HookState;
+        let note = match state {
+            HookState::Current => "installed (reports what each turn is working on)",
+            HookState::Outdated => "outdated (amon setup grok reinstalls it)",
+            HookState::NotInstalled => "not installed (amon setup grok adds it)",
+        };
+        print_line("grok prompt hook", note, "");
+    }
     for status in desktop::statuses() {
         let installed = status.installed_version.unwrap_or_else(|| "?".into());
         print_line(

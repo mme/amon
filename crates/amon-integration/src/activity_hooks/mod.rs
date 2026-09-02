@@ -14,6 +14,7 @@
 //! uninstall so nothing is orphaned.
 
 pub mod codex;
+pub mod grok;
 pub mod omp;
 pub mod opencode;
 pub mod pi;

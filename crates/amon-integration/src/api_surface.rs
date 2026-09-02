@@ -29,6 +29,7 @@ pub fn install(target: IntegrationTarget) -> io::Result<Vec<String>> {
         IntegrationTarget::Pi => Some(crate::activity_hooks::pi::install()),
         IntegrationTarget::Omp => Some(crate::activity_hooks::omp::install()),
         IntegrationTarget::Opencode => Some(crate::activity_hooks::opencode::install()),
+        IntegrationTarget::Grok => Some(crate::activity_hooks::grok::install()),
         _ => None,
     };
     if let Some(result) = extra {
@@ -64,6 +65,9 @@ pub fn uninstall(target: IntegrationTarget) -> io::Result<Vec<String>> {
         }
         IntegrationTarget::Opencode => {
             let _ = crate::activity_hooks::opencode::uninstall();
+        }
+        IntegrationTarget::Grok => {
+            let _ = crate::activity_hooks::grok::uninstall();
         }
         _ => {}
     }

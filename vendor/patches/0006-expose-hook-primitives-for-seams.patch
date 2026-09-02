@@ -1,5 +1,5 @@
 diff --git c/crates/amon-integration/src/vendor/integration/mod.rs w/crates/amon-integration/src/vendor/integration/mod.rs
-index 760945d..1491ff8 100644
+index 760945d..fc6e257 100644
 --- c/crates/amon-integration/src/vendor/integration/mod.rs
 +++ w/crates/amon-integration/src/vendor/integration/mod.rs
 @@ -27,6 +27,18 @@ pub(crate) use registry::{
@@ -15,7 +15,7 @@ index 760945d..1491ff8 100644
 +    ensure_command_hook, ensure_hooks_object, is_matching_command_hook, remove_command_hook,
 +};
 +pub(crate) use env::{
-+    claude_dir, codex_dir, omp_extension_dir, opencode_dir, pi_extension_dir,
++    claude_dir, codex_dir, grok_dir, omp_extension_dir, opencode_dir, pi_extension_dir,
 +};
 +
  const PI_EXTENSION_INSTALL_NAME: &str = "amon-agent-state.ts";

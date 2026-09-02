@@ -75,3 +75,19 @@ pattern = '^\s*[•■✗✓]\s+(?<text>\S.*?)\s*$'
 reject = 'esc to interrupt|usage limit reset|^\s*[•■✗✓]\s+(?:Starting|Updating|Loading)\b'
 prompt_region = "before_current_prompt_marker"
 prompt_pattern = '^\s*›\s+(?<text>\S.*?)\s*$'
+
+# grok marks tool calls with ◈ ("Read 1 file") but prefixes neither its
+# "Thought for Xs" nor its reply, so narration is tool calls only — the reply
+# cannot be told from any other prose. Its submitted prompt is a ❯ line in the
+# transcript, but the render litters it with a block cursor and a trailing
+# timestamp; grok's own hook engine reports the prompt cleanly instead
+# (activity_hooks::grok), so the carrier reads only the ◈ narration. Its live
+# input is a rounded box (╭╰), not the ─ rule herdr's box regions look for, so
+# like codex grok names its own gate. Verified against a captured turn
+# (grok-turn.raw).
+[[carrier]]
+agent = "grok"
+gate_region = "bottom_non_empty_lines(6)"
+gate_pattern = 'Ctrl\+x:shortcuts'
+region = "whole_recent"
+pattern = '^\s*◈\s+(?<text>\S.*?)\s*$'

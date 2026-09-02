@@ -419,6 +419,9 @@ fn first_line(text: &str) -> &str {
 /// Collapses the runs of spaces a terminal grid leaves behind, and bounds the
 /// result. `None` for a line that turned out to hold no text.
 fn clean(line: String) -> Option<String> {
+    // The terminal's block cursor (█, U+2588) renders into the grid but is
+    // never part of what the agent said; drop it before collapsing spaces.
+    let line = line.replace('\u{2588}', " ");
     let mut cleaned = String::with_capacity(line.len());
     for word in line.split_whitespace() {
         if !cleaned.is_empty() {
