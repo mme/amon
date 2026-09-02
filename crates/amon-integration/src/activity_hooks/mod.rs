@@ -15,6 +15,7 @@
 
 pub mod codex;
 pub mod omp;
+pub mod opencode;
 pub mod pi;
 
 /// Whether an installed piece is absent, stale, or current — what `doctor`
