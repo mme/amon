@@ -54,6 +54,31 @@ The detected condition of a wrapped agent: `Idle` (finished, prompt visible),
 (unrecognized program). Terminology inherited from herdr.
 _Avoid_: status (reserved for the `amon status` command), busy, waiting
 
+**Activity**:
+What an Agent is doing right now, in words — the line its row carries beside
+the state. One of two kinds, ranked in that order: a Narration, or the Prompt
+the current Turn is working on. Belongs to a Turn; a session change discards
+it.
+_Avoid_: message (hook payloads own that word), title (ADR-0017's failed
+column)
+
+**Narration**:
+The harness's own one-line account of its current step ("Reading 1 file…") —
+read off the screen or reported by a hook, never a phrase amon composed.
+_Avoid_: progress text, status text
+
+**Prompt**:
+The submitted ask a Turn is working on. Never text still being typed — that
+belongs to no Turn yet. Shown while a Turn has no Narration, and kept by one
+that never produced any.
+_Avoid_: input, query, user message
+
+**Turn**:
+One prompt-to-completion span of an Agent's session. Starts when a prompt is
+submitted and is replaced by the next Turn rather than ending; a session change
+(`/clear`, `--resume`, a new session id) discards it.
+_Avoid_: exchange, round
+
 **Shadow Terminal**:
 An in-process terminal emulator (herdr's, lifted byte-for-byte) that consumes a
 copy of the agent's output to maintain a screen grid for detection. It never

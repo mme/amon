@@ -185,21 +185,21 @@ FocusScope {
   // is what keeps this readable rather than distracting. The colours are the
   // row's own two tokens, so the effect follows any theme instead of naming
   // colours of its own.
-  // The glimmer crosses quickly and then the row rests. Named as two spans
+  // The shimmer crosses quickly and then the row rests. Named as two spans
   // rather than as a period the sweep is subtracted from, because the wait is
   // the thing being chosen — a band drawn out to fill a period would not read
-  // as a glimmer at all, it would read as text slowly changing colour. 900ms
+  // as a shimmer at all, it would read as text slowly changing colour. 900ms
   // is a duration the shell already animates at elsewhere.
   readonly property int shimmerSweep: 900
   readonly property int shimmerRest: 2000
 
   // Parked at 1, which is the band already past the right edge: nothing is lit
-  // between glimmers, and nothing is lit before the first one.
+  // between shimmers, and nothing is lit before the first one.
   property real shimmerPhase: 1
   property bool shimmerRunning: false
   property bool sweeping: false
 
-  // Raised as each glimmer finishes. A row that has stopped working waits for
+  // Raised as each shimmer finishes. A row that has stopped working waits for
   // this rather than dropping out under a band that is still crossing it.
   signal sweepFinished()
 
@@ -218,7 +218,7 @@ FocusScope {
   Component.onCompleted: if (view.anyWorking) view.shimmerRunning = true
 
   // Stopped outright when no agent is working, so an idle pane costs nothing —
-  // but never mid-glimmer: the run ends where a band has finished crossing.
+  // but never mid-shimmer: the run ends where a band has finished crossing.
   SequentialAnimation {
     running: view.shimmerRunning
     loops: Animation.Infinite
@@ -890,11 +890,11 @@ FocusScope {
     readonly property int activityWidth:
       Math.max(0, view.columnWidth("activity") - view.activityInset)
 
-    // Whether this row is drawn in chunks so a glimmer can cross it. It is not
-    // simply "is working": a row that stops mid-glimmer keeps its chunks until
+    // Whether this row is drawn in chunks so a shimmer can cross it. It is not
+    // simply "is working": a row that stops mid-shimmer keeps its chunks until
     // the band has finished crossing, because cutting the light off half way
-    // over a sentence is more noticeable than the glimmer itself. Stopping
-    // between glimmers takes effect at once, there being nothing to finish.
+    // over a sentence is more noticeable than the shimmer itself. Stopping
+    // between shimmers takes effect at once, there being nothing to finish.
     readonly property bool working: row.entry.state === "working"
     property bool shimmering: false
 
