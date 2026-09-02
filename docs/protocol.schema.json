@@ -677,6 +677,13 @@
             "null"
           ]
         },
+        "message": {
+          "description": "What the agent is blocked on, in the harness's words — the question it\nis waiting on. Sent by pi and omp on `blocked` and absent otherwise;\nthe wrapper surfaces it as the row's Activity so a blocked row says\nwhat it needs, not just that it is blocked.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "seq": {
           "description": "Monotonic per-source sequence number, used to drop out-of-order reports.",
           "format": "uint64",

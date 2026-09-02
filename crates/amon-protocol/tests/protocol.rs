@@ -67,6 +67,7 @@ fn methods_are_named_as_the_hooks_send_them() {
             agent: "claude".into(),
             state: AgentState::Working,
             seq: 1,
+            message: None,
             agent_session_id: None,
         })
         .name(),

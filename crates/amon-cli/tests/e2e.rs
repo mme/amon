@@ -833,6 +833,31 @@ sleep 5
 }
 
 #[test]
+fn a_blocked_reason_reaches_status_as_activity() {
+    // pi and omp send the blocking question on the state report; the wrapper
+    // surfaces it as the row's Activity so a blocked row says what it needs.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent(
+        "pi",
+        r#"#!/bin/sh
+printf '{"id":"s1","method":"agent.report_state","params":{"agent_id":"%s","source":"amon:pi","agent":"pi","state":"blocked","seq":1,"message":"Allow write to /etc/hosts?"}}\n' "$AMON_AGENT_ID" \
+  | timeout 5 socat - "UNIX-CONNECT:$AMON_SOCKET_PATH" >/dev/null 2>&1
+sleep 5
+"#,
+    );
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    let want = serde_json::json!({"text": "Allow write to /etc/hosts?", "kind": "narration"});
+    let agents = sandbox.wait_for_status("the blocked reason", |agents| {
+        agent_named(agents, "pi").is_some_and(|agent| agent["activity"] == want)
+    });
+    assert!(agent_named(&agents, "pi").is_some());
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
 fn a_state_reports_session_id_also_reaches_the_registry() {
     let sandbox = Sandbox::new();
     // Hooks stamp the session id on every state report; if the one-shot

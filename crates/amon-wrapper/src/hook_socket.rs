@@ -96,6 +96,7 @@ fn handle(request: Request, signals: &Sender<Signal>) {
                 source: report.source,
                 agent: report.agent,
                 state: report.state,
+                message: report.message,
                 seq: Some(report.seq),
                 session_id: report.agent_session_id,
             });

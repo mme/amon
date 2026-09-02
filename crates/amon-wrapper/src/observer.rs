@@ -36,6 +36,9 @@ pub enum Signal {
         source: String,
         agent: String,
         state: AgentState,
+        /// What the agent is blocked on, when the hook says — surfaced as the
+        /// row's Activity, and passed to herdr's own authority slot.
+        message: Option<String>,
         seq: Option<u64>,
         /// Hooks stamp the session id on state reports too, so identity
         /// survives even when the one-shot session report was missed.
@@ -219,6 +222,7 @@ impl Observer {
                 source,
                 agent,
                 state,
+                message,
                 seq,
                 session_id,
             } => {
@@ -246,12 +250,18 @@ impl Observer {
                     source,
                     agent,
                     to_detect_state(state),
-                    None,
+                    message.clone(),
                     session_ref,
                     seq,
                     Instant::now(),
                 );
-                if change.is_some() {
+                // The blocking question is the most useful thing the row can
+                // say while blocked — what the agent needs, not just that it
+                // needs something. It is the harness's own words, so it reads
+                // as narration.
+                let activity_changed =
+                    message.is_some_and(|question| self.activity.hook_narration(&question));
+                if change.is_some() || activity_changed {
                     self.publish();
                 }
             }

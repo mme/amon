@@ -144,6 +144,9 @@ enum HookReport {
         state: AgentState,
         #[arg(long)]
         seq: u64,
+        /// What the agent is blocked on, when the hook knows
+        #[arg(long)]
+        message: Option<String>,
         #[arg(long)]
         agent_session_id: Option<String>,
     },
@@ -548,6 +551,7 @@ fn run_hook(report: HookReport) -> Result<(), Box<dyn std::error::Error>> {
             agent,
             state,
             seq,
+            message,
             agent_session_id,
         } => Method::AgentReportState(ReportState {
             agent_id,
@@ -555,6 +559,7 @@ fn run_hook(report: HookReport) -> Result<(), Box<dyn std::error::Error>> {
             agent,
             state,
             seq,
+            message,
             agent_session_id,
         }),
         HookReport::Activity {

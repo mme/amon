@@ -66,6 +66,12 @@ pub struct ReportState {
     pub state: AgentState,
     /// Monotonic per-source sequence number, used to drop out-of-order reports.
     pub seq: u64,
+    /// What the agent is blocked on, in the harness's words — the question it
+    /// is waiting on. Sent by pi and omp on `blocked` and absent otherwise;
+    /// the wrapper surfaces it as the row's Activity so a blocked row says
+    /// what it needs, not just that it is blocked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_id: Option<String>,
 }
