@@ -108,3 +108,11 @@ Stale pids are the residual risk, and a small one: it takes the original amon
 being gone *and* its number reused by the exact process that calls a shim, and
 the result is one agent running unwrapped — which is what happened in every one
 of these cases before. Not worth more machinery than that.
+
+## Narrowed
+
+ADR-0022 narrows the runtime-pane step-aside: inside a runtime the wrapper now
+runs (wearing the agent's name so the runtime still recognises it) and reports
+activity rather than state, because activity — and later control — cannot come
+from a process that has exec'd itself away. The no-terminal step-aside here is
+unchanged.
