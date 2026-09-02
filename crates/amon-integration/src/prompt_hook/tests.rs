@@ -106,3 +106,98 @@ fn deregistering_leaves_a_users_own_hook_alone() {
     );
     assert!(!after.contains(&command(&hook)), "kept ours: {after}");
 }
+
+// ---- settings robustness (codex review) -------------------------------
+
+/// A settings file that is not valid JSON is left exactly as it was — never
+/// overwritten by a fresh minimal object. (Read errors and non-objects fail
+/// the register, which the caller treats as non-fatal.)
+#[test]
+fn a_non_object_settings_file_is_refused_not_overwritten() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let settings = dir.path().join("settings.json");
+    let hook = dir.path().join("hooks").join("amon-prompt-state.sh");
+    let original = "[1, 2, 3]\n"; // valid JSON, but not an object
+    std::fs::write(&settings, original).expect("seed");
+
+    assert!(
+        register(&settings, &hook).is_err(),
+        "should refuse a non-object"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&settings).expect("read"),
+        original,
+        "the file was altered"
+    );
+}
+
+/// A `hooks` value that is not an object is refused rather than shadowed by a
+/// second `hooks` key.
+#[test]
+fn a_non_object_hooks_value_is_refused() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let settings = dir.path().join("settings.json");
+    let hook = dir.path().join("hooks").join("amon-prompt-state.sh");
+    std::fs::write(&settings, "{\"hooks\": null}\n").expect("seed");
+
+    assert!(
+        register(&settings, &hook).is_err(),
+        "should refuse non-object hooks"
+    );
+    assert!(
+        std::fs::read_to_string(&settings)
+            .expect("read")
+            .contains("\"hooks\": null"),
+        "the file was altered"
+    );
+}
+
+/// A non-array event value is refused rather than shadowed by a duplicate key.
+#[test]
+fn a_non_array_event_value_is_refused() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let settings = dir.path().join("settings.json");
+    let hook = dir.path().join("hooks").join("amon-prompt-state.sh");
+    std::fs::write(&settings, format!("{{\"hooks\": {{\"{EVENT}\": {{}}}}}}\n")).expect("seed");
+
+    assert!(
+        register(&settings, &hook).is_err(),
+        "should refuse non-array event"
+    );
+}
+
+/// Idempotency is by the parsed command, so the same command text sitting in
+/// an unrelated place does not fool register into skipping — and a real second
+/// call still adds nothing.
+#[test]
+fn idempotency_is_by_parsed_command_not_substring() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let settings = dir.path().join("settings.json");
+    let hook = dir.path().join("hooks").join("amon-prompt-state.sh");
+    let cmd = command(&hook);
+    // The command text appears as an unrelated string value, not as a
+    // registered UserPromptSubmit entry.
+    std::fs::write(
+        &settings,
+        format!(
+            "{{\"note\": {}, \"hooks\": {{}}}}\n",
+            serde_json::to_string(&cmd).unwrap()
+        ),
+    )
+    .expect("seed");
+
+    register(&settings, &hook).expect("register");
+    let after = std::fs::read_to_string(&settings).expect("read");
+    assert!(
+        after.contains(EVENT),
+        "was fooled by the substring and skipped: {after}"
+    );
+
+    let before = after.clone();
+    register(&settings, &hook).expect("register again");
+    assert_eq!(
+        std::fs::read_to_string(&settings).expect("read"),
+        before,
+        "second register changed the file"
+    );
+}

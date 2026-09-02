@@ -419,10 +419,7 @@ fn append_session_entry_compact(
     ))
 }
 
-pub(crate) fn parse_ast_root_object<'a>(
-    content: &'a str,
-    settings_path: &Path,
-) -> io::Result<AstObject<'a>> {
+fn parse_ast_root_object<'a>(content: &'a str, settings_path: &Path) -> io::Result<AstObject<'a>> {
     let parsed = parse_to_ast(content, &CollectOptions::default(), &strict_parse_options())
         .map_err(|err| {
             io::Error::other(format!(
@@ -439,7 +436,7 @@ pub(crate) fn parse_ast_root_object<'a>(
     }
 }
 
-pub(crate) fn append_object_property(
+fn append_object_property(
     content: &str,
     object: &AstObject<'_>,
     name: &str,
@@ -462,7 +459,7 @@ pub(crate) fn append_object_property(
     )
 }
 
-pub(crate) fn append_array_element(content: &str, array: &AstArray<'_>, value: &str) -> String {
+fn append_array_element(content: &str, array: &AstArray<'_>, value: &str) -> String {
     let delimiter = array_delimiter(content, array);
     append_to_container(
         content,

@@ -101,6 +101,11 @@ pub struct Observer {
     /// The activity last reported, so the daemon sees changes rather than a
     /// heartbeat — the same rule the state field follows.
     last_activity: Option<amon_protocol::Activity>,
+    /// The session a hook-opened Turn belongs to, when a hook opened the
+    /// current one. A hook prompt can arrive before the first session report,
+    /// so it cannot be scoped by `last_session_id` alone; this lets the first
+    /// differing session clear a Turn that was never its own.
+    hook_turn_session: Option<String>,
 }
 
 /// What the observer needs to know about the agent it is watching.
@@ -147,6 +152,7 @@ impl Observer {
             focus: crate::focus::Tracker::default(),
             activity: amon_term::ActivityTracker::new(),
             last_activity: None,
+            hook_turn_session: None,
         })
     }
 
@@ -267,9 +273,14 @@ impl Observer {
                     // what the last one was doing is not a fact about this
                     // one. Only a *replaced* session clears: the first report
                     // names the session the screen was already showing.
-                    if !same_session && self.last_session_id.is_some() {
+                    let hook_turn_elsewhere = self
+                        .hook_turn_session
+                        .as_deref()
+                        .is_some_and(|its| its != session_id);
+                    if (!same_session && self.last_session_id.is_some()) || hook_turn_elsewhere {
                         self.activity.clear();
                     }
+                    self.hook_turn_session = None;
                     self.last_session_id = Some(session_id.clone());
                     let mut patch = AgentPatch::new(&self.agent_id);
                     patch.agent = Some(agent.clone());
@@ -311,6 +322,7 @@ impl Observer {
                     && self.last_session_id.is_some()
                     && session_id != self.last_session_id;
                 if !stale && self.activity.begin_turn(&prompt) {
+                    self.hook_turn_session = session_id;
                     self.publish();
                 }
             }

@@ -352,3 +352,220 @@ fn an_agent_with_no_carrier_reads_nothing() {
     let pi = identify_agent("pi").expect("pi is a known agent");
     assert_eq!(read(pi, input(&screen("● Read 5 files"))), None);
 }
+
+// ---- turn-boundary regressions (codex review) -------------------------
+
+#[test]
+fn a_new_prompt_and_its_narration_in_one_frame_do_not_regress_later() {
+    // The frame where a new prompt appears together with its first narration
+    // (the prompt-only frame was missed) must still record the new Turn, so a
+    // later prompt-only frame reads as the marker blinking, not a regression.
+    let mut tracker = ActivityTracker::new();
+    tracker.observe(
+        claude(),
+        input(&screen("❯ the first ask\n● narrating the first")),
+    );
+    // New prompt and its narration arrive together.
+    assert!(tracker.observe(
+        claude(),
+        input(&screen(
+            "● narrating the first\n❯ the second ask\n● Reading 2 files…"
+        ))
+    ));
+    assert_eq!(tracker.current(), narration("Reading 2 files…").as_ref());
+    // Marker blinks off: only the second ask is on screen now.
+    assert!(!tracker.observe(claude(), input(&screen("❯ the second ask"))));
+    assert_eq!(
+        tracker.current(),
+        narration("Reading 2 files…").as_ref(),
+        "regressed to the ask when the marker blinked"
+    );
+}
+
+#[test]
+fn a_hook_turn_is_not_clobbered_by_the_previous_turns_narration() {
+    // A hook opens a Turn before the terminal redraws; the screen still shows
+    // the previous turn's prompt and narration. That stale narration must not
+    // replace the authoritative hook prompt.
+    let mut tracker = ActivityTracker::new();
+    // A previous turn was on screen when the hook fired (the realistic case).
+    tracker.observe(
+        claude(),
+        input(&screen("❯ read the notice\n● Apache License, 2.0")),
+    );
+    tracker.begin_turn("summarise the findings");
+    // Screen is still on the previous turn.
+    assert!(!tracker.observe(
+        claude(),
+        input(&screen("❯ read the notice\n● Apache License, 2.0"))
+    ));
+    assert_eq!(
+        tracker.current(),
+        prompt("summarise the findings").as_ref(),
+        "the previous turn's narration clobbered the hook prompt"
+    );
+    // Screen catches up (wrapped), now narrating the new turn.
+    assert!(tracker.observe(
+        claude(),
+        input(&screen("❯ summarise the\n● Writing summary…"))
+    ));
+    assert_eq!(tracker.current(), narration("Writing summary…").as_ref());
+}
+
+#[test]
+fn a_hook_turns_exact_text_survives_the_screen_echo() {
+    // Once the screen echoes the hook's prompt (wrapped to width), the row
+    // keeps the hook's exact text, not the truncated on-screen rendering.
+    let mut tracker = ActivityTracker::new();
+    tracker.begin_turn("refactor the auth module and keep the tests green");
+    assert!(!tracker.observe(
+        claude(),
+        input(&screen("❯ refactor the auth module and keep the"))
+    ));
+    assert_eq!(
+        tracker.current(),
+        prompt("refactor the auth module and keep the tests green").as_ref()
+    );
+}
+
+#[test]
+fn a_hook_prompt_extending_the_previous_is_not_mistaken_for_it() {
+    // codex round 2: the old prompt is a prefix of the new hook prompt. The
+    // hold must key on the previous prompt exactly, so the stale narration of
+    // "Fix bug" cannot be emitted for the "Fix bug thoroughly" turn.
+    let mut tracker = ActivityTracker::new();
+    tracker.observe(claude(), input(&screen("❯ Fix bug\n● patching one file")));
+    tracker.begin_turn("Fix bug thoroughly");
+    // Screen still on the previous turn, whose prompt is a prefix of the new.
+    assert!(!tracker.observe(claude(), input(&screen("❯ Fix bug\n● patching one file"))));
+    assert_eq!(
+        tracker.current(),
+        prompt("Fix bug thoroughly").as_ref(),
+        "released the hold on a prefix collision and showed stale narration"
+    );
+    // Screen catches up to the new turn.
+    assert!(tracker.observe(
+        claude(),
+        input(&screen("❯ Fix bug thoroughly\n● Reading 4 files…"))
+    ));
+    assert_eq!(tracker.current(), narration("Reading 4 files…").as_ref());
+}
+
+#[test]
+fn re_submitting_the_same_prompt_holds_the_ask_then_releases() {
+    // Re-submitting an identical prompt: the previous turn's narration is
+    // still on screen and no prompt text can tell the turns apart, so the row
+    // shows the ask through the thinking phase (not the stale narration), then
+    // the cap lets narration take over rather than holding forever.
+    let mut tracker = ActivityTracker::new();
+    tracker.observe(
+        claude(),
+        input(&screen("❯ run the tests\n● Bash(cargo test)")),
+    );
+    tracker.begin_turn("run the tests");
+    // First frame after re-submit still shows the old narration — held.
+    assert!(!tracker.observe(
+        claude(),
+        input(&screen("❯ run the tests\n● Bash(cargo test)"))
+    ));
+    assert_eq!(
+        tracker.current(),
+        prompt("run the tests").as_ref(),
+        "showed stale narration during the new turn's thinking phase"
+    );
+    let mut released = false;
+    for _ in 0..(HOLD_FRAMES as usize + 1) {
+        tracker.observe(
+            claude(),
+            input(&screen("❯ run the tests\n● Bash(cargo test)")),
+        );
+        if tracker.current().map(|a| a.kind) == Some(ActivityKind::Narration) {
+            released = true;
+            break;
+        }
+    }
+    assert!(
+        released,
+        "the hold never released for an identical re-submit"
+    );
+}
+
+#[test]
+fn hook_origin_does_not_leak_prefix_matching_into_the_next_turn() {
+    // codex round 3: a hook turn narrates, then a new turn's prompt is a
+    // prefix of the previous boundary. Prefix matching must be off by then, or
+    // the new ask is mistaken for the old turn and its narration lingers.
+    let mut tracker = ActivityTracker::new();
+    tracker.begin_turn("deploy to prod now");
+    tracker.observe(
+        claude(),
+        input(&screen("❯ deploy to prod now\n● Deploying…")),
+    );
+    assert_eq!(tracker.current(), narration("Deploying…").as_ref());
+    // New turn, its prompt a prefix of the previous ("deploy to prod now").
+    assert!(tracker.observe(claude(), input(&screen("● Deploying…\n❯ deploy to prod"))));
+    assert_eq!(
+        tracker.current(),
+        prompt("deploy to prod").as_ref(),
+        "prefix matching leaked and swallowed the new turn"
+    );
+}
+
+#[test]
+fn a_long_previous_hook_prompt_shown_wrapped_still_holds() {
+    // codex round 4: turn 1 is a long hook prompt the screen wraps; turn 2 is
+    // a different hook prompt submitted before turn 1 narrated. The stale
+    // frame still shows turn 1 wrapped — a prefix of its exact text, which the
+    // hold must recognise so it does not clobber turn 2's ask.
+    let long = "investigate the flaky integration test and report the root cause";
+    let mut tracker = ActivityTracker::new();
+    tracker.begin_turn(long); // turn 1
+                              // Screen echoes turn 1 wrapped; establishes it as the on-screen turn.
+    tracker.observe(
+        claude(),
+        input(&screen("❯ investigate the flaky integration test and")),
+    );
+    assert_eq!(tracker.current(), prompt(long).as_ref());
+
+    tracker.begin_turn("now revert it"); // turn 2, before turn 1 narrated
+                                         // Stale frame: screen still on turn 1, wrapped (a prefix of the long text).
+    assert!(!tracker.observe(
+        claude(),
+        input(&screen("❯ investigate the flaky integration test and"))
+    ));
+    assert_eq!(
+        tracker.current(),
+        prompt("now revert it").as_ref(),
+        "the wrapped previous prompt clobbered the new ask"
+    );
+    // Screen catches up to turn 2.
+    assert!(tracker.observe(claude(), input(&screen("❯ now revert it\n● Reverting…"))));
+    assert_eq!(tracker.current(), narration("Reverting…").as_ref());
+}
+
+#[test]
+fn the_hold_is_bounded_when_prompts_are_indistinguishable_on_screen() {
+    // codex round 5: two long hook prompts whose visible first row is
+    // identical (they differ only in a wrapped continuation the ❯ pattern
+    // never sees). The hold cannot tell them apart, so it must not wait
+    // forever — after a few frames it trusts the screen and lets narration
+    // through.
+    let first_row = "please refactor the authentication module in the usual careful way";
+    let mut tracker = ActivityTracker::new();
+    tracker.begin_turn(&format!("{first_row} and also update the tests")); // turn 1
+    tracker.observe(claude(), input(&screen(&format!("❯ {first_row}"))));
+    tracker.begin_turn(&format!("{first_row} but leave the tests alone")); // turn 2
+                                                                           // The screen only ever shows the shared first row; narration for turn 2
+                                                                           // arrives but the prompt row is identical to turn 1's.
+    let frame = screen(&format!("❯ {first_row}\n● Working on it…"));
+    let mut released = false;
+    for _ in 0..(HOLD_FRAMES as usize + 2) {
+        tracker.observe(claude(), input(&frame));
+        if tracker.current().map(|a| a.kind) == Some(ActivityKind::Narration) {
+            released = true;
+            break;
+        }
+    }
+    assert!(released, "the hold never released and stayed on the prompt");
+    assert_eq!(tracker.current(), narration("Working on it…").as_ref());
+}

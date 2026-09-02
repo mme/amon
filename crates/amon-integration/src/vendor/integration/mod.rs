@@ -30,13 +30,9 @@ pub(crate) use types::{IntegrationRecommendation, IntegrationStatus, Integration
 // Re-exported for amon's own hook seams (ADR-0021), which register hooks
 // upstream does not — through upstream's own JSON primitives, never a parallel
 // editor. A mechanical widening, so a patch and not a hand-edit (ADR-0005).
-pub(crate) use claude_settings::{
-    append_array_element, append_object_property, parse_ast_root_object, strict_parse_options,
-};
+pub(crate) use claude_settings::strict_parse_options;
 pub(crate) use command::hook_command;
-pub(crate) use config_edit::{
-    ensure_command_hook, ensure_hooks_object, is_matching_command_hook, remove_command_hook,
-};
+pub(crate) use config_edit::is_matching_command_hook;
 pub(crate) use env::claude_dir;
 
 const PI_EXTENSION_INSTALL_NAME: &str = "amon-agent-state.ts";

@@ -1,0 +1,13 @@
+diff --git c/crates/amon-integration/src/vendor/integration/claude_settings.rs w/crates/amon-integration/src/vendor/integration/claude_settings.rs
+index ef53b4c..2eaa22d 100644
+--- c/crates/amon-integration/src/vendor/integration/claude_settings.rs
++++ w/crates/amon-integration/src/vendor/integration/claude_settings.rs
+@@ -575,7 +575,7 @@ fn reject_duplicate_keys(node: &CstNode, settings_path: &Path) -> io::Result<()>
+     Ok(())
+ }
+ 
+-fn strict_parse_options() -> ParseOptions {
++pub(crate) fn strict_parse_options() -> ParseOptions {
+     ParseOptions {
+         allow_comments: false,
+         allow_loose_object_property_names: false,

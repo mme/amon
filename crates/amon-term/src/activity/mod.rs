@@ -43,6 +43,12 @@ const TEXT_GROUP: &str = "text";
 /// line cannot travel over the wire. One bound for both kinds.
 const MAX_CHARS: usize = 160;
 
+/// How many frames a hook Turn may hold for the screen to follow. A redraw is
+/// one detection tick away, so this only has to outlast a slow one; past it
+/// the hold is waiting on a divergence that will not come, and the screen is
+/// the better guide. At the 150ms tick this is roughly a second.
+const HOLD_FRAMES: u8 = 6;
+
 /// What a screen (or, via [`ActivityTracker::begin_turn`], a hook) said the
 /// agent is doing. The mirror of the wire's `Activity`, owned here so this
 /// crate does not depend on the protocol crate.
@@ -73,11 +79,23 @@ pub struct ActivityTracker {
     /// The Prompt that opened the current Turn, cleaned. What "same Turn"
     /// means on later frames.
     turn_prompt: Option<String>,
-    /// Whether the current Turn was opened by a hook report. A hook carries
-    /// the prompt exactly as typed; the screen shows a rendering of it —
-    /// wrapped, possibly cut — so while a hook Turn is open, a screen prompt
-    /// that reads as a rendering of the same ask must not replace the text.
-    hook_turn: bool,
+    /// Whether a hook opened the current Turn — its prompt is the exact typed
+    /// text, and the screen shows a wrapped rendering of it, so a screen prompt
+    /// that is a prefix of the exact text is the same Turn and must not replace
+    /// it. Independent of the hold below: true for the life of the hook Turn.
+    hook_origin: bool,
+    /// The previous Turn's prompt while a hook Turn waits for the screen to
+    /// leave it. The hold releases when the screen stops showing this — a
+    /// stronger signal than "matches the new prompt", which a prefix collision
+    /// (old "Fix bug", new "Fix bug thoroughly") would answer wrongly.
+    held_from: Option<String>,
+    /// Frames the hold has been active. The hold bridges the one redraw
+    /// between a hook firing and the screen following, so it is bounded: two
+    /// prompts whose visible first row is identical (differing only in a
+    /// wrapped continuation the prompt pattern never sees) are indistinguishable
+    /// to the hold, and without a cap it would wait for a divergence that never
+    /// comes. After the cap it trusts the screen.
+    held_frames: u8,
 }
 
 impl ActivityTracker {
@@ -95,7 +113,9 @@ impl ActivityTracker {
     /// there was anything to forget.
     pub fn clear(&mut self) -> bool {
         self.turn_prompt = None;
-        self.hook_turn = false;
+        self.hook_origin = false;
+        self.held_from = None;
+        self.held_frames = 0;
         self.current.take().is_some()
     }
 
@@ -106,8 +126,16 @@ impl ActivityTracker {
         let Some(text) = clean(first_line(prompt).to_string()) else {
             return false;
         };
+        let previous = self.turn_prompt.take();
+        self.hook_origin = true;
+        // Hold against the previous Turn while the screen still shows it, so
+        // its stale narration cannot claim this ask. A re-submitted identical
+        // prompt is held too — no prompt text can tell its new Turn from the
+        // old one, so only the frame cap bridges it — but a first Turn, with
+        // nothing before it, has nothing to wait out.
+        self.held_from = previous;
+        self.held_frames = 0;
         self.turn_prompt = Some(text.clone());
-        self.hook_turn = true;
         self.replace(Activity {
             text,
             kind: ActivityKind::Prompt,
@@ -116,37 +144,96 @@ impl ActivityTracker {
 
     /// Read a frame. Returns whether [`ActivityTracker::current`] changed.
     pub fn observe(&mut self, agent: Agent, input: DetectionInput<'_>) -> bool {
-        match read(agent, input) {
-            None => false,
-            Some(seen) => match seen.kind {
-                ActivityKind::Narration => self.replace(seen),
-                ActivityKind::Prompt => self.observe_prompt(seen),
-            },
+        let Some(reading) = reading(agent, input) else {
+            return false;
+        };
+
+        // A hook opened this Turn authoritatively, before the terminal had
+        // redrawn. Until the screen catches up — until the prompt it shows is
+        // the one the hook reported — anything on it belongs to the *previous*
+        // Turn and must not replace the hook's Prompt. This is the guard that
+        // keeps a stale narration from the turn before from clobbering the ask
+        // the agent is now working on.
+        // While a hook Turn waits for the screen, decide from the prompt on
+        // screen whether the screen has left the previous Turn. The terminal
+        // wraps a long prompt, so the screen shows a *prefix* of the exact
+        // text — which makes both directions ambiguous:
+        //   • a short old prompt can be a prefix of the new one
+        //     ("Fix bug" → "Fix bug thoroughly"), and
+        //   • a long new prompt shows only a prefix of itself.
+        // The screen has caught up only when what it shows can be the new ask
+        // and cannot merely be a truncation of the old one — released when the
+        // shown text is the new prompt in full, or a prefix of it that is not
+        // also a prefix of the previous. The ambiguous remainder holds, which
+        // keeps the exact hook text on the row and self-corrects once the
+        // screen diverges.
+        if self.held_from.is_some() {
+            let caught_up = reading.prompt.as_deref().is_some_and(|shown| {
+                let new = self.turn_prompt.as_deref();
+                let old = self.held_from.as_deref();
+                // An identical re-submit shows the same prompt for both Turns,
+                // so no frame is confidently the new one; the cap releases it.
+                old != new
+                    && (new == Some(shown)
+                        || (new.is_some_and(|ask| ask.starts_with(shown))
+                            && !old.is_some_and(|prev| prev.starts_with(shown))))
+            });
+            // A redraw is one tick away, so a hold that outlasts a handful of
+            // them is not waiting on a redraw — it is the indistinguishable
+            // case (identical visible first row). Trust the screen rather than
+            // hold the row on the prompt forever.
+            self.held_frames = self.held_frames.saturating_add(1);
+            if !caught_up && self.held_frames <= HOLD_FRAMES {
+                return false;
+            }
+            self.held_from = None;
+        }
+        let was_hook = self.hook_origin;
+
+        match reading.activity.kind {
+            // A Narration sits, by Carrier's rule, after the newest prompt —
+            // so that prompt is the Turn it belongs to. Recording it keeps the
+            // boundary current, which is what stops a later prompt-only frame
+            // from reading as a regression rather than as a new Turn.
+            ActivityKind::Narration => {
+                if let Some(boundary) = reading.prompt {
+                    self.turn_prompt = Some(boundary);
+                }
+                // Narration has taken over from the hook's Prompt, so the
+                // exact-text preservation is done. Leaving hook_origin set
+                // would keep prefix matching on into the next, screen-driven
+                // Turn, where a prompt that is a prefix of this boundary would
+                // be mistaken for it and the stale narration would stay.
+                self.hook_origin = false;
+                self.replace(reading.activity)
+            }
+            // A Prompt is either this Turn's ask still on screen (the marker
+            // blinking off, or a hook Turn's exact text the screen is now
+            // echoing) or the ask of a *new* Turn. Only the new Turn moves the
+            // row; the same-Turn case keeps whatever is showing — which, for a
+            // hook Turn, is the exact text, not the screen's wrapped rendering.
+            ActivityKind::Prompt => {
+                if self.matches_turn(&reading.activity.text, was_hook) {
+                    return false;
+                }
+                self.hook_origin = false;
+                self.turn_prompt = Some(reading.activity.text.clone());
+                self.replace(reading.activity)
+            }
         }
     }
 
-    fn observe_prompt(&mut self, seen: Activity) -> bool {
-        if let Some(turn) = self.turn_prompt.as_deref() {
-            let same_turn = if self.hook_turn {
-                // The screen renders the hook's prompt wrapped to the
-                // terminal, so its first line is a prefix of the exact text —
-                // or equal, when the prompt was short.
-                turn.starts_with(&seen.text) || seen.text.starts_with(turn)
+    /// Whether a prompt seen on screen is the Turn already tracked. Exact
+    /// normally; a prefix either way while a hook Turn's screen is catching
+    /// up, since the terminal wraps the hook's exact text to its width.
+    fn matches_turn(&self, shown: &str, wrapped: bool) -> bool {
+        self.turn_prompt.as_deref().is_some_and(|turn| {
+            if wrapped {
+                turn.starts_with(shown) || shown.starts_with(turn)
             } else {
-                turn == seen.text
-            };
-            if same_turn {
-                // Same Turn, nothing new: either it has narrated and this
-                // frame is the marker blinking off — not the Turn regressing
-                // to its ask — or the row already shows this Turn's Prompt
-                // (the hook's exact text, when a hook opened it).
-                return false;
+                turn == shown
             }
-        }
-        // A different prompt: a new Turn, inferred from the screen.
-        self.turn_prompt = Some(seen.text.clone());
-        self.hook_turn = false;
-        self.replace(seen)
+        })
     }
 
     fn replace(&mut self, activity: Activity) -> bool {
@@ -164,20 +251,22 @@ impl ActivityTracker {
 /// against a captured frame without any history behind it. The tracker's
 /// latch is what turns a per-frame answer into a stable row.
 pub fn read(agent: Agent, input: DetectionInput<'_>) -> Option<Activity> {
-    // herdr's own verdict that this screen is a viewer, a menu or a
-    // half-drawn resize. It already suppresses state updates; suppressing
-    // this too costs nothing and needs no second opinion.
-    //
-    // The observer computed this same flag a moment ago and could pass it in,
-    // saving an evaluation. It does not, on purpose. An evaluation measures
-    // 115µs against a 150ms frame — 0.08% of a core — and paying it keeps the
-    // trust decision inside this function, where a test can hold a screen up
-    // to it and prove it consults herdr rather than trusting a caller's word.
+    reading(agent, input).map(|r| r.activity)
+}
+
+/// One frame's Activity plus its turn boundary — what the tracker needs.
+///
+/// The trust gate lives here rather than being passed in: herdr's
+/// `skip_state_update` is its own verdict that the screen is a viewer, a menu
+/// or a half-drawn resize. The observer computed the same flag a moment ago
+/// and could hand it over, but re-running it — 115µs against a 150ms frame,
+/// 0.08% of a core — keeps the decision where a test can hold a screen up to
+/// it and prove it consults herdr rather than trusting a caller's word.
+fn reading(agent: Agent, input: DetectionInput<'_>) -> Option<Reading> {
     if explain_with_input(agent, input).skip_state_update {
         return None;
     }
-
-    carriers::for_agent(agent).find_map(|carrier| carrier.read(input))
+    carriers::for_agent(agent).find_map(|carrier| carrier.reading(input))
 }
 
 /// One entry of `carriers.toml`, with its patterns compiled.
@@ -201,8 +290,18 @@ struct Found {
     text: String,
 }
 
+/// What one frame supports: the Activity to show, and the submitted prompt
+/// that opens the turn it belongs to. The prompt travels even when a Narration
+/// wins, because the tracker needs the turn boundary to keep its latch honest
+/// — without it, a narration that arrives in the same frame as a new prompt
+/// would leave the boundary pointing at the previous turn.
+struct Reading {
+    activity: Activity,
+    prompt: Option<String>,
+}
+
 impl Carrier {
-    fn read(&self, input: DetectionInput<'_>) -> Option<Activity> {
+    fn reading(&self, input: DetectionInput<'_>) -> Option<Reading> {
         if !self.shows_its_prompt(input) {
             return None;
         }
@@ -211,19 +310,26 @@ impl Carrier {
             let pattern = self.prompt_pattern.as_ref()?;
             self.newest(input, spec, pattern, self.prompt_reject.as_ref())
         });
+        // The newest submitted prompt on screen is the turn boundary, carried
+        // whichever kind wins.
+        let boundary = prompt.as_ref().map(|found| found.text.clone());
 
-        // The Turn rule: a Narration counts only after the newest prompt.
-        // One before it narrates a finished Turn and must lose to the ask
-        // the agent is actually working on.
-        match (narration, prompt) {
-            (Some(n), Some(p)) if n.offset > p.offset => Some(narration_of(n)),
-            (_, Some(p)) => Some(Activity {
+        // The Turn rule: a Narration counts only after the newest prompt. One
+        // before it narrates a finished Turn and must lose to the ask the
+        // agent is actually working on.
+        let activity = match (narration, prompt) {
+            (Some(n), Some(p)) if n.offset > p.offset => narration_of(n),
+            (_, Some(p)) => Activity {
                 text: p.text,
                 kind: ActivityKind::Prompt,
-            }),
-            (Some(n), None) => Some(narration_of(n)),
-            (None, None) => None,
-        }
+            },
+            (Some(n), None) => narration_of(n),
+            (None, None) => return None,
+        };
+        Some(Reading {
+            activity,
+            prompt: boundary,
+        })
     }
 
     /// Whether the agent's own live input is on screen.

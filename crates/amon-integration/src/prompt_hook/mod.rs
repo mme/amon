@@ -23,11 +23,11 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use jsonc_parser::cst::CstRootNode;
+use jsonc_parser::cst::{CstInputValue, CstRootNode};
+use jsonc_parser::json;
 
 use crate::integration::{
-    append_array_element, append_object_property, claude_dir, hook_command,
-    is_matching_command_hook, parse_ast_root_object, strict_parse_options,
+    claude_dir, hook_command, is_matching_command_hook, strict_parse_options,
 };
 
 const INSTALL_NAME: &str = "amon-prompt-state.sh";
@@ -115,44 +115,105 @@ fn command(path: &Path) -> String {
     hook_command(path, None)
 }
 
-/// One `UserPromptSubmit` entry, as compact JSON. Same shape herdr writes for
-/// its own hooks — a matcher and a single command — so both events read alike.
-fn entry_json(path: &Path) -> io::Result<String> {
-    let command = serde_json::to_string(&command(path))?;
-    Ok(format!(
-        "{{\"matcher\":\"*\",\"hooks\":[{{\"type\":\"command\",\"command\":{command}}}]}}"
-    ))
+/// One `UserPromptSubmit` entry, as a CST input value — the same shape herdr
+/// writes for its own hooks (a matcher and a single command), built through
+/// jsonc's `json!` so escaping is the library's job, not ours.
+fn entry_input(path: &Path) -> CstInputValue {
+    let command = command(path);
+    json!({
+        matcher: "*",
+        hooks: [{
+            "type": "command",
+            command: command,
+        }],
+    })
 }
 
 /// Adds the hook to `settings`, preserving the file's formatting — only the
-/// bytes that change are touched, because the splice is herdr's own
-/// CST-preserving primitive (ADR-0021: a seam). Idempotent: a second call
-/// finds the entry already present and writes nothing.
+/// bytes that change are touched, because the edit is herdr's own CST
+/// (ADR-0021: a seam). Idempotent: an entry with our command already present
+/// leaves the file untouched.
+///
+/// Robust against a settings file amon did not write. A read error that is not
+/// "file absent" propagates rather than being taken as an empty file — the
+/// caller is non-fatal, so the hook is skipped and the file is left exactly as
+/// it was, never overwritten. A `hooks` value that is not an object, or an
+/// event value that is not an array, is refused for the same reason: appending
+/// beside it would write a duplicate key and make the file ambiguous.
 fn register(settings: &Path, hook: &Path) -> io::Result<()> {
     let content = match fs::read_to_string(settings) {
-        Ok(text) if !text.trim().is_empty() => text,
-        _ => "{}".to_string(),
+        Ok(text) => text,
+        // Absent is the only "treat as empty" case. Anything else — a
+        // permissions or I/O error, invalid UTF-8 — must not become an empty
+        // object that then overwrites the real file.
+        Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error),
     };
-    // The command carries this hook's unique path, so its presence is proof
-    // the entry is already there — no need to walk the tree to add idempotency.
-    if content.contains(&command(hook)) {
+    let content = if content.trim().is_empty() {
+        "{}".to_string()
+    } else {
+        content
+    };
+
+    let root = CstRootNode::parse(&content, &strict_parse_options()).map_err(|err| {
+        io::Error::other(format!("failed to parse {}: {err}", settings.display()))
+    })?;
+    let Some(object) = root.value().and_then(|value| value.as_object()) else {
+        return Err(io::Error::other(format!(
+            "{} is not a JSON object",
+            settings.display()
+        )));
+    };
+
+    let hooks = match object.get("hooks") {
+        None => object
+            .append("hooks", CstInputValue::Object(Vec::new()))
+            .object_value()
+            .ok_or_else(|| io::Error::other("failed to create hooks object"))?,
+        Some(property) => property.object_value().ok_or_else(|| {
+            io::Error::other(format!(
+                "hooks in {} is not an object; leaving it alone",
+                settings.display()
+            ))
+        })?,
+    };
+
+    let entries = match hooks.get(EVENT) {
+        None => hooks
+            .append(EVENT, CstInputValue::Array(Vec::new()))
+            .array_value()
+            .ok_or_else(|| io::Error::other("failed to create event array"))?,
+        Some(property) => property.array_value().ok_or_else(|| {
+            io::Error::other(format!(
+                "{EVENT} in {} is not an array; leaving it alone",
+                settings.display()
+            ))
+        })?,
+    };
+
+    // Idempotent by the parsed command, not a raw substring: an entry whose
+    // path needed JSON escaping still matches, and the same command text
+    // appearing elsewhere in the file does not.
+    let command = command(hook);
+    let already = entries.elements().iter().any(|entry| {
+        entry
+            .as_object()
+            .and_then(|object| object.get("hooks"))
+            .and_then(|property| property.array_value())
+            .is_some_and(|commands| {
+                commands.elements().iter().any(|command_entry| {
+                    command_entry
+                        .to_serde_value()
+                        .is_some_and(|value| is_matching_command_hook(&value, &command))
+                })
+            })
+    });
+    if already {
         return Ok(());
     }
-    let entry = entry_json(hook)?;
-    let root = parse_ast_root_object(&content, settings)?;
-    let updated = match root.get_object("hooks") {
-        None => append_object_property(
-            &content,
-            &root,
-            "hooks",
-            &format!("{{\"{EVENT}\":[{entry}]}}"),
-        ),
-        Some(hooks) => match hooks.get_array(EVENT) {
-            None => append_object_property(&content, hooks, EVENT, &format!("[{entry}]")),
-            Some(array) => append_array_element(&content, array, &entry),
-        },
-    };
-    write(settings, &updated)
+
+    entries.append(entry_input(hook));
+    write(settings, &root.to_string())
 }
 
 /// Removes our entry, preserving formatting via jsonc's CST — the same library
