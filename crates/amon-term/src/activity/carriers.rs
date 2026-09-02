@@ -23,22 +23,30 @@ pub(super) struct Table {
 #[derive(Deserialize)]
 pub(super) struct Entry {
     pub(super) agent: String,
-    /// Where to look for proof that the agent's own prompt is on screen.
+    /// Where to look for proof that the agent's own live input is on screen.
     /// Defaults to herdr's Claude-shaped input box.
-    #[serde(default = "default_prompt_region")]
-    pub(super) prompt_region: String,
+    #[serde(default = "default_gate_region")]
+    pub(super) gate_region: String,
     /// What that proof looks like. Absent means the region merely has to hold
     /// something, which is how a drawn box answers for itself.
-    pub(super) prompt_pattern: Option<String>,
+    pub(super) gate_pattern: Option<String>,
+    /// Where the Narration lives, and what one of its lines looks like.
     pub(super) region: String,
     pub(super) pattern: String,
-    /// Lines to skip over even when `pattern` matches them: an agent that
-    /// marks its steps and its notices the same way needs the difference
-    /// spelled out. Scanning continues past a rejected line.
+    /// Narration lines to skip over even when `pattern` matches them: an
+    /// agent that marks its steps and its notices the same way needs the
+    /// difference spelled out. Scanning continues past a rejected line.
     pub(super) reject: Option<String>,
+    /// Where submitted prompts live and what one looks like. The region must
+    /// structurally exclude the live input line, so text still being typed
+    /// can never be read back as an ask. Absent means this agent's Prompt
+    /// comes only from a hook, or not at all.
+    pub(super) prompt_region: Option<String>,
+    pub(super) prompt_pattern: Option<String>,
+    pub(super) prompt_reject: Option<String>,
 }
 
-fn default_prompt_region() -> String {
+fn default_gate_region() -> String {
     "prompt_box_body".to_string()
 }
 
@@ -73,16 +81,21 @@ fn load() -> Vec<(Agent, Carrier)> {
         .filter_map(|entry| {
             let agent = identify_agent(&entry.agent)?;
             let pattern = Regex::new(&entry.pattern).ok()?;
-            let prompt_pattern = compile_optional(entry.prompt_pattern.as_deref())?;
+            let gate_pattern = compile_optional(entry.gate_pattern.as_deref())?;
             let reject = compile_optional(entry.reject.as_deref())?;
+            let prompt_pattern = compile_optional(entry.prompt_pattern.as_deref())?;
+            let prompt_reject = compile_optional(entry.prompt_reject.as_deref())?;
             Some((
                 agent,
                 Carrier {
-                    prompt_region: entry.prompt_region,
-                    prompt_pattern,
+                    gate_region: entry.gate_region,
+                    gate_pattern,
                     region: entry.region,
                     pattern,
                     reject,
+                    prompt_region: entry.prompt_region,
+                    prompt_pattern,
+                    prompt_reject,
                 },
             ))
         })

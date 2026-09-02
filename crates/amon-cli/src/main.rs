@@ -331,7 +331,15 @@ fn run_status(json: bool) -> Result<(), Box<dyn std::error::Error>> {
                 Some(width) => format!("{:<width$}  ", agent.agent, width = width),
                 None => agent.agent.clone(),
             },
-            agent.activity.as_deref().unwrap_or(""),
+            // A Prompt wears the ask's own marker, so the terminal reader
+            // can tell your words from the agent's the same way the panel
+            // does.
+            match &agent.activity {
+                Some(activity) if activity.kind == amon_protocol::ActivityKind::Prompt =>
+                    format!("\u{276F} {}", activity.text),
+                Some(activity) => activity.text.clone(),
+                None => String::new(),
+            },
             identity_width = identity_width,
         );
         println!("{}", line.trim_end());

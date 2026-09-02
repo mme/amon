@@ -74,6 +74,35 @@ be believed at all is herdr's verdict, taken from the same
 only the winning rule contributes the flag. Adding an agent is adding an
 entry; there is no per-agent code.
 
+## The Turn, and the prompt
+
+The first cut answered one question — what is the newest narration line? — and
+so shipped a bug it is worth naming: the reader took the newest `●` anywhere in
+the region, so a freshly submitted prompt showed *the last thing the agent said
+about the previous one* until the new turn narrated. That is ADR-0017's
+confidently-wrong failure, reintroduced.
+
+The fix is a second question underneath: which **Turn** are we in? The
+submitted prompt is the boundary. A narration counts only when it sits after
+the newest prompt on screen; one before it belongs to a finished turn. A turn
+with no narration yet shows its **Prompt** — which is also the honest answer in
+the gap between submitting and the first narrated step, where the row used to
+say nothing. The two kinds rank kind-first: narration beats prompt whenever
+both exist, and within a kind a hook's exact text beats the screen's rendering
+of it.
+
+The prompt regions structurally exclude the live input line — Claude's
+`above_prompt_box` ends at the box border, Codex's `before_current_prompt_marker`
+is herdr's own cut between the live prompt and earlier ones — so text still
+being typed belongs to no turn and appears nowhere. Two prompt-shaped lines
+that are not asks are rejected in data: Claude's startup `Try "…"` tip and a
+slash command, which would open a turn no work closes.
+
+`AgentEntry::activity` is now `{ text, kind }` rather than a bare string,
+because the panel styles a prompt differently from a narration — a `❯` marker
+and italic — and a string cannot carry which it is. Nothing had shipped, so it
+is a clean break rather than a compatible one.
+
 ## Consequences
 
 **`vendor/patches/0005` widens `manifest::region` to `pub`.** One word, the

@@ -9,16 +9,6 @@ fn codex() -> Agent {
     identify_agent("codex").expect("codex is a known agent")
 }
 
-/// A codex screen: bullets for the steps, a bare marker line for the prompt,
-/// and no box drawn around anything.
-fn codex_screen(transcript: &str) -> String {
-    format!(
-        "{transcript}\n\
-         › Ask Codex to do anything\n\
-         gpt-5.6-sol high · ~/somewhere\n"
-    )
-}
-
 fn input(screen: &str) -> DetectionInput<'_> {
     DetectionInput {
         screen,
@@ -27,8 +17,7 @@ fn input(screen: &str) -> DetectionInput<'_> {
     }
 }
 
-/// A screen shaped like the ones the carriers are written against: a
-/// transcript, then the input box drawn between two horizontal rules.
+/// A claude screen: a transcript, then the input box between two rules.
 fn screen(transcript: &str) -> String {
     format!(
         "{transcript}\n\
@@ -39,10 +28,34 @@ fn screen(transcript: &str) -> String {
     )
 }
 
+/// A codex screen: bullets for steps, a bare marker line for the live prompt,
+/// no box drawn around anything.
+fn codex_screen(transcript: &str) -> String {
+    format!(
+        "{transcript}\n\
+         › Ask Codex to do anything\n\
+         gpt-5.6-sol high · ~/somewhere\n"
+    )
+}
+
+fn narration(text: &str) -> Option<Activity> {
+    Some(Activity {
+        text: text.to_string(),
+        kind: ActivityKind::Narration,
+    })
+}
+
+fn prompt(text: &str) -> Option<Activity> {
+    Some(Activity {
+        text: text.to_string(),
+        kind: ActivityKind::Prompt,
+    })
+}
+
+// ---- the table --------------------------------------------------------
+
 #[test]
-fn every_carrier_names_an_agent_and_a_pattern_this_build_understands() {
-    // The table ships in the binary, so a typo here is a bug that never
-    // reaches a user — as long as something looks.
+fn every_carrier_names_an_agent_and_patterns_this_build_understands() {
     let table: carriers::Table =
         toml::from_str(carriers::TABLE).expect("carriers.toml is valid TOML");
     assert!(!table.carrier.is_empty(), "the table would do nothing");
@@ -54,8 +67,10 @@ fn every_carrier_names_an_agent_and_a_pattern_this_build_understands() {
         );
         for (field, pattern) in [
             ("pattern", Some(entry.pattern.as_str())),
-            ("prompt_pattern", entry.prompt_pattern.as_deref()),
+            ("gate_pattern", entry.gate_pattern.as_deref()),
             ("reject", entry.reject.as_deref()),
+            ("prompt_pattern", entry.prompt_pattern.as_deref()),
+            ("prompt_reject", entry.prompt_reject.as_deref()),
         ] {
             let Some(pattern) = pattern else { continue };
             assert!(
@@ -64,22 +79,32 @@ fn every_carrier_names_an_agent_and_a_pattern_this_build_understands() {
                 entry.agent
             );
         }
+        assert_eq!(
+            entry.prompt_region.is_some(),
+            entry.prompt_pattern.is_some(),
+            "carrier for {} has half a prompt definition",
+            entry.agent
+        );
     }
 }
 
 #[test]
-fn every_carrier_names_a_region_the_engine_resolves() {
+fn every_carrier_names_regions_the_engine_resolves() {
     // An unknown region name is not an error: the engine returns the empty
     // string for it, so a typo would silently mean "never any activity".
     let screen = screen("● something happened");
     let table: carriers::Table = toml::from_str(carriers::TABLE).expect("valid TOML");
     for entry in &table.carrier {
-        for (field, spec) in [
-            ("region", &entry.region),
-            ("prompt_region", &entry.prompt_region),
-        ] {
+        let mut specs = vec![
+            ("region", entry.region.clone()),
+            ("gate_region", entry.gate_region.clone()),
+        ];
+        if let Some(spec) = &entry.prompt_region {
+            specs.push(("prompt_region", spec.clone()));
+        }
+        for (field, spec) in specs {
             assert!(
-                !region(input(&screen), spec).is_empty(),
+                !region(input(&screen), &spec).is_empty(),
                 "carrier for {} names {field} {spec:?}, which resolved to nothing",
                 entry.agent
             );
@@ -87,45 +112,39 @@ fn every_carrier_names_a_region_the_engine_resolves() {
     }
 }
 
+// ---- narration --------------------------------------------------------
+
 #[test]
 fn the_marker_line_is_read_without_its_marker() {
     let screen = screen("● Read 5 files");
-    assert_eq!(
-        read(claude(), input(&screen)).as_deref(),
-        Some("Read 5 files")
-    );
+    assert_eq!(read(claude(), input(&screen)), narration("Read 5 files"));
 }
 
 #[test]
 fn the_newest_marker_line_wins() {
     let screen = screen("● Read 5 files\n  ⎿ done\n● Bash(cargo test)");
     assert_eq!(
-        read(claude(), input(&screen)).as_deref(),
-        Some("Bash(cargo test)")
+        read(claude(), input(&screen)),
+        narration("Bash(cargo test)")
     );
 }
 
 #[test]
 fn what_the_user_is_typing_is_never_read_back_to_them() {
-    // The carrier's region stops at the input box, so a prompt that happens to
-    // contain a marker — pasted output, a bullet list — cannot impersonate the
-    // agent narrating itself.
+    // Both regions stop at the input box, so a draft that happens to contain
+    // a marker — pasted output, a bullet list — cannot impersonate either
+    // kind of Activity.
     let screen = "● Read 5 files\n\
          ────────────────────────────────────────\n\
          ❯ here is what I want\n\
          ● and a line I pasted\n\
          ────────────────────────────────────────\n\
          ⏵⏵ auto mode on\n";
-    assert_eq!(
-        read(claude(), input(screen)).as_deref(),
-        Some("Read 5 files")
-    );
+    assert_eq!(read(claude(), input(screen)), narration("Read 5 files"));
 }
 
 #[test]
 fn a_screen_with_no_input_box_says_nothing() {
-    // A pager or an editor has the terminal. Whatever is on it is not the
-    // agent's transcript, even if a line happens to look like one.
     let bare = "● Read 5 files\n(END)\n";
     assert_eq!(read(claude(), input(bare)), None);
 }
@@ -135,12 +154,7 @@ fn a_screen_herdr_distrusts_says_nothing() {
     // claude.toml's `transcript_viewer` rule sets skip_state_update, and at
     // priority 1000 it outranks the input box rule — so the box is still
     // drawn, the transcript is still behind it, and the screen is still not
-    // to be believed. That is the case the box check alone cannot catch.
-    //
-    // Only the *winning* rule contributes the flag, which is why the
-    // fixture has to be one where the skip rule actually wins. Inheriting
-    // that quirk is deliberate: activity goes quiet exactly when state does,
-    // rather than on some second opinion of amon's own.
+    // to be believed. That is the case the gate alone cannot catch.
     let viewer = "● Read 5 files\n\
          ────────────────────────────────────────\n\
          ❯ \n\
@@ -155,18 +169,9 @@ fn a_screen_herdr_distrusts_says_nothing() {
 }
 
 #[test]
-fn a_turn_with_no_marker_yet_says_nothing() {
-    let screen = screen("⏵⏵ thinking");
-    assert_eq!(read(claude(), input(&screen)), None);
-}
-
-#[test]
 fn runs_of_grid_padding_collapse() {
     let screen = screen("●   Read   5   files");
-    assert_eq!(
-        read(claude(), input(&screen)).as_deref(),
-        Some("Read 5 files")
-    );
+    assert_eq!(read(claude(), input(&screen)), narration("Read 5 files"));
 }
 
 #[test]
@@ -174,26 +179,159 @@ fn a_runaway_line_is_bounded() {
     let long = "x".repeat(500);
     let screen = screen(&format!("● {long}"));
     let read = read(claude(), input(&screen)).expect("a line");
-    assert_eq!(read.chars().count(), MAX_CHARS + 1, "{read}");
-    assert!(read.ends_with('…'));
+    assert_eq!(read.text.chars().count(), MAX_CHARS + 1, "{}", read.text);
+    assert!(read.text.ends_with('…'));
+}
+
+// ---- the Turn rule ----------------------------------------------------
+
+#[test]
+fn a_turn_with_no_narration_yet_shows_its_prompt() {
+    // The thinking gap: submitted, nothing narrated. The ask is the only
+    // honest answer.
+    let screen = screen("❯ refactor the auth module");
+    assert_eq!(
+        read(claude(), input(&screen)),
+        prompt("refactor the auth module")
+    );
 }
 
 #[test]
-fn a_frame_that_cannot_be_read_holds_the_last_line() {
-    // The marker blinks off while a tool call is in flight. Clearing on that
-    // frame would make the column flicker between a line and nothing.
+fn narration_after_the_prompt_wins_over_it() {
+    let screen = screen("❯ refactor the auth module\n● Reading 3 files…");
+    assert_eq!(
+        read(claude(), input(&screen)),
+        narration("Reading 3 files…")
+    );
+}
+
+#[test]
+fn narration_before_the_prompt_is_a_finished_turns_and_loses() {
+    // The stale-turn failure: the newest marker line narrates the *previous*
+    // question. The Turn rule is what keeps it off the row.
+    let screen = screen(
+        "● Apache License, Version 2.0\n\
+         ❯ now delete everything and start over",
+    );
+    assert_eq!(
+        read(claude(), input(&screen)),
+        prompt("now delete everything and start over")
+    );
+}
+
+#[test]
+fn a_startup_tip_is_not_an_ask() {
+    let screen = screen("❯ Try \"fix the failing test\"");
+    assert_eq!(read(claude(), input(&screen)), None);
+}
+
+#[test]
+fn a_slash_command_is_not_an_ask() {
+    // "/rc" is an instruction to the harness, not something the agent will
+    // narrate against; a Turn opened by it would never close.
+    let screen = screen("❯ /rc");
+    assert_eq!(read(claude(), input(&screen)), None);
+}
+
+#[test]
+fn codex_orders_prompt_and_narration_across_different_regions() {
+    // Codex's narration and prompt come from different regions of the same
+    // screen; the whole-screen offset is what lets the Turn rule order them.
+    let working = codex_screen("› read NOTICE and name the licence\n• Explored");
+    assert_eq!(read(codex(), input(&working)), narration("Explored"));
+
+    let thinking = codex_screen("• Explored\n› and now write it to a file");
+    assert_eq!(
+        read(codex(), input(&thinking)),
+        prompt("and now write it to a file")
+    );
+}
+
+#[test]
+fn codexs_live_placeholder_is_not_an_ask() {
+    // "› Ask Codex to do anything" is the live input line;
+    // before_current_prompt_marker cuts it away structurally.
+    let idle = codex_screen("");
+    assert_eq!(read(codex(), input(&idle)), None);
+}
+
+// ---- the tracker ------------------------------------------------------
+
+#[test]
+fn a_frame_that_cannot_be_read_holds_the_last_activity() {
     let mut tracker = ActivityTracker::new();
     assert!(tracker.observe(claude(), input(&screen("● Bash(cargo test)"))));
     assert!(!tracker.observe(claude(), input(&screen("  ⎿ running"))));
-    assert_eq!(tracker.current(), Some("Bash(cargo test)"));
+    assert_eq!(tracker.current(), narration("Bash(cargo test)").as_ref());
 }
 
 #[test]
-fn an_unchanged_line_is_not_a_change() {
+fn a_blinked_off_marker_does_not_regress_a_turn_to_its_ask() {
+    // The flap the probe caught: prompt → narration → prompt → narration as
+    // the marker blinks. Once this Turn has narrated, a frame showing only
+    // its prompt is the blink, not news.
     let mut tracker = ActivityTracker::new();
-    let screen = screen("● Read 5 files");
-    assert!(tracker.observe(claude(), input(&screen)));
-    assert!(!tracker.observe(claude(), input(&screen)));
+    tracker.observe(claude(), input(&screen("❯ read the notice")));
+    tracker.observe(
+        claude(),
+        input(&screen("❯ read the notice\n● Reading 1 file…")),
+    );
+    assert!(!tracker.observe(claude(), input(&screen("❯ read the notice"))));
+    assert_eq!(tracker.current(), narration("Reading 1 file…").as_ref());
+}
+
+#[test]
+fn a_new_prompt_replaces_the_previous_turn() {
+    let mut tracker = ActivityTracker::new();
+    tracker.observe(
+        claude(),
+        input(&screen("❯ read the notice\n● Apache License, 2.0")),
+    );
+    assert!(tracker.observe(
+        claude(),
+        input(&screen("● Apache License, 2.0\n❯ now summarise it"))
+    ));
+    assert_eq!(tracker.current(), prompt("now summarise it").as_ref());
+}
+
+#[test]
+fn a_hook_opens_a_turn_with_the_exact_text() {
+    let mut tracker = ActivityTracker::new();
+    assert!(tracker.begin_turn("refactor the auth module\nwith tests please"));
+    assert_eq!(
+        tracker.current(),
+        prompt("refactor the auth module").as_ref()
+    );
+}
+
+#[test]
+fn the_screens_rendering_of_a_hook_prompt_is_the_same_turn() {
+    // The hook carries the prompt as typed; the screen wraps it to the
+    // terminal, so its first line is a prefix. That is the same Turn, and
+    // the exact text stays.
+    let mut tracker = ActivityTracker::new();
+    tracker.begin_turn("refactor the auth module and make the tests pass again");
+    assert!(!tracker.observe(
+        claude(),
+        input(&screen("❯ refactor the auth module and make the"))
+    ));
+    assert_eq!(
+        tracker.current(),
+        prompt("refactor the auth module and make the tests pass again").as_ref()
+    );
+}
+
+#[test]
+fn narration_still_beats_a_hook_opened_turns_prompt() {
+    // Kind first, then source: the doing outranks the ask wherever the ask
+    // came from.
+    let mut tracker = ActivityTracker::new();
+    tracker.begin_turn("read the notice");
+    assert!(tracker.observe(
+        claude(),
+        input(&screen("❯ read the notice\n● Reading 1 file…"))
+    ));
+    assert_eq!(tracker.current(), narration("Reading 1 file…").as_ref());
 }
 
 #[test]
@@ -213,45 +351,4 @@ fn an_agent_with_no_carrier_reads_nothing() {
     // user's own.
     let pi = identify_agent("pi").expect("pi is a known agent");
     assert_eq!(read(pi, input(&screen("● Read 5 files"))), None);
-}
-
-#[test]
-fn codex_proves_its_prompt_without_a_box() {
-    // herdr finds no box here, which is the whole point: the marker line is
-    // what says codex still owns the terminal.
-    let screen = codex_screen("• Explored");
-    assert!(
-        region(input(&screen), "prompt_box_body").trim().is_empty(),
-        "the fixture stopped being box-less, which is what it is for"
-    );
-    assert_eq!(read(codex(), input(&screen)).as_deref(), Some("Explored"));
-}
-
-#[test]
-fn codex_without_its_marker_line_says_nothing() {
-    // A pager or an editor has the terminal: the bullets are still on screen,
-    // but the line that proves codex is listening is gone.
-    let taken_over = "• Explored\n(END)\n";
-    assert_eq!(read(codex(), input(taken_over)), None);
-}
-
-#[test]
-fn codex_skips_its_own_status_line_for_the_step_behind_it() {
-    // Codex marks its live status with the same bullet it marks steps with,
-    // and that status is both the generic label this column exists to avoid
-    // and a value that changes every second.
-    let screen = codex_screen(
-        "• Explored\n\
-         • Working (7s • esc to interrupt)",
-    );
-    assert_eq!(read(codex(), input(&screen)).as_deref(), Some("Explored"));
-}
-
-#[test]
-fn codex_skips_a_system_notice_too() {
-    let screen = codex_screen(
-        "• Explored\n\
-         • You have 1 usage limit reset available. Run /usage to use one.",
-    );
-    assert_eq!(read(codex(), input(&screen)).as_deref(), Some("Explored"));
 }

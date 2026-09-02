@@ -890,6 +890,15 @@ FocusScope {
     readonly property int activityWidth:
       Math.max(0, view.columnWidth("activity") - view.activityInset)
 
+    // A prompt is your words, not the agent's, so it wears the harness's own
+    // ❯ and leans into italic — the same two cues everywhere the activity is
+    // drawn (the plain path, the eliding metrics, the shimmer chunks), so
+    // eliding and the shimmer treat marker and text as one run.
+    readonly property bool activityIsPrompt: row.entry.activityIsPrompt
+    readonly property string activityDisplay:
+      row.entry.activity === "" ? ""
+        : (row.activityIsPrompt ? "\u276F " + row.entry.activity : row.entry.activity)
+
     // Whether this row is drawn in chunks so a shimmer can cross it. It is not
     // simply "is working": a row that stops mid-shimmer keeps its chunks until
     // the band has finished crossing, because cutting the light off half way
@@ -919,7 +928,8 @@ FocusScope {
       id: activityMetrics
       font.family: view.fontFamily
       font.pixelSize: Style.font.body
-      text: row.entry.activity
+      font.italic: row.activityIsPrompt
+      text: row.activityDisplay
       elide: Text.ElideRight
       elideWidth: row.activityWidth
     }
@@ -930,10 +940,11 @@ FocusScope {
       x: Style.space(10) + view.columnX("activity") + view.activityInset
       anchors.verticalCenter: parent.verticalCenter
       width: row.activityWidth
-      text: row.entry.activity
+      text: row.activityDisplay
       color: view.dim
       font.family: view.fontFamily
       font.pixelSize: Style.font.body
+      font.italic: row.activityIsPrompt
       elide: Text.ElideRight
     }
 
@@ -957,6 +968,7 @@ FocusScope {
           color: view.shimmerColor(x + width / 2 + view.activityInset)
           font.family: view.fontFamily
           font.pixelSize: Style.font.body
+          font.italic: row.activityIsPrompt
         }
       }
     }

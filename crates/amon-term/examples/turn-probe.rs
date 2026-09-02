@@ -9,12 +9,22 @@ use amon_term::ShadowTerminal;
 use regex::Regex;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = std::env::args().nth(1).expect("usage: turn-probe <raw> <agent>");
+    let path = std::env::args()
+        .nth(1)
+        .expect("usage: turn-probe <raw> <agent>");
     let label = std::env::args().nth(2).unwrap_or_else(|| "claude".into());
     let _ = identify_agent(&label).expect("known agent");
     let (spec, prompt_re, narration_re) = match label.as_str() {
-        "codex" => ("before_current_prompt_marker", r"^\s*›\s+(?<t>\S.*?)\s*$", r"^\s*[•■✗✓]\s+(?<t>\S.*?)\s*$"),
-        _ => ("above_prompt_box", r"^\s*❯\s+(?<t>\S.*?)\s*$", r"^\s*●\s+(?<t>\S.*?)\s*$"),
+        "codex" => (
+            "before_current_prompt_marker",
+            r"^\s*›\s+(?<t>\S.*?)\s*$",
+            r"^\s*[•■✗✓]\s+(?<t>\S.*?)\s*$",
+        ),
+        _ => (
+            "above_prompt_box",
+            r"^\s*❯\s+(?<t>\S.*?)\s*$",
+            r"^\s*●\s+(?<t>\S.*?)\s*$",
+        ),
     };
     let prompt_re = Regex::new(prompt_re)?;
     let narration_re = Regex::new(narration_re)?;
@@ -27,16 +37,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for chunk in bytes.chunks(256) {
         shadow.feed(chunk);
         let screen = shadow.detection_text();
-        if screen == last { continue; }
+        if screen == last {
+            continue;
+        }
         last = screen.clone();
         frame += 1;
-        let input = DetectionInput { screen: &screen, osc_title: "", osc_progress: "" };
+        let input = DetectionInput {
+            screen: &screen,
+            osc_title: "",
+            osc_progress: "",
+        };
         let text = region(input, spec);
         let lines: Vec<&str> = text.lines().collect();
 
         let grab = |re: &Regex| -> Option<(usize, String)> {
             lines.iter().enumerate().rev().find_map(|(i, l)| {
-                re.captures(l).map(|c| (i, c.name("t").unwrap().as_str().to_string()))
+                re.captures(l)
+                    .map(|c| (i, c.name("t").unwrap().as_str().to_string()))
             })
         };
         let prompt = grab(&prompt_re);

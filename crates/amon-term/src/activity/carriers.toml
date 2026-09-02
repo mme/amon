@@ -1,65 +1,77 @@
-# Which line on screen says what an agent is doing.
+# Which lines on screen say what an agent is doing.
 #
-# One entry names a region of the rendered screen and a pattern that
-# recognises the line inside it. Both halves are borrowed rather than
-# invented: `region` is evaluated by herdr's own accessor, so the structural
-# knowledge of where a harness draws its input box stays in the vendored
-# engine, and `pattern` is an ordinary regex over the lines that come back.
+# One entry names regions of the rendered screen and patterns that recognise
+# the lines inside them. Both halves are borrowed rather than invented:
+# regions are evaluated by herdr's own accessor (a seam, ADR-0021), so the
+# structural knowledge of where a harness draws things stays in the vendored
+# engine, and patterns are ordinary regexes over the lines that come back.
 #
 # Fields:
 #   agent           which harness this describes
-#   prompt_region   where to look for proof the agent's own prompt is on
+#   gate_region     where to look for proof the agent's own live input is on
 #                   screen; defaults to herdr's "prompt_box_body"
-#   prompt_pattern  what that proof looks like; absent means the region just
+#   gate_pattern    what that proof looks like; absent means the region just
 #                   has to hold something
-#   region          where the narration lives
-#   pattern         what a narration line looks like; may name a `text` group
+#   region          where the Narration lives
+#   pattern         what a Narration line looks like; may name a `text` group
 #                   to keep only part of it
-#   reject          lines to skip even when `pattern` matches, for a harness
-#                   that marks its steps and its notices the same way
+#   reject          Narration lines to skip even when `pattern` matches, for a
+#                   harness that marks its steps and its notices the same way
+#   prompt_region   where submitted Prompts live. MUST structurally exclude
+#                   the live input line — text still being typed belongs to no
+#                   Turn and appears nowhere
+#   prompt_pattern  what a submitted Prompt line looks like
+#   prompt_reject   prompt-shaped lines that are not asks
 #
-# The engine never sees these patterns, so a capture group here costs nothing.
-# Entries are tried in file order and the first that yields a line wins.
+# A Narration counts only after the newest Prompt (the Turn rule); the reader
+# orders the two by their position in the whole screen, so the regions may
+# differ. The engine never sees these patterns, so a capture group here costs
+# nothing. Entries are tried in file order and the first that yields wins.
 #
 # Adding an agent is adding an entry. There is no per-agent code.
 # `cargo run -p amon-term --example carrier-scout -- <capture> <agent>` says
-# what a harness offers before one is written.
+# what a harness offers before one is written; `turn-probe` shows where its
+# prompts sit relative to its narration.
 
-# Claude prefixes every tool call and every reply with a filled circle, and
-# what follows it is the harness's own one-line account of the step — "Reading
-# 1 file…", "Bash(cargo test)", the opening line of an answer. The marker
-# blinks while a call is in flight, which is why a frame that fails to match
-# holds the previous line instead of clearing it.
+# Claude prefixes every tool call and reply with a filled circle, and echoes a
+# submitted prompt with the same ❯ its input box uses — told apart from the
+# box structurally: above_prompt_box ends at the box's top border.
 #
-# The region stops at the input box rather than counting lines back through it,
-# so text the user is still typing can never be read back to them as something
-# the agent did. The last match in it is the newest.
+# The narration marker blinks while a tool call runs; the tracker's Turn
+# latch is what keeps the row from flapping between ask and answer on those
+# frames. The trailing "(ctrl+o to expand)" is a keyboard hint, not something
+# the agent is doing, so the pattern drops it.
 #
-# The trailing "(ctrl+o to expand)" is a keyboard hint, not something the agent
-# is doing, so the pattern drops it. Trimming chrome belongs here rather than
-# in the reader: it is knowledge about one harness's wording, which is exactly
-# what this file is for.
+# Prompt rejects: the startup tip line ("❯ Try …") is drawn prompt-shaped
+# without anyone having submitted anything, and a slash command is an
+# instruction to the harness, not an ask the agent will narrate against —
+# showing "/rc" as the current Turn would open a Turn no work belongs to.
 [[carrier]]
 agent = "claude"
 region = "above_prompt_box"
 pattern = '^\s*●\s+(?<text>\S.*?)(?:\s*\(ctrl\+[a-z] to [a-z]+\))?\s*$'
+prompt_region = "above_prompt_box"
+prompt_pattern = '^\s*❯\s+(?<text>\S.*?)\s*$'
+prompt_reject = '^\s*❯\s+(?:/\S|Try\b)'
 
-# Codex draws no box around its prompt — it is a bare "›" line — so the
-# default proof does not apply. Worse than not applying: herdr's box finder
-# latches onto the two rules Codex draws around an *answer* and reports that
-# as the input box, which is true on 2 frames of a 47-frame session and wrong
-# in a different way on the rest. The marker line is the honest signal, and it
-# is present on 38 of those 47.
+# Codex draws no box around its live prompt — a bare "›" line — so the
+# default proof does not apply; the marker line itself is the honest signal,
+# present on 38 of a 47-frame session where the box region matched 2.
 #
-# Codex marks its steps with a bullet, but it marks its status line and its
-# system notices with the same bullet. "Working (7s • esc to interrupt)" is
-# both the generic label this column exists to avoid and a value that changes
-# every second, so it is rejected along with the startup notices; scanning
-# continues past them to the newest real step.
+# Codex bullets its steps, its live status and its system notices identically.
+# "Working (7s • esc to interrupt)" is both the generic label this column
+# exists to avoid and a value that changes every second, so it is rejected
+# along with startup notices; scanning continues to the newest real step.
+#
+# The submitted prompt is read from before_current_prompt_marker — herdr's
+# own region for cutting the live "›" line away from the earlier ones, which
+# is exactly the exclusion the Turn rule requires.
 [[carrier]]
 agent = "codex"
-prompt_region = "bottom_non_empty_lines(4)"
-prompt_pattern = '^\s*›\s'
+gate_region = "bottom_non_empty_lines(4)"
+gate_pattern = '^\s*›\s'
 region = "bottom_non_empty_lines(12)"
 pattern = '^\s*[•■✗✓]\s+(?<text>\S.*?)\s*$'
 reject = 'esc to interrupt|usage limit reset|^\s*[•■✗✓]\s+(?:Starting|Updating|Loading)\b'
+prompt_region = "before_current_prompt_marker"
+prompt_pattern = '^\s*›\s+(?<text>\S.*?)\s*$'

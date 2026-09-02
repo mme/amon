@@ -93,7 +93,7 @@ pub struct Observer {
     activity: amon_term::ActivityTracker,
     /// The activity last reported, so the daemon sees changes rather than a
     /// heartbeat — the same rule the state field follows.
-    last_activity: Option<String>,
+    last_activity: Option<amon_protocol::Activity>,
 }
 
 /// What the observer needs to know about the agent it is watching.
@@ -365,7 +365,7 @@ impl Observer {
     /// a state change can arrive on a frame whose activity is unchanged.
     fn publish(&mut self) {
         let state = from_detect_state(self.state.state);
-        let activity = self.activity.current().map(str::to_string);
+        let activity = self.activity.current().map(to_wire_activity);
         let state_changed = state != self.last_reported;
         let activity_changed = activity != self.last_activity;
         if !state_changed && !activity_changed {
@@ -387,6 +387,19 @@ impl Observer {
             patch.activity = Some(activity);
         }
         self.link.update(patch);
+    }
+}
+
+/// The tracker's Activity, in the wire's clothes. Two types on purpose:
+/// amon-term does not depend on the protocol crate, and the wrapper is the
+/// seam where screen-derived facts become wire facts.
+fn to_wire_activity(activity: &amon_term::Activity) -> amon_protocol::Activity {
+    amon_protocol::Activity {
+        text: activity.text.clone(),
+        kind: match activity.kind {
+            amon_term::ActivityKind::Narration => amon_protocol::ActivityKind::Narration,
+            amon_term::ActivityKind::Prompt => amon_protocol::ActivityKind::Prompt,
+        },
     }
 }
 

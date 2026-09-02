@@ -10,13 +10,15 @@
 
 use amon_detect::detect::manifest::DetectionInput;
 use amon_detect::identify_agent;
-use amon_term::{ActivityTracker, ShadowTerminal};
+use amon_term::{ActivityKind, ActivityTracker, ShadowTerminal};
 
 const COLS: u16 = 100;
 const ROWS: u16 = 30;
 
-/// Every activity line the reader produces over a capture, in order, with
+/// Every Activity the reader produces over a capture, in order, with
 /// consecutive repeats collapsed — the sequence a panel would have shown.
+/// Prompts are rendered with the ❯ the panel gives them, so the transcript
+/// below reads the way a row would.
 fn replay(name: &str, agent: &str) -> Vec<String> {
     let agent = identify_agent(agent).expect("known agent");
     let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
@@ -35,7 +37,11 @@ fn replay(name: &str, agent: &str) -> Vec<String> {
             osc_progress: "",
         };
         if tracker.observe(agent, input) {
-            seen.push(tracker.current().expect("just set").to_string());
+            let current = tracker.current().expect("just set");
+            seen.push(match current.kind {
+                ActivityKind::Prompt => format!("\u{276F} {}", current.text),
+                ActivityKind::Narration => current.text.clone(),
+            });
         }
     }
     seen
@@ -65,13 +71,13 @@ fn assert_reads_as_the_agents_own_words(seen: &[String]) {
 fn a_session_that_lists_a_directory_reads_as_the_steps_it_took() {
     let seen = replay("claude-directory-listing.raw", "claude");
     assert_reads_as_the_agents_own_words(&seen);
-    // The prompt asked for a listing, so the session opens on the harness
-    // narrating that in its own present tense and closes on the reply's first
-    // line. Neither is a phrase amon composed.
+    // The session opens on the ask, narrates the listing in the harness's
+    // own words, and closes on the reply's first line. None of it is a
+    // phrase amon composed.
     assert!(
-        seen.first().is_some_and(|line| line.contains("directory")),
-        "opened on {:?}",
-        seen.first()
+        seen.iter()
+            .any(|line| !line.starts_with('\u{276F}') && line.contains("directory")),
+        "never narrated the listing: {seen:#?}"
     );
     assert!(
         seen.last()
@@ -88,13 +94,19 @@ fn a_session_that_reads_a_file_narrates_it_in_the_present_tense() {
     let seen = replay("claude-file-read.raw", "claude");
     assert_reads_as_the_agents_own_words(&seen);
 
-    // The harness says "Reading 1 file…" while it works and states the answer
-    // when it is done. Both are its own phrasing — the tense difference is the
-    // harness's, and amon relays it rather than flattening both to "Working".
+    // A session now opens on the ask — the thinking gap, filled — and the
+    // harness's own present tense takes over the moment it narrates. The
+    // tense difference is the harness's; amon relays it rather than
+    // flattening both to "Working".
     assert!(
-        seen.first().is_some_and(|line| line.starts_with("Reading")),
+        seen.first()
+            .is_some_and(|line| line.starts_with('\u{276F}')),
         "opened on {:?}",
         seen.first()
+    );
+    assert!(
+        seen.iter().any(|line| line.starts_with("Reading")),
+        "never narrated in the present tense: {seen:#?}"
     );
     assert!(
         seen.last()
@@ -105,15 +117,23 @@ fn a_session_that_reads_a_file_narrates_it_in_the_present_tense() {
 }
 
 #[test]
-fn a_claude_session_never_reads_the_user_own_prompt() {
-    // The prompt the probe typed is echoed into the input box and stays on
-    // screen for the whole session. Reading it back would be the column
-    // telling the user what they just said.
-    for line in replay("claude-directory-listing.raw", "claude") {
-        assert!(
-            !line.contains("List the files in"),
-            "read the user's prompt: {line:?}"
-        );
+fn the_prompt_appears_as_a_prompt_and_never_as_narration() {
+    // The submitted ask is the Turn's opening Activity — marked as the
+    // user's words — and must never leak into the sequence dressed as the
+    // agent's own narration.
+    let seen = replay("claude-directory-listing.raw", "claude");
+    assert!(
+        seen.iter()
+            .any(|line| line.starts_with('\u{276F}') && line.contains("List the files in")),
+        "the thinking gap showed no prompt: {seen:#?}"
+    );
+    for line in &seen {
+        if line.contains("List the files in") {
+            assert!(
+                line.starts_with('\u{276F}'),
+                "prompt dressed as narration: {line:?}"
+            );
+        }
     }
 }
 

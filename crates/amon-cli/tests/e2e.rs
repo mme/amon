@@ -345,15 +345,13 @@ fn what_the_agent_says_it_is_doing_reaches_status() {
     let agent = sandbox.fake_agent("claude", NARRATES_A_STEP);
     let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
 
+    let want = serde_json::json!({"text": "Bash(cargo test)", "kind": "narration"});
     let agents = sandbox.wait_for_status("the agent to narrate a step", |agents| {
-        agent_named(agents, "claude").is_some_and(|entry| entry["activity"].is_string())
+        agent_named(agents, "claude").is_some_and(|entry| entry["activity"] == want)
     });
-
-    let entry = agent_named(&agents, "claude").expect("registered");
-    assert_eq!(
-        entry["activity"],
-        serde_json::json!("Bash(cargo test)"),
-        "the harness's own words, marker stripped: {entry:#?}"
+    assert!(
+        agent_named(&agents, "claude").is_some(),
+        "the harness's own words, marker stripped, kinded"
     );
 
     let _ = child.kill();
@@ -379,18 +377,43 @@ fn a_second_harness_needs_no_code_of_its_own() {
     let agent = sandbox.fake_agent("codex", NARRATES_LIKE_CODEX);
     let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
 
-    let agents = sandbox.wait_for_status("codex to narrate a step", |agents| {
-        agent_named(agents, "codex").is_some_and(|entry| entry["activity"].is_string())
-    });
-
     // The newest bullet is the status line, which is rejected — so the step
-    // behind it is what a row shows.
-    let entry = agent_named(&agents, "codex").expect("registered");
-    assert_eq!(
-        entry["activity"],
-        serde_json::json!("Explored"),
-        "{entry:#?}"
-    );
+    // behind it is what a row shows. Waiting for the value rather than for
+    // any object: the activity latches through several frames.
+    let want = serde_json::json!({"text": "Explored", "kind": "narration"});
+    let agents = sandbox.wait_for_status("codex to narrate the step", |agents| {
+        agent_named(agents, "codex").is_some_and(|entry| entry["activity"] == want)
+    });
+    assert!(agent_named(&agents, "codex").is_some());
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// A submitted prompt with nothing narrated yet: the thinking gap. `\342\235\257`
+/// is `❯` — the echoed ask above the box, and the empty live box below.
+const THINKS_ABOUT_AN_ASK: &str = r#"#!/bin/sh
+printf '\342\235\257 refactor the auth module\r\n'
+printf '\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\r\n'
+printf '\342\235\257 \r\n'
+printf '\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\r\n'
+sleep 10
+"#;
+
+#[test]
+fn the_thinking_gap_shows_the_ask_marked_as_the_users_words() {
+    // Between submitting and the first narrated step, the row's only honest
+    // answer is the ask itself — carried as kind "prompt", so every consumer
+    // can mark it as your words rather than the agent's.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", THINKS_ABOUT_AN_ASK);
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    let want = serde_json::json!({"text": "refactor the auth module", "kind": "prompt"});
+    let agents = sandbox.wait_for_status("the ask to reach status", |agents| {
+        agent_named(agents, "claude").is_some_and(|entry| entry["activity"] == want)
+    });
+    assert!(agent_named(&agents, "claude").is_some());
 
     let _ = child.kill();
     let _ = child.wait();
