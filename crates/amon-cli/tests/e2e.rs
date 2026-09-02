@@ -784,7 +784,7 @@ fn a_prompt_hook_report_becomes_the_turns_activity() {
     let agent = sandbox.fake_agent(
         "claude",
         r#"#!/bin/sh
-printf '{"id":"p1","method":"agent.report_prompt","params":{"agent_id":"%s","source":"amon:claude","agent":"claude","seq":1,"prompt":"refactor the auth module and keep the tests green"}}\n' "$AMON_AGENT_ID" \
+printf '{"id":"p1","method":"agent.report_activity","params":{"agent_id":"%s","source":"amon:claude","agent":"claude","seq":1,"text":"refactor the auth module and keep the tests green","kind":"prompt"}}\n' "$AMON_AGENT_ID" \
   | timeout 5 socat - "UNIX-CONNECT:$AMON_SOCKET_PATH" >/dev/null 2>&1
 sleep 5
 "#,
@@ -799,6 +799,34 @@ sleep 5
         agent_named(agents, "claude").is_some_and(|agent| agent["activity"] == want)
     });
     assert!(agent_named(&agents, "claude").is_some());
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn a_hook_narration_reaches_status_for_a_screenless_harness() {
+    // pi and omp have no readable screen; their extensions report narration
+    // over the same wire. It must land as kind "narration" and outrank the
+    // prompt that opened the turn.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent(
+        "pi",
+        r#"#!/bin/sh
+printf '{"id":"p1","method":"agent.report_activity","params":{"agent_id":"%s","source":"amon:pi","agent":"pi","seq":1,"text":"summarise the findings","kind":"prompt"}}\n' "$AMON_AGENT_ID" \
+  | timeout 5 socat - "UNIX-CONNECT:$AMON_SOCKET_PATH" >/dev/null 2>&1
+printf '{"id":"p2","method":"agent.report_activity","params":{"agent_id":"%s","source":"amon:pi","agent":"pi","seq":2,"text":"read_file(NOTICE)","kind":"narration"}}\n' "$AMON_AGENT_ID" \
+  | timeout 5 socat - "UNIX-CONNECT:$AMON_SOCKET_PATH" >/dev/null 2>&1
+sleep 5
+"#,
+    );
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    let want = serde_json::json!({"text": "read_file(NOTICE)", "kind": "narration"});
+    let agents = sandbox.wait_for_status("the hook narration", |agents| {
+        agent_named(agents, "pi").is_some_and(|agent| agent["activity"] == want)
+    });
+    assert!(agent_named(&agents, "pi").is_some());
 
     let _ = child.kill();
     let _ = child.wait();

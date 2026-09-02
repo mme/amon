@@ -29,7 +29,7 @@ pub use connect::connect_or_spawn_daemon;
 pub use event::Event;
 pub use frame::{Error, ErrorCode, ParseError, Request, Response, ServerFrame};
 pub use method::{
-    ConfigResult, Hello, HelloResult, Method, MethodError, ReportPrompt, ReportSession,
+    ConfigResult, Hello, HelloResult, Method, MethodError, ReportActivity, ReportSession,
     ReportState, Role, StatusResult,
 };
 pub use schema::protocol_schema;

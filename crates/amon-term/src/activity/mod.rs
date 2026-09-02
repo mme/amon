@@ -142,6 +142,24 @@ impl ActivityTracker {
         })
     }
 
+    /// A hook reported the harness's own account of its current step — for
+    /// agents whose screens amon cannot read, this is the only Narration there
+    /// is. It belongs to the current Turn and outranks the Prompt (kind first,
+    /// as everywhere), and it releases any hold: a narrating turn is past the
+    /// window the hold bridges. Returns whether
+    /// [`ActivityTracker::current`] changed.
+    pub fn hook_narration(&mut self, text: &str) -> bool {
+        let Some(text) = clean(first_line(text).to_string()) else {
+            return false;
+        };
+        self.held_from = None;
+        self.held_frames = 0;
+        self.replace(Activity {
+            text,
+            kind: ActivityKind::Narration,
+        })
+    }
+
     /// Read a frame. Returns whether [`ActivityTracker::current`] changed.
     pub fn observe(&mut self, agent: Agent, input: DetectionInput<'_>) -> bool {
         let Some(reading) = reading(agent, input) else {

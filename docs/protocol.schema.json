@@ -579,8 +579,8 @@
       ],
       "type": "object"
     },
-    "ReportPrompt": {
-      "description": "A hook reporting the prompt a turn is working on. amon-only: herdr has no\ncounterpart, because herdr collects state, not content (ADR-0021 — a seam,\nnot a modified vendored asset). The wrapper turns it into the turn's\nopening Activity.",
+    "ReportActivity": {
+      "description": "A hook reporting an Activity. amon-only: herdr has no counterpart, because\nherdr collects state, not content (ADR-0021 — a seam, not a modified\nvendored asset). A `prompt` opens a Turn with the exact submitted text; a\n`narration` is the harness's own account of its current step, for agents\nwhose screens amon cannot read. The wrapper bounds the text.",
       "properties": {
         "agent": {
           "type": "string"
@@ -594,9 +594,8 @@
             "null"
           ]
         },
-        "prompt": {
-          "description": "The submitted prompt, exactly as typed. The wrapper bounds it.",
-          "type": "string"
+        "kind": {
+          "$ref": "#/$defs/ActivityKind"
         },
         "seq": {
           "format": "uint64",
@@ -605,6 +604,9 @@
         },
         "source": {
           "type": "string"
+        },
+        "text": {
+          "type": "string"
         }
       },
       "required": [
@@ -612,7 +614,8 @@
         "source",
         "agent",
         "seq",
-        "prompt"
+        "text",
+        "kind"
       ],
       "type": "object"
     },
@@ -841,11 +844,11 @@
           "description": "Hook → wrapper. amon-only (ADR-0021).",
           "properties": {
             "method": {
-              "const": "agent.report_prompt",
+              "const": "agent.report_activity",
               "type": "string"
             },
             "params": {
-              "$ref": "#/$defs/ReportPrompt"
+              "$ref": "#/$defs/ReportActivity"
             }
           },
           "required": [

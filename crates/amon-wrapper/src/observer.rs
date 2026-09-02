@@ -59,11 +59,13 @@ pub enum Signal {
         /// hook knows.
         session_start_source: Option<String>,
     },
-    /// An amon hook reported the prompt a turn is working on (ADR-0021). Only
-    /// where amon installed a prompt hook — the screen is the fallback
+    /// An amon hook reported an Activity (ADR-0021): a prompt that opens a
+    /// turn, or a narration for a harness whose screen amon cannot read. Only
+    /// where amon installed such a hook — the screen is the fallback
     /// everywhere else.
-    HookPrompt {
-        prompt: String,
+    HookActivity {
+        text: String,
+        kind: amon_protocol::ActivityKind,
         session_id: Option<String>,
     },
     /// Where the agent is working changed: it moved, or HEAD moved under it.
@@ -312,17 +314,32 @@ impl Observer {
                     self.publish();
                 }
             }
-            Signal::HookPrompt { prompt, session_id } => {
-                // A hook prompt is authoritative for the turn boundary — an
-                // event, where the screen only ever infers one. Scope it to
-                // the reported session, as the screen tracker's clear() is
-                // scoped, so a prompt from a session that has since been
-                // replaced cannot reopen it.
+            Signal::HookActivity {
+                text,
+                kind,
+                session_id,
+            } => {
+                // Hook activity is an event where the screen only ever infers.
+                // Scope it to the reported session, as the screen tracker's
+                // clear() is scoped, so a report from a session that has since
+                // been replaced cannot speak for the current one.
                 let stale = session_id.is_some()
                     && self.last_session_id.is_some()
                     && session_id != self.last_session_id;
-                if !stale && self.activity.begin_turn(&prompt) {
-                    self.hook_turn_session = session_id;
+                if stale {
+                    return;
+                }
+                let changed = match kind {
+                    amon_protocol::ActivityKind::Prompt => {
+                        let opened = self.activity.begin_turn(&text);
+                        if opened {
+                            self.hook_turn_session = session_id;
+                        }
+                        opened
+                    }
+                    amon_protocol::ActivityKind::Narration => self.activity.hook_narration(&text),
+                };
+                if changed {
                     self.publish();
                 }
             }

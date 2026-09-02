@@ -85,18 +85,19 @@ pub struct ReportSession {
     pub session_start_source: Option<String>,
 }
 
-/// A hook reporting the prompt a turn is working on. amon-only: herdr has no
-/// counterpart, because herdr collects state, not content (ADR-0021 — a seam,
-/// not a modified vendored asset). The wrapper turns it into the turn's
-/// opening Activity.
+/// A hook reporting an Activity. amon-only: herdr has no counterpart, because
+/// herdr collects state, not content (ADR-0021 — a seam, not a modified
+/// vendored asset). A `prompt` opens a Turn with the exact submitted text; a
+/// `narration` is the harness's own account of its current step, for agents
+/// whose screens amon cannot read. The wrapper bounds the text.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct ReportPrompt {
+pub struct ReportActivity {
     pub agent_id: String,
     pub source: String,
     pub agent: String,
     pub seq: u64,
-    /// The submitted prompt, exactly as typed. The wrapper bounds it.
-    pub prompt: String,
+    pub text: String,
+    pub kind: crate::ActivityKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_id: Option<String>,
 }
@@ -134,8 +135,8 @@ pub enum Method {
     #[serde(rename = "agent.report_session")]
     AgentReportSession(ReportSession),
     /// Hook → wrapper. amon-only (ADR-0021).
-    #[serde(rename = "agent.report_prompt")]
-    AgentReportPrompt(ReportPrompt),
+    #[serde(rename = "agent.report_activity")]
+    AgentReportActivity(ReportActivity),
 }
 
 impl Method {
@@ -150,7 +151,7 @@ impl Method {
             Self::DaemonShutdown => "daemon.shutdown",
             Self::AgentReportState(_) => "agent.report_state",
             Self::AgentReportSession(_) => "agent.report_session",
-            Self::AgentReportPrompt(_) => "agent.report_prompt",
+            Self::AgentReportActivity(_) => "agent.report_activity",
         }
     }
 
@@ -181,7 +182,7 @@ const KNOWN_METHODS: &[&str] = &[
     "daemon.shutdown",
     "agent.report_state",
     "agent.report_session",
-    "agent.report_prompt",
+    "agent.report_activity",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -35,7 +35,7 @@ const ASSET: &str = include_str!("../assets/claude-prompt-hook.sh");
 const EVENT: &str = "UserPromptSubmit";
 /// Bumped when the asset changes, so `doctor` can tell a stale copy from a
 /// current one. Mirrors the `AMON_PROMPT_HOOK_VERSION` stamp in the script.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// Whether the installed prompt hook is absent, stale, or current.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

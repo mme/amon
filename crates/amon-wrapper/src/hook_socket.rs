@@ -110,9 +110,10 @@ fn handle(request: Request, signals: &Sender<Signal>) {
                 session_start_source: report.session_start_source,
             });
         }
-        Method::AgentReportPrompt(report) => {
-            let _ = signals.send(Signal::HookPrompt {
-                prompt: report.prompt,
+        Method::AgentReportActivity(report) => {
+            let _ = signals.send(Signal::HookActivity {
+                text: report.text,
+                kind: report.kind,
                 session_id: report.agent_session_id,
             });
         }

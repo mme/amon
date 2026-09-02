@@ -349,7 +349,7 @@ fn handle(
         // Hook reports belong to a wrapper's socket, not here.
         Method::AgentReportState(_)
         | Method::AgentReportSession(_)
-        | Method::AgentReportPrompt(_) => Outcome::Reply(Box::new(move |id| {
+        | Method::AgentReportActivity(_) => Outcome::Reply(Box::new(move |id| {
             Response::err(
                 id,
                 Error::new(

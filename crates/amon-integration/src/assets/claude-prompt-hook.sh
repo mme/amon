@@ -6,7 +6,7 @@
 #
 # installed by amon
 # managed by amon; `amon remove claude` deletes it and its registration.
-# AMON_PROMPT_HOOK_VERSION=1
+# AMON_PROMPT_HOOK_VERSION=2
 
 set -eu
 
@@ -54,11 +54,12 @@ params = {
     "source": "amon:claude",
     "agent": "claude",
     "seq": time.time_ns(),
-    "prompt": prompt,
+    "text": prompt,
+    "kind": "prompt",
 }
 if agent_session_id:
     params["agent_session_id"] = agent_session_id
-request = {"id": "amon-prompt:1", "method": "agent.report_prompt", "params": params}
+request = {"id": "amon-prompt:1", "method": "agent.report_activity", "params": params}
 
 try:
     client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

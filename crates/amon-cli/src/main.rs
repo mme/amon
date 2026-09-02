@@ -12,7 +12,7 @@ use std::os::unix::net::UnixStream;
 use std::process::ExitCode;
 
 use amon_protocol::{
-    AgentEntry, AgentState, Hello, Method, ReportPrompt, ReportSession, ReportState, Request,
+    AgentEntry, AgentState, Hello, Method, ReportActivity, ReportSession, ReportState, Request,
     Response, Role, StatusResult, PROTOCOL_VERSION,
 };
 use clap::{Parser, Subcommand};
@@ -147,9 +147,10 @@ enum HookReport {
         #[arg(long)]
         agent_session_id: Option<String>,
     },
-    /// Report the prompt a turn is working on (amon-only; ADR-0021)
-    #[command(name = "report-prompt")]
-    Prompt {
+    /// Report an Activity — a submitted prompt or a narration (amon-only;
+    /// ADR-0021)
+    #[command(name = "report-activity")]
+    Activity {
         /// The `AMON_AGENT_ID` the hook was given
         agent_id: String,
         #[arg(long)]
@@ -158,12 +159,23 @@ enum HookReport {
         agent: String,
         #[arg(long)]
         seq: u64,
-        /// The submitted prompt, exactly as typed
         #[arg(long)]
-        prompt: String,
+        text: String,
+        #[arg(long, value_parser = parse_activity_kind)]
+        kind: amon_protocol::ActivityKind,
         #[arg(long)]
         agent_session_id: Option<String>,
     },
+}
+
+fn parse_activity_kind(value: &str) -> Result<amon_protocol::ActivityKind, String> {
+    match value {
+        "prompt" => Ok(amon_protocol::ActivityKind::Prompt),
+        "narration" => Ok(amon_protocol::ActivityKind::Narration),
+        other => Err(format!(
+            "unknown activity kind: {other} (expected prompt or narration)"
+        )),
+    }
 }
 
 fn parse_state(value: &str) -> Result<AgentState, String> {
@@ -545,19 +557,21 @@ fn run_hook(report: HookReport) -> Result<(), Box<dyn std::error::Error>> {
             seq,
             agent_session_id,
         }),
-        HookReport::Prompt {
+        HookReport::Activity {
             agent_id,
             source,
             agent,
             seq,
-            prompt,
+            text,
+            kind,
             agent_session_id,
-        } => Method::AgentReportPrompt(ReportPrompt {
+        } => Method::AgentReportActivity(ReportActivity {
             agent_id,
             source,
             agent,
             seq,
-            prompt,
+            text,
+            kind,
             agent_session_id,
         }),
     };
