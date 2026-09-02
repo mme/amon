@@ -37,3 +37,10 @@ mechanically instead:
 Deviations we might otherwise make casually (renaming a function, deleting
 unused code, reformatting) are effectively banned — they would have to become
 patches, and patches have an ongoing cost. That friction is the point.
+
+## Extended
+
+ADR-0021 records how to choose among the deviation forms this ADR allows —
+patch, seam, or supersession — and adds the third: an amon-owned replacement
+for a vendored file's role, with the vendored copy kept, refreshed, and
+drift-reported rather than edited.

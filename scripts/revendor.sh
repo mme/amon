@@ -124,6 +124,27 @@ vendor_file() {
     } >"$repo_root/$dest"
 }
 
+# Vendored files whose role an amon-owned implementation has taken over
+# (ADR-0021). Still vendored and refreshed above — superseding never ends the
+# watch — but no longer routed to, so their changes would otherwise escape the
+# diff review that watches the code we run. Reported separately instead:
+# a diffstat inline, the full diff under target/ for reading.
+SUPERSEDED=(
+)
+
+report_superseded_drift() {
+    [ "${#SUPERSEDED[@]}" -gt 0 ] || return 0
+    local drift="$repo_root/target/revendor-superseded.diff"
+    git -C "$repo_root" diff -- "${SUPERSEDED[@]}" >"$drift"
+    echo
+    if [ -s "$drift" ]; then
+        echo "superseded upstream code moved (ADR-0021) — full diff: target/revendor-superseded.diff"
+        git -C "$repo_root" diff --stat -- "${SUPERSEDED[@]}"
+    else
+        echo "superseded upstream code unchanged (ADR-0021)"
+    fi
+}
+
 apply_patches() {
     [ -d "$patches" ] || return 0
     shopt -s nullglob
@@ -176,6 +197,8 @@ apply_patches
 # last, after the patches, whose context is therefore still upstream-shaped.
 cargo fmt --manifest-path "$repo_root/Cargo.toml" --all
 echo "formatted"
+
+report_superseded_drift
 
 echo
 echo "vendored from herdr @ ${HERDR_COMMIT}"
