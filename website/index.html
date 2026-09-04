@@ -438,14 +438,14 @@
 
   /* One grid shared by every row, so the columns line up down the list the way
      they do in the real panel: the glyph, where the agent is working, the
-     branch, how long, the state in words, and last the kind of agent.
+     branch, what it is doing, and last how long it has been at it.
 
-     Every width is fixed. Each row is its own grid here, so a column that sized
-     itself to its own content would start somewhere different on every line -
-     and a grid whose columns move per row is not one. The leftover falls after
-     the last column rather than pooling in the middle, which is where the real
-     panel leaves it: it packs the columns from the left and stops. */
-  .panel-row{display:grid; grid-template-columns:18px 4rem 7.75rem 2rem 5.5rem 4rem;
+     Every fixed column keeps its width; the activity column takes the slack and
+     elides into it, which is why the age still lands at the edge and a long
+     message costs its own tail rather than a column that identifies the row.
+     Each row is its own grid, so the fixed widths are what keep a column
+     starting in the same place on every line. */
+  .panel-row{display:grid; grid-template-columns:18px 6rem 8.25rem minmax(0,1fr) 2.25rem;
              align-items:center; gap:0 10px; border-radius:6px}
   .panel-row.is-cursor{background:color-mix(in oklab, var(--ink) 7%, transparent)}
 
@@ -495,23 +495,58 @@
      full ink - but not the weight: two bold columns compete and neither leads. */
   .panel-cell.is-branch{color:var(--ink)}
   .panel-cell.is-where,.panel-cell.is-branch,
-  .panel-cell.is-state,.panel-cell.is-kind{overflow:hidden;
-                            text-overflow:ellipsis; white-space:nowrap}
+  .panel-cell.is-activity{overflow:hidden;
+                          text-overflow:ellipsis; white-space:nowrap}
 
+  /* What the agent says it is doing, in the harness's own words - "Reading 5
+     files", "Bash(cargo nextest run)", the opening line of a reply. Never a
+     phrase amon composed: the glyph beside it already carries the state, so a
+     column that said "Working..." would only repeat it. Dim, a little air
+     before it, and it takes the slack the fixed columns leave. */
+  .panel-cell.is-activity{color:var(--muted); padding-left:6px}
+  /* A prompt is your words, not the agent's, so it wears the harness's own
+     marker and leans into italic - the same two cues the real panel draws. */
+  .panel-cell.is-activity.is-prompt{font-style:italic}
+  .panel-cell.is-activity.is-prompt::before{content:"\276F\A0"; font-style:normal}
 
-  /* Narrow: the columns give way from the right, in the order the real panel
-     drops them. The kind of agent goes first - on a machine running one kind it
-     writes the same word down every line, and it is worth its width only while
-     there is width to spare. The state goes next, because the glyph beside the
-     project already carries it. What survives still says where the agent is,
-     which line of work it is on, and how long it has been there. */
-  @media (max-width:640px){
-    .panel-row{grid-template-columns:18px 4rem 7.75rem 2rem 5.5rem}
-    .panel-cell.is-kind{display:none}
+  /* The age sits at the pane's edge, where a column of short right-aligned
+     values reads down as one. */
+  .panel-cell.is-age{text-align:right}
+
+  /* A band of light crossing the message while an agent is working. Nothing
+     moves - only the colour travels, the row's own two inks, dim lifting to
+     full and settling back - which is what keeps it readable rather than
+     distracting. The band sweeps across quickly and then the row rests, the
+     900ms-over-2900ms the real panel animates at. The text is painted through
+     the gradient, so a narrow band of ink rides a dim line. */
+  .panel-cell.is-activity.is-working{
+    color:transparent;
+    /* Three box-widths wide, so the box is always fully painted - a narrow ink
+       peak rides a dim field, and at the ends of the sweep the peak is off the
+       visible window and the whole message rests dim. */
+    background-image:linear-gradient(100deg,
+      var(--muted) 0%, var(--muted) 47%, var(--ink) 50%, var(--muted) 53%, var(--muted) 100%);
+    background-size:300% 100%; background-repeat:no-repeat;
+    -webkit-background-clip:text; background-clip:text;
+    animation:panel-shimmer 2900ms linear infinite}
+  @keyframes panel-shimmer{
+    0%{background-position:0% 0}
+    31%{background-position:100% 0}
+    100%{background-position:100% 0} }
+  /* A shimmer is motion; when motion is unwelcome the message simply rests dim,
+     the same as any settled row. */
+  @media (prefers-reduced-motion: reduce){
+    .panel-cell.is-activity.is-working{animation:none; color:var(--muted);
+      background-image:none; -webkit-background-clip:border-box; background-clip:border-box}
   }
-  @media (max-width:460px){
-    .panel-row{grid-template-columns:18px 4rem minmax(0,1fr) 2rem}
-    .panel-cell.is-state{display:none}
+
+  /* Narrow: the branch gives way first, the one column the real panel drops -
+     every other either identifies the row or, like the message, gives way by
+     shrinking. What survives still says where the agent is and what it is
+     doing. */
+  @media (max-width:600px){
+    .panel-row{grid-template-columns:18px 5rem minmax(0,1fr) 2.25rem}
+    .panel-cell.is-branch{display:none}
   }
 
   /* ---- the install block ------------------------------------------- */
@@ -957,14 +992,16 @@
       The agent panel, replicated. A picture and not a control: nothing here is
       clickable, because nothing here does anything - the cursor follows the
       pointer the way it does in the real panel, and that is the whole of the
-      interaction. The one thing that moves is the spinner, which moves there
-      too.
+      interaction. Two things move, and both move there too: the spinner beside
+      a running agent, and the band of light that crosses what it is doing.
 
-      Three of the four rows say amon.sh, and that is the layout making its
-      point rather than a mistake in the mock: the last of them is an agent in
-      a worktree at ~/.cache/worktrees/site, which belongs to the same
-      repository, and the branch beside it is the only thing telling the three
-      apart.
+      Three of the five rows say amon.sh, and that is the layout making its
+      point rather than a mistake in the mock: they are three checkouts of one
+      repository, and the branch beside each is the only thing telling them
+      apart. The message is what each agent last said it was doing - a running
+      row narrates and its light travels; a row waiting on you says what it is
+      waiting for; the top row is showing the prompt it was given, in your
+      words, so it wears the harness's own marker and leans italic.
     -->
     <figure class="panel">
       <div class="panel-card">
@@ -983,7 +1020,7 @@
           </svg>
           <span class="panel-name">
             <b>amon</b>
-            <span class="panel-counts">1 NEEDS INPUT &middot; 1 DONE &middot; 1 RUNNING &middot; 1 IDLE</span>
+            <span class="panel-counts">1 NEEDS INPUT &middot; 1 DONE &middot; 2 RUNNING &middot; 1 IDLE</span>
           </span>
         </div>
 
@@ -994,35 +1031,39 @@
             <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle class="panel-dot tl" cx="8.7" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot tr" cx="15.3" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot bl" cx="8.7" cy="14.55" r="2.35" fill="currentColor"/><circle class="panel-dot br" cx="15.3" cy="14.55" r="2.35" fill="currentColor"/></svg></span>
             <span class="panel-cell is-where">amon.sh</span>
             <span class="panel-cell is-branch">main</span>
+            <span class="panel-cell is-activity is-working is-prompt">add a login rate limiter</span>
             <span class="panel-cell is-age">4m</span>
-            <span class="panel-cell is-state">running</span>
-            <span class="panel-cell is-kind">claude</span>
           </div>
           <div class="panel-row">
-            <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg></span>
+            <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle class="panel-dot tl" cx="8.7" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot tr" cx="15.3" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot bl" cx="8.7" cy="14.55" r="2.35" fill="currentColor"/><circle class="panel-dot br" cx="15.3" cy="14.55" r="2.35" fill="currentColor"/></svg></span>
             <span class="panel-cell is-where">amon.sh</span>
-            <span class="panel-cell is-branch">fix/detect-flake</span>
-            <span class="panel-cell is-age">2m</span>
-            <span class="panel-cell is-state">done</span>
-            <span class="panel-cell is-kind">codex</span>
+            <span class="panel-cell is-branch">detect-flake</span>
+            <span class="panel-cell is-activity is-working">Bash(cargo nextest run)</span>
+            <span class="panel-cell is-age">9m</span>
+          </div>
+          <div class="panel-group" style="grid-column:1/-1">WORKSPACE 2</div>
+          <div class="panel-row">
+            <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg></span>
+            <span class="panel-cell is-where">docs-portal</span>
+            <span class="panel-cell is-branch">docs-refresh</span>
+            <span class="panel-cell is-activity">Updated 3 pages</span>
+            <span class="panel-cell is-age">12m</span>
           </div>
           <div class="panel-group" style="grid-column:1/-1">WORKSPACE 3</div>
           <div class="panel-row">
             <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg></span>
             <span class="panel-cell is-where">atlas</span>
             <span class="panel-cell is-branch">atlas-api</span>
+            <span class="panel-cell is-activity">Apply migration to production?</span>
             <span class="panel-cell is-age">6m</span>
-            <span class="panel-cell is-state">needs input</span>
-            <span class="panel-cell is-kind">pi</span>
           </div>
           <div class="panel-group" style="grid-column:1/-1">WORKSPACE 4</div>
           <div class="panel-row">
             <span class="panel-cell is-glyph"></span>
             <span class="panel-cell is-where">amon.sh</span>
             <span class="panel-cell is-branch">website</span>
+            <span class="panel-cell is-activity"></span>
             <span class="panel-cell is-age">41m</span>
-            <span class="panel-cell is-state">idle</span>
-            <span class="panel-cell is-kind">opencode</span>
           </div>
       </div>
 
@@ -1042,22 +1083,24 @@
     </header>
 
     <!--
-      The same four agents as the panel above, answered in the terminal - the
+      The same five agents as the panel above, answered in the terminal - the
       same fields in the same order, so the two surfaces cannot drift - and
       sorted the way everything in amon sorts: blocked first, then finished-
       but-unseen (which the CLI prints as idle; only its place in the order
-      gives it away), then working. The workspace leads here where the panel
-      makes it a heading, and the full path stands in for the project where an
-      agent is not in a repository, because this output gets piped. The
-      trailing focus command is typed and not yet run, the way the panel's
-      cursor rests on a row.
+      gives it away), then working. The message trails each row exactly as it
+      does in the panel, a prompt wearing the same marker; the workspace leads
+      here where the panel makes it a heading, and the full path stands in for
+      the project where an agent is not in a repository, because this output
+      gets piped. The trailing focus command is typed and not yet run, the way
+      the panel's cursor rests on a row.
     -->
     <figure class="snippet">
       <pre><code><span class="t-p">~ &#10095;</span> <span class="t-in">amon status</span>
-<span class="t-o">3  atlas    atlas-api            6m  blocked   pi
-1  amon.sh  fix/detect-flake     2m  idle      codex
-1  amon.sh  main                 4m  working   claude
-4  amon.sh  website             41m  idle      opencode</span>
+<span class="t-o">3  atlas        atlas-api        6m  blocked   pi        Apply migration to production?
+2  docs-portal  docs-refresh    12m  idle      pi        Updated 3 pages
+1  amon.sh      main             4m  working   claude    &#10095; add a login rate limiter
+1  amon.sh      detect-flake     9m  working   codex     Bash(cargo nextest run)
+4  amon.sh      website         41m  idle      opencode</span>
 <span class="t-p">~ &#10095;</span> <span class="t-in">amon focus 3</span></code></pre>
     </figure>
 
