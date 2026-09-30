@@ -559,11 +559,17 @@ fn spawn_window_follow(
             shared.window = window.clone();
             for owned in shared.owned.values_mut() {
                 let mut patch = AgentPatch::new(owned.entry.id.clone());
+                let position = window
+                    .as_ref()
+                    .and_then(|w| w.position)
+                    .map(|(x, y)| amon_protocol::Position { x, y });
                 patch.window = Some(window.as_ref().map(|w| w.address.clone()));
                 patch.workspace = Some(window.as_ref().and_then(|w| w.workspace.clone()));
+                patch.position = Some(position);
                 registry.update(owned.connection, &patch);
                 owned.entry.window = window.as_ref().map(|w| w.address.clone());
                 owned.entry.workspace = window.as_ref().and_then(|w| w.workspace.clone());
+                owned.entry.position = position;
             }
         });
     });

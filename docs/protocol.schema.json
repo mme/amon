@@ -99,6 +99,17 @@
           "minimum": 0,
           "type": "integer"
         },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Position"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where that window sits, as the compositor laid it out. What orders the\nagents of one workspace wherever they are listed in the panel's order:\nthe left window first, then the one below it. Absent whenever the\nwindow is, and whenever the compositor did not say."
+        },
         "project": {
           "description": "The Project [`AgentEntry::cwd`] belongs to: the repository it is in,\nnamed by its root directory. A linked worktree's Project is the\nrepository it was cut from, not the worktree's own directory — a\nworktree's path names neither its project nor its branch.\n\nAbsent outside a repository, where the directory itself identifies the\nagent and a consumer shows that instead.",
           "type": [
@@ -228,6 +239,17 @@
         },
         "id": {
           "type": "string"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Position"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where the window sits now. Reported with the window, and again\nwhenever the layout around it moves it."
         },
         "project": {
           "description": "Two levels deep, like the branch below: an agent that walks out of a\nrepository has to be able to say so rather than keep naming the last\none it was in.",
@@ -697,6 +719,24 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "Position": {
+      "description": "Where a Window sits, as the compositor laid it out: its top-left corner in\nthe compositor's coordinates. Two windows on one workspace compare by `x`\nand then `y` — the left one first, then the one below it — which is the\norder the eye reads a screen in, and so the order one workspace's rows take\non the panel and its agents take on a desk device's keys. It follows the\nlayout: a neighbour opening or closing moves it. It never follows state.",
+      "properties": {
+        "x": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "y": {
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
       "type": "object"
     },
     "ReportActivity": {

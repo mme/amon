@@ -112,12 +112,47 @@ fn brightness_pm(config: &Micro2Config) -> u16 {
     (value * 1000.0) as u16
 }
 
-/// The most urgent agent on a workspace, by the ranking every other surface
-/// uses ([`AgentEntry::attention`]).
-fn most_urgent(agents: &[AgentEntry]) -> Option<&AgentEntry> {
-    agents
-        .iter()
-        .min_by_key(|agent| (agent.attention(), agent.state_since))
+/// The agents in the order the panel lists them: grouped by workspace, and
+/// within a workspace in the order their windows sit on the screen — left to
+/// right, then top to bottom — with unplaced windows after the placed ones and
+/// start order breaking what is left. The same comparator as the pane's
+/// `compareRows` (AgentStates.qml), kept in step by hand, so key N is the
+/// panel's row N and the two surfaces never disagree about which agent a
+/// number means.
+///
+/// Never ordered by state, deliberately: a key whose meaning followed state
+/// would light for one agent and, by the time the finger landed, send you to
+/// another. Positions move only when windows do, which is a thing you did.
+fn panel_order(agents: &[AgentEntry]) -> Vec<&AgentEntry> {
+    let mut ordered: Vec<&AgentEntry> = agents.iter().collect();
+    ordered.sort_by(|left, right| {
+        workspace_key(left.workspace.as_deref())
+            .cmp(&workspace_key(right.workspace.as_deref()))
+            .then_with(|| position_key(left).cmp(&position_key(right)))
+            .then_with(|| left.started_at.cmp(&right.started_at))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    ordered
+}
+
+/// Placed windows first, by `x` then `y` (what `Position` orders by).
+fn position_key(agent: &AgentEntry) -> (u8, Option<amon_protocol::Position>) {
+    match agent.position {
+        Some(position) => (0, Some(position)),
+        None => (1, None),
+    }
+}
+
+/// Workspaces sort as numbers where they look like numbers — Omarchy names
+/// them "1".."10", and "10" belongs after "2" — and named ones after those,
+/// alphabetically. An agent the compositor never placed reads as the pane
+/// reads it: an empty name, ahead of "1".
+fn workspace_key(workspace: Option<&str>) -> (u8, u64, &str) {
+    match workspace.unwrap_or("").parse::<u64>() {
+        Ok(number) => (0, number, ""),
+        Err(_) if workspace.unwrap_or("").is_empty() => (0, 0, ""),
+        Err(_) => (1, 0, workspace.unwrap_or("")),
+    }
 }
 
 /// Computes the six keys and the ring from the agent roster. Pure — this is
@@ -126,25 +161,12 @@ pub fn lighting(agents: &[AgentEntry], config: &Micro2Config) -> Lighting {
     let brightness = brightness_pm(config);
     let mut keys = [KeyLight::default(); 6];
 
-    // Key N is workspace N's most urgent agent, always — the same logic as
-    // the workspace switcher, and deliberately not configurable: the keys
-    // mean the same thing on every desk, like the number row does.
-    let key_agents: Vec<Option<&AgentEntry>> = (0..6)
-        .map(|i| {
-            let workspace = (i + 1).to_string();
-            let on_workspace: Vec<AgentEntry> = agents
-                .iter()
-                .filter(|agent| agent.workspace.as_deref() == Some(workspace.as_str()))
-                .cloned()
-                .collect();
-            most_urgent(&on_workspace).and_then(|urgent| agents.iter().find(|a| a.id == urgent.id))
-        })
-        .collect();
-
-    for (slot, agent) in key_agents.iter().enumerate() {
-        let Some(agent) = agent else {
-            continue; // dark key
-        };
+    // Key N is the panel's row N: one agent per key, the first six in the
+    // order the pane lists them, lit by that agent's own state. Not
+    // configurable: the keys mean the same thing on every desk, and the same
+    // thing as the pane. Past the sixth agent the keys stay dark and the knob,
+    // which walks the whole list, takes over.
+    for (slot, agent) in panel_order(agents).into_iter().take(6).enumerate() {
         let (color, breathes) = state_color(agent.state, agent.seen, config);
         keys[slot] = KeyLight {
             color,
@@ -202,17 +224,11 @@ fn fleet_ring(agents: &[AgentEntry], config: &Micro2Config, brightness: u16) -> 
     RingLight::default()
 }
 
-/// Which agent a key tap goes to, and the workspace the key stands for
-/// when no agent is on it (a plain workspace switch).
-pub fn tap_target(slot: usize, agents: &[AgentEntry]) -> (Option<AgentEntry>, Option<u32>) {
-    let workspace = (slot + 1) as u32;
-    let name = workspace.to_string();
-    let on_workspace: Vec<AgentEntry> = agents
-        .iter()
-        .filter(|agent| agent.workspace.as_deref() == Some(name.as_str()))
-        .cloned()
-        .collect();
-    (most_urgent(&on_workspace).cloned(), Some(workspace))
+/// Which agent a key tap goes to: exactly the one its light spoke for. A dark
+/// key has no agent and a tap on it does nothing — the key means an agent, not
+/// a place, so there is no workspace to fall back to.
+pub fn tap_target(slot: usize, agents: &[AgentEntry]) -> Option<AgentEntry> {
+    panel_order(agents).get(slot).map(|agent| (*agent).clone())
 }
 
 // ---------------------------------------------------------------------------
@@ -431,13 +447,8 @@ pub fn act(
 ) {
     match input {
         DeviceInput::AgentKey(slot) => {
-            let (agent, workspace) = tap_target(*slot, agents);
-            match (agent, workspace) {
-                (Some(agent), _) => focus_agent(&agent),
-                (None, Some(workspace)) => {
-                    actions::hyprctl(&format!("hl.dsp.focus({{ workspace = \"{workspace}\" }})"));
-                }
-                _ => {}
+            if let Some(agent) = tap_target(*slot, agents) {
+                focus_agent(&agent);
             }
         }
         DeviceInput::Control(key) => {
@@ -793,6 +804,16 @@ mod tests {
     use super::*;
 
     fn agent(id: &str, workspace: &str, state: AgentState, seen: Option<bool>) -> AgentEntry {
+        started(id, workspace, state, seen, 1)
+    }
+
+    fn started(
+        id: &str,
+        workspace: &str,
+        state: AgentState,
+        seen: Option<bool>,
+        started_at: u64,
+    ) -> AgentEntry {
         AgentEntry {
             id: id.into(),
             agent: "claude".into(),
@@ -802,11 +823,12 @@ mod tests {
             pid: 1,
             args: vec![],
             hostname: "host".into(),
-            started_at: 1,
+            started_at,
             agent_session_id: None,
             agent_session_path: None,
             activity: None,
             window: Some("abc123".into()),
+            position: None,
             workspace: Some(workspace.into()),
             project: None,
             subpath: None,
@@ -818,10 +840,12 @@ mod tests {
     }
 
     #[test]
-    fn each_workspace_lights_its_key() {
+    fn keys_are_the_panels_rows_in_its_order() {
+        // Handed over in arrival order; the keys follow the pane instead:
+        // workspace 1 before 3, and no gap for the empty workspace 2.
         let agents = vec![
-            agent("a", "1", AgentState::Working, Some(true)),
             agent("b", "3", AgentState::Blocked, Some(false)),
+            agent("a", "1", AgentState::Working, Some(true)),
         ];
         let config = Micro2Config::default();
 
@@ -829,22 +853,86 @@ mod tests {
 
         assert_eq!(lit.keys[0].color, COLOR_WORKING);
         assert_eq!(lit.keys[0].effect, EFFECT_BREATH, "working breathes");
-        assert_eq!(lit.keys[1].effect, EFFECT_OFF, "empty workspace is dark");
-        assert_eq!(lit.keys[2].color, COLOR_BLOCKED);
-        assert_eq!(lit.keys[2].effect, EFFECT_SOLID);
+        assert_eq!(lit.keys[1].color, COLOR_BLOCKED);
+        assert_eq!(lit.keys[1].effect, EFFECT_SOLID);
+        assert_eq!(lit.keys[2].effect, EFFECT_OFF, "no third agent, dark key");
+        assert_eq!(tap_target(0, &agents).map(|a| a.id), Some("a".into()));
+        assert_eq!(tap_target(1, &agents).map(|a| a.id), Some("b".into()));
+        assert_eq!(tap_target(2, &agents), None, "a dark key goes nowhere");
+    }
+
+    fn placed(mut entry: AgentEntry, x: i32, y: i32) -> AgentEntry {
+        entry.position = Some(amon_protocol::Position { x, y });
+        entry
     }
 
     #[test]
-    fn the_most_urgent_agent_speaks_for_a_shared_workspace() {
-        // Same rule as the bar: blocked outranks working outranks idle.
+    fn a_shared_workspace_reads_like_the_screen_left_to_right_then_down() {
+        // Started in the opposite order from where they sit; the screen wins.
         let agents = vec![
-            agent("calm", "2", AgentState::Idle, Some(true)),
-            agent("loud", "2", AgentState::Blocked, Some(false)),
+            placed(
+                started("right-top", "1", AgentState::Idle, Some(true), 10),
+                1287,
+                38,
+            ),
+            placed(
+                started("right-low", "1", AgentState::Blocked, Some(false), 20),
+                1287,
+                740,
+            ),
+            placed(
+                started("left", "1", AgentState::Working, Some(true), 30),
+                12,
+                38,
+            ),
+            started("nowhere", "1", AgentState::Idle, Some(true), 5),
+        ];
+
+        let order: Vec<String> = (0..4)
+            .filter_map(|slot| tap_target(slot, &agents).map(|a| a.id))
+            .collect();
+
+        assert_eq!(order, ["left", "right-top", "right-low", "nowhere"]);
+    }
+
+    #[test]
+    fn a_shared_workspace_reads_oldest_first_whatever_the_states() {
+        // Not by urgency — the bar does that. A key that followed state would
+        // change meaning under the finger; the pane's order does not move.
+        let agents = vec![
+            started("loud", "2", AgentState::Blocked, Some(false), 20),
+            started("calm", "2", AgentState::Idle, Some(true), 10),
         ];
 
         let lit = lighting(&agents, &Micro2Config::default());
 
+        assert_eq!(tap_target(0, &agents).map(|a| a.id), Some("calm".into()));
+        assert_eq!(lit.keys[0].color, COLOR_IDLE);
         assert_eq!(lit.keys[1].color, COLOR_BLOCKED);
+    }
+
+    #[test]
+    fn workspaces_sort_as_numbers_and_the_seventh_agent_has_no_key() {
+        let mut agents = vec![agent("ten", "10", AgentState::Working, Some(true))];
+        for i in 0..6 {
+            agents.push(started(
+                &format!("two{i}"),
+                "2",
+                AgentState::Idle,
+                Some(true),
+                i,
+            ));
+        }
+
+        let lit = lighting(&agents, &Micro2Config::default());
+
+        assert_eq!(tap_target(0, &agents).map(|a| a.id), Some("two0".into()));
+        assert_eq!(tap_target(5, &agents).map(|a| a.id), Some("two5".into()));
+        assert_eq!(tap_target(6, &agents).map(|a| a.id), Some("ten".into()));
+        assert!(
+            lit.keys.iter().all(|key| key.effect != EFFECT_OFF),
+            "six agents, six lit keys"
+        );
     }
 
     #[test]

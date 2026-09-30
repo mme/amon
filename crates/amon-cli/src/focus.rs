@@ -231,6 +231,7 @@ mod tests {
             agent_session_path: None,
             activity: None,
             window: None,
+            position: None,
             workspace: None,
             project: None,
             subpath: None,

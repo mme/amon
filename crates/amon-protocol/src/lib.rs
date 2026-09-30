@@ -23,7 +23,7 @@ mod method;
 pub mod paths;
 mod schema;
 
-pub use agent::{Activity, ActivityKind, AgentEntry, AgentPatch, AgentState, Runtime};
+pub use agent::{Activity, ActivityKind, AgentEntry, AgentPatch, AgentState, Position, Runtime};
 pub use config::{
     BarConfig, Config, DeviceColors, DevicesConfig, GlyphConfig, Micro2Config, SoundConfig,
     UpdatesConfig,

@@ -420,6 +420,7 @@ fn order_in_rust() -> Vec<String> {
         agent_session_path: None,
         activity: None,
         window: None,
+        position: None,
         workspace: None,
         branch: None,
         project: None,

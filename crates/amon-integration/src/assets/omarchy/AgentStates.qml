@@ -237,26 +237,37 @@ Item {
     root.rows = listed
   }
 
-  // Grouped by workspace, and within a workspace in the order they were
-  // started — oldest first, so a workspace reads as you built it up and a new
-  // agent appears at the bottom.
+  // Grouped by workspace, and within a workspace in the order the windows sit
+  // on the screen — left to right, then top to bottom — so the list reads the
+  // way the workspace looks, and the key on a desk device that means row N
+  // means the Nth window along. A row whose window the compositor has not
+  // placed goes after the placed ones; start order settles what is left.
   //
-  // Ordered by something that cannot change, deliberately. Sorting by state put
-  // the agent that most wanted you at the top of its group, which sounds right
-  // and reads badly: rows move while you are looking at them, and the row under
-  // the cursor is not the row you were about to choose. What an agent is doing
-  // is already said by its glyph, its word, and the count in the header — none
-  // of which move.
+  // Never ordered by state, deliberately. Sorting by state put the agent that
+  // most wanted you at the top of its group, which sounds right and reads
+  // badly: rows move while you are looking at them, and the row under the
+  // cursor is not the row you were about to choose. Positions move only when
+  // windows do, which is something you did and can see. What an agent is
+  // doing is already said by its glyph, its word, and the count in the header
+  // — none of which move.
   //
   // Workspaces sort as numbers where they look like numbers. Omarchy names them
   // "1".."10" by default but a named workspace is legal, and comparing those as
   // strings would put "10" before "2".
+  //
+  // The daemon's Micro 2 module sorts with the same rule (devices/micro2.rs,
+  // `panel_order`); a change here is a change there.
   function compareRows(left, right) {
     if (left.workspace !== right.workspace) {
       const a = Number(left.workspace)
       const b = Number(right.workspace)
       if (!isNaN(a) && !isNaN(b)) return a - b
       return left.workspace < right.workspace ? -1 : 1
+    }
+    if (left.placed !== right.placed) return left.placed ? -1 : 1
+    if (left.placed) {
+      if (left.x !== right.x) return left.x - right.x
+      if (left.y !== right.y) return left.y - right.y
     }
     if (left.startedAt !== right.startedAt) return left.startedAt - right.startedAt
     // Two agents started in the same millisecond is not a real case; this only
@@ -384,7 +395,11 @@ Item {
       state: state,
       workspace: entry.workspace || "",
       cwd: entry.cwd || "",
-      // What orders rows within a workspace. Never changes, which is the point.
+      // What orders rows within a workspace: where the window sits, and the
+      // start time only for windows the compositor has not placed.
+      placed: !!entry.position,
+      x: entry.position ? entry.position.x : 0,
+      y: entry.position ? entry.position.y : 0,
       startedAt: entry.started_at || 0,
       // Absent outside a repository and on a detached HEAD, which the pane
       // draws as an empty column rather than as a placeholder.

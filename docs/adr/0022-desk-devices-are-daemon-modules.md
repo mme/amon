@@ -7,8 +7,17 @@ the agent it shows. The other controls have fixed roles — the encoder
 scrolls and drives the open agent panel, the joystick moves window focus —
 except the seven macro keys, each mapped to a configurable action. The
 configurability line is deliberate: what the device *means* (keys are
-workspaces, the knob navigates, the stick points) is identity and stays
-the same on every desk; only the spare macro keys are the user's to spend.
+agents, the knob navigates, the stick points) is identity and stays the
+same on every desk; only the spare macro keys are the user's to spend.
+
+Key N is the panel's row N: the agents grouped by workspace and, within a
+workspace, in the order their windows sit on the screen, left to right and
+then down — the pane's own order, which moves only when windows do and never
+with state. A key that stood for a workspace and lit for its
+loudest agent would send a tap to whichever agent was loudest by the time
+the finger landed; a key that stands for one agent sends you to the agent
+whose light you read. Past the sixth agent the keys are dark and the knob,
+which walks the whole list, takes over.
 
 ## Where device support lives
 

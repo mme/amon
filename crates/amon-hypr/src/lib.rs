@@ -45,6 +45,13 @@ pub struct Window {
     /// everyone but the compositor.
     pub address: String,
     pub workspace: Option<String>,
+    /// Where the compositor laid the window: its top-left corner, in the
+    /// compositor's coordinates. What orders the windows of one workspace the
+    /// way the eye reads them, left to right and then down. Follows the
+    /// layout — a neighbour opening or closing moves it — so it is refreshed
+    /// on every event that can reflow a workspace, not only on this window's
+    /// own moves. Absent when the compositor did not say.
+    pub position: Option<(i32, i32)>,
 }
 
 /// Connects the compositor's event stream. Subscribe before resolving, so
@@ -57,13 +64,17 @@ pub fn connect_events(directory: &Path) -> std::io::Result<UnixStream> {
     UnixStream::connect(directory.join(".socket2.sock"))
 }
 
-/// Reads the event stream, keeping the window's workspace current.
+/// Reads the event stream, keeping the window's workspace and position
+/// current.
 ///
-/// `on_change(Some(window))` on every workspace move, and on finding a
-/// replacement window for `pid` after a close — a terminal can outlive one of
-/// its windows. `on_change(None)` when the window is gone for good; the
-/// workspace goes with it, because a workspace without a window to be on is a
-/// stale answer, not a partial one. Returns when the stream ends.
+/// `on_change(Some(window))` on every workspace move, on every layout change
+/// that left this window somewhere else — another window opening, closing,
+/// moving or floating reflows the ones around it — and on finding a
+/// replacement window for `pid` after a close, since a terminal can outlive
+/// one of its windows. `on_change(None)` when the window is gone for good;
+/// the workspace and position go with it, because a place without a window
+/// to be in is a stale answer, not a partial one. Returns when the stream
+/// ends.
 pub fn follow(
     directory: &Path,
     events: UnixStream,
@@ -84,10 +95,17 @@ pub fn follow(
         }
         match parse_event(line.trim_end()) {
             Some(Event::Moved { address, workspace }) if address == window.address => {
-                if window.workspace.as_deref() == Some(workspace.as_str()) {
+                // The event names the new workspace itself, so that much
+                // holds even if the query below fails; the position is only
+                // knowable by asking.
+                let position = locate(directory, &window.address).and_then(|w| w.position);
+                if window.workspace.as_deref() == Some(workspace.as_str())
+                    && window.position == position
+                {
                     continue;
                 }
                 window.workspace = Some(workspace);
+                window.position = position;
                 on_change(Some(window.clone()));
             }
             Some(Event::Closed { address }) if address == window.address => {
@@ -102,7 +120,20 @@ pub fn follow(
                     }
                 }
             }
-            _ => {}
+            // Someone else's window opened, closed, moved or floated, or the
+            // layout was redone: ours may sit somewhere else now. One query
+            // says; nothing is reported when nothing changed.
+            Some(_) => {
+                let Some(placed) = locate(directory, &window.address) else {
+                    continue;
+                };
+                if placed.position == window.position && placed.workspace == window.workspace {
+                    continue;
+                }
+                window = placed;
+                on_change(Some(window.clone()));
+            }
+            None => {}
         }
     }
 }
@@ -131,6 +162,27 @@ pub fn resolve(directory: &Path, pid: u32) -> Option<Window> {
     window_for_ancestry(&clients, &ancestry(pid))
 }
 
+/// Looks a known window up again, for where it is now.
+pub fn locate(directory: &Path, address: &str) -> Option<Window> {
+    let clients = request(directory, "j/clients")?;
+    window_by_address(&clients, address)
+}
+
+/// The window with this address, out of a `j/clients` answer.
+pub fn window_by_address(clients_json: &str, address: &str) -> Option<Window> {
+    let clients: serde_json::Value = serde_json::from_str(clients_json).ok()?;
+    clients
+        .as_array()?
+        .iter()
+        .find(|client| {
+            client
+                .get("address")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|found| normalize(found) == address)
+        })
+        .and_then(window_of)
+}
+
 /// The nearest ancestor the compositor knows as a window.
 ///
 /// Nearest wins so that a terminal running inside a terminal resolves to the
@@ -150,17 +202,31 @@ pub fn window_for_ancestry(clients_json: &str, ancestry: &[u32]) -> Option<Windo
         if windows.next().is_some() {
             return None;
         }
-        let address = client.get("address").and_then(serde_json::Value::as_str)?;
-        return Some(Window {
-            address: normalize(address),
-            workspace: client
-                .get("workspace")
-                .and_then(|workspace| workspace.get("name"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned),
-        });
+        return window_of(client);
     }
     None
+}
+
+/// One `j/clients` entry as a [`Window`].
+fn window_of(client: &serde_json::Value) -> Option<Window> {
+    let address = client.get("address").and_then(serde_json::Value::as_str)?;
+    let coordinate = |index: usize| {
+        client
+            .get("at")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|at| at.get(index))
+            .and_then(serde_json::Value::as_i64)
+            .and_then(|value| i32::try_from(value).ok())
+    };
+    Some(Window {
+        address: normalize(address),
+        workspace: client
+            .get("workspace")
+            .and_then(|workspace| workspace.get("name"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned),
+        position: coordinate(0).zip(coordinate(1)),
+    })
 }
 
 /// `pid` and its ancestors, nearest first, stopping at init.
@@ -196,8 +262,18 @@ pub fn parse_ppid(stat: &str) -> Option<u32> {
 /// One line of Hyprland's event stream, if it is one we care about.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Event {
-    Moved { address: String, workspace: String },
-    Closed { address: String },
+    Moved {
+        address: String,
+        workspace: String,
+    },
+    Closed {
+        address: String,
+    },
+    /// Something reshaped a workspace without naming our window: a window
+    /// opened, floated, went fullscreen, was pinned or swapped, a workspace
+    /// changed monitor, a monitor came or went, the config reloaded. Which
+    /// window is not the point; the layout around ours may have moved.
+    Relaid,
 }
 
 /// Parses an event line.
@@ -227,6 +303,9 @@ pub fn parse_event(line: &str) -> Option<Event> {
         "closewindow" => Some(Event::Closed {
             address: normalize(payload),
         }),
+        "openwindow" | "changefloatingmode" | "fullscreen" | "pin" | "swapwindow"
+        | "moveworkspace" | "moveworkspacev2" | "monitoradded" | "monitorremoved"
+        | "configreloaded" => Some(Event::Relaid),
         _ => None,
     }
 }
@@ -290,10 +369,40 @@ mod tests {
     use super::*;
 
     const CLIENTS: &str = r#"[
-        {"address": "0x5643b0ca5310", "pid": 100, "workspace": {"id": 3, "name": "3"}},
-        {"address": "0x5643b0cb1810", "pid": 200, "workspace": {"id": 1, "name": "1"}},
+        {"address": "0x5643b0ca5310", "pid": 100, "workspace": {"id": 3, "name": "3"}, "at": [12, 38]},
+        {"address": "0x5643b0cb1810", "pid": 200, "workspace": {"id": 1, "name": "1"}, "at": [1287, 38]},
         {"address": "0x5643b1a3eaf0", "pid": 300, "workspace": {"id": 5, "name": "special:magic"}}
     ]"#;
+
+    #[test]
+    fn a_window_carries_where_it_sits_when_the_compositor_says() {
+        let window = window_for_ancestry(CLIENTS, &[200]).unwrap();
+        assert_eq!(window.position, Some((1287, 38)));
+        let unplaced = window_for_ancestry(CLIENTS, &[300]).unwrap();
+        assert_eq!(unplaced.position, None);
+    }
+
+    #[test]
+    fn a_known_window_is_found_again_by_address() {
+        // Events name it without the prefix the query puts on it.
+        let window = window_by_address(CLIENTS, "5643b0ca5310").unwrap();
+        assert_eq!(window.workspace.as_deref(), Some("3"));
+        assert_eq!(window.position, Some((12, 38)));
+        assert_eq!(window_by_address(CLIENTS, "nothing"), None);
+    }
+
+    #[test]
+    fn events_that_reshape_a_workspace_are_heard() {
+        assert_eq!(
+            parse_event("openwindow>>5643b0cb1810,3,foot,amon"),
+            Some(Event::Relaid)
+        );
+        assert_eq!(
+            parse_event("changefloatingmode>>5643b0cb1810,1"),
+            Some(Event::Relaid)
+        );
+        assert_eq!(parse_event("fullscreen>>1"), Some(Event::Relaid));
+    }
 
     #[test]
     fn the_nearest_ancestor_that_is_a_window_wins() {

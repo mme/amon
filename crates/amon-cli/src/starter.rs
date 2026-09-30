@@ -81,7 +81,7 @@ const STARTER: &str = r##"# amon
 
 [devices.micro2]
 # A Work Louder Creator Micro 2 on the desk lights up by itself: six agent
-# keys colored by state (key N = workspace N, tap to focus), the ring
+# keys colored by state (key N = the panel's Nth agent, tap to focus), the ring
 # showing whether anything needs you, the encoder scrolling (and driving
 # the agent panel while it is open), the joystick moving window focus.
 # Those roles are fixed; nothing here is needed for any of it.
