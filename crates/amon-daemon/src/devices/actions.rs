@@ -280,12 +280,13 @@ pub fn hyprctl(dispatch: &str) {
 /// Runs amon's own CLI. Reaching an agent is amon's sequence to own — the
 /// window, and the pane inside it when the agent lives in a herdr session —
 /// so the device asks for it by name rather than reimplementing it against
-/// the compositor. `current_exe` first: a daemon started from a build
-/// directory must not shell out to whatever `amon` happens to be on PATH.
+/// the compositor. Our own binary (`paths::own_binary`): a daemon started
+/// from a build directory must not shell out to whatever `amon` happens to
+/// be on PATH, and a daemon whose file the installer has since replaced
+/// must still find the one that took its place.
 pub fn amon(arguments: &[&str]) {
-    let binary = std::env::current_exe().unwrap_or_else(|_| "amon".into());
     reap(
-        Command::new(binary)
+        Command::new(amon_protocol::paths::own_binary())
             .args(arguments)
             .stdin(Stdio::null())
             .stdout(Stdio::null())

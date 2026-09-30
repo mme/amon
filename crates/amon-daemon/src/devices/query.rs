@@ -171,12 +171,19 @@ pub fn status(board: &mut Board) -> io::Result<Status> {
 const KEYMAP_FILE: &str = "keymap.json";
 
 /// The whole on-flash configuration, parsed.
+///
+/// Asked twice before giving up: the file is some twenty-five reports long,
+/// and a board busy with the daemon's first lighting burst has been seen to
+/// miss the deadline once and answer at once the second time.
 pub fn read_keymap(board: &mut Board) -> io::Result<serde_json::Value> {
-    let answer = board.ask(
-        "fs.read",
-        Some(serde_json::json!({ "file": KEYMAP_FILE })),
-        Duration::from_secs(4),
-    )?;
+    let params = serde_json::json!({ "file": KEYMAP_FILE });
+    let answer = match board.ask("fs.read", Some(params.clone()), Duration::from_secs(4)) {
+        Ok(answer) => answer,
+        Err(error) if error.kind() == io::ErrorKind::TimedOut => {
+            board.ask("fs.read", Some(params), Duration::from_secs(4))?
+        }
+        Err(error) => return Err(error),
+    };
     let Answer::Result(result) = answer else {
         return Err(io::Error::other("fs.read refused"));
     };
