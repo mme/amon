@@ -8,6 +8,45 @@ the machinery, not decoration.
 
 <!-- next -->
 
+## v0.5.0
+
+- **The Creator Micro 2 joins the desk**: Work Louder's macropad becomes a
+  hardware panel for your agents. Its six keys mirror the agent panel's
+  rows and light with each agent's own state - tap one to jump straight to
+  that agent, exactly like the panel does, even when the agent lives inside
+  a herdr or luvus pane. The ring glows the fleet's most urgent color and
+  taps to focus whichever agent needs you. The encoder scrolls the agent
+  panel or drives its selection, and once you have more than six agents it
+  walks the rest of the list; the joystick moves window focus. Seven macro
+  keys are yours to bind under `[devices.micro2]` - the second one defaults
+  to starting a new agent (Omarchy's own agent picker), the rest ship
+  blank.
+- **Hold a macro key to dictate**: a tap still toggles dictation as before;
+  a hold is push-to-talk, ending in voxtype's own auto-submit so the text
+  is typed and entered together. Music now ducks to silence for exactly as
+  long as the microphone is live - the mechanism that actually works,
+  since stock Omarchy's own media-pausing turns out to be broken. Tunable
+  under `[devices.micro2.dictation]` (`hold_ms`, `auto_submit`).
+- **Setup and doctor understand the keypad**: `amon setup` writes the one
+  udev rule the device needs and can write amon's own agent layer onto the
+  keypad's firmware, telling you which layer to tap the touch sensor to.
+  `amon doctor` now checks the hardware itself - firmware version, whether
+  the agent layer is active, whether the device and its virtual keyboard
+  are reachable - instead of assuming a device it can open is already lit.
+- **The agent panel orders rows by where they sit on screen**: left to
+  right, then top to bottom, instead of by when the agent started. The
+  Micro 2's keys follow the same order, so key N is always the panel's row
+  N.
+- **Fix**: a key press (or anything else that spawns `amon focus`) could
+  silently do nothing right after an update, because amon looked for its
+  own binary at a path the installer had just replaced.
+- **Protocol**: `AgentEntry` gains `position`, reported by the compositor
+  crate and kept in step between the panel and the Micro 2 module.
+  `docs/protocol.schema.json` is updated.
+- The README, website and a new ADR document the whole path - firmware
+  floor, udev rule, agent layer, dictation settings - with a complete
+  config example.
+
 ## v0.4.0
 
 - **The row says what the agent is doing**: every panel row now carries the
