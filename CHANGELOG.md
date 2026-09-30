@@ -8,6 +8,41 @@ the machinery, not decoration.
 
 <!-- next -->
 
+## v0.4.0
+
+- **The row says what the agent is doing**: every panel row now carries the
+  agent's own words for its current step - "Reading 1 file…" or
+  `Bash(cargo nextest run)` while it works, the opening line of its reply
+  once it's done, the question it's waiting on when it's blocked - and the
+  prompt you gave it, in italic behind the agent's own marker, so you can
+  tell which turn you're looking at. Never a phrase amon composed. A working
+  row's message shimmers to mark it as live. The kind and state columns are
+  gone: the glyph already carries the state, and the message takes the width
+  they used. When the pane narrows, a long message loses its tail rather than
+  the project or branch that names the row.
+- **Every agent narrates, through whatever channel it offers**: Claude,
+  Codex and grok report the prompt through their own hook engines and their
+  narration off the screen; pi, omp and opencode report prompt, tool calls
+  and replies through their own extension or plugin APIs. A blocked pi or omp
+  row now shows the question that blocked it instead of just "blocked".
+- **Upgrading**: run `amon setup <agent>` again to install the new hooks and
+  extensions; `amon doctor` names any that are absent or stale. The shell
+  hooks parse their input with `python3`, so a machine without it sees no
+  prompt on the row.
+- **Agents in herdr and luvus panes narrate too**: inside a runtime pane,
+  `amon <agent>` now wraps the agent instead of stepping aside, adds what
+  it's doing to the row the runtime already owns, and leaves state and focus
+  to the runtime. It presents itself under the agent's own name, so herdr
+  and luvus still see `claude`, not `amon`.
+- **`amon doctor` catches an integration with no alias**: skip the alias
+  `amon setup <agent>` writes and that agent runs bare, never reaching the
+  bar or the panel, which looks like amon is broken. Doctor now says so and
+  points at `amon setup <agent>`.
+- **Protocol**: `AgentEntry` gains `activity` (`text`, `kind`); the wrapper
+  socket accepts `report_activity`, and the daemon accepts `runtime.activity`
+  from a wrapper inside a runtime pane. `docs/protocol.schema.json` is
+  updated.
+
 ## v0.3.0
 
 - **Agents in luvus show up**: amon watches for
