@@ -101,7 +101,7 @@ const STARTER: &str = r##"# amon
 # lower), any action: "none", "panel", "workspace:N", "key:<chord>"
 # (e.g. "key:super+shift+f"), "exec:<command>", or "dictate". The defaults:
 # macro_1 = "panel"
-# macro_2 = "none"
+# macro_2 = "exec:omarchy-agent --pick"
 # macro_3 = "key:Up"
 # macro_4 = "key:Escape"
 # macro_5 = "dictate"

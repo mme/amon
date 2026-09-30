@@ -326,7 +326,8 @@ The seven macro keys, any action. Controls: `macro_1`..`macro_7` in
 reading order - `macro_1`-`macro_4` across the upper row, `macro_5`-
 `macro_7` across the lower. Actions: `none`, `panel`, `workspace:N`,
 `key:<chord>` (e.g. `key:super+shift+f`), `exec:<command>`. The defaults:
-the agent panel, nothing, Up, Escape on the upper row; dictation
+the agent panel, a new default agent (`omarchy-agent --pick`, what
+Super+Shift+Ctrl+A runs), Up, Escape on the upper row; dictation
 (`voxtype record toggle`), Down, Enter on the lower. Everything else is
 fixed: agent key N lights and focuses workspace N, the encoder scrolls
 (and walks the agent panel while it is open, its click selecting), the
