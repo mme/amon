@@ -668,6 +668,46 @@
   @media (prefers-reduced-motion: reduce){
     .shot img,.shot-name{transition:none}
   }
+
+  /* ---- the desk: a Creator Micro 2, drawn ---------------------------------
+     The same card as the panel, holding the device face-on. Thirteen caps in
+     the board's own rows of 2 / 4 / 4 / 3, the dial and the stick in the gap
+     the short first row leaves. The six caps that can light are the panel's
+     first six rows, in its order, in the state palette the daemon sends the
+     hardware; the ring is the fleet's most urgent state. Only what moves on
+     the real board moves here: a working key breathes. */
+  .desk{margin:0; display:flex; flex-direction:column}
+  .desk-card{border:1px solid var(--rule); border-radius:10px; background:var(--raised);
+             padding:26px 18px; display:flex; justify-content:center; overflow:hidden}
+  .desk svg{width:100%; max-width:400px; height:auto; display:block; overflow:visible}
+  .desk .body{fill:var(--sunk); stroke:var(--rule)}
+  /* The underglow: the body's own outline, wide, soft and behind it. */
+  .desk .ring{fill:none; stroke:#FF6D00; stroke-width:10; opacity:.42; filter:blur(10px)}
+  .desk .cap{fill:var(--ground); stroke:var(--rule)}
+  .desk .cap.lit{stroke:none; opacity:.92}
+  .desk .cap.is-working{fill:#304FFE; animation:desk-breathe 2400ms ease-in-out infinite}
+  .desk .cap.is-working.later{animation-delay:-900ms}
+  .desk .cap.is-done{fill:#00FF4C}
+  .desk .cap.is-blocked{fill:#FF6D00}
+  .desk .cap.is-idle{fill:#EAE6E4; opacity:.22}
+  /* A little of each colour spills onto the plate around the cap, the way a
+     lit switch does. Same shape, behind, blurred. */
+  .desk .halo{filter:blur(7px); opacity:.38}
+  .desk .halo.is-working{fill:#304FFE; animation:desk-breathe 2400ms ease-in-out infinite}
+  .desk .halo.is-working.later{animation-delay:-900ms}
+  .desk .halo.is-done{fill:#00FF4C}
+  .desk .halo.is-blocked{fill:#FF6D00}
+  .desk .legend{fill:var(--muted); font-size:11px; letter-spacing:.02em; text-anchor:middle;
+                dominant-baseline:central; font-family:"Duo","Glyphs",ui-monospace,monospace}
+  .desk .legend.mark{fill:var(--muted)}
+  .desk .dial{fill:var(--ground); stroke:var(--rule)}
+  .desk .dial-tick{stroke:var(--muted); stroke-width:2; stroke-linecap:round}
+  .desk .stick-base{fill:var(--ground); stroke:var(--rule)}
+  .desk .stick{fill:var(--rule); stroke:var(--muted)}
+  @keyframes desk-breathe{0%,100%{opacity:.45} 50%{opacity:1}}
+  @media (prefers-reduced-motion: reduce){
+    .desk .cap.is-working,.desk .halo.is-working{animation:none; opacity:.85}
+  }
 </style>
 </head>
 <body>
@@ -1079,6 +1119,74 @@
 
   <section class="plate">
     <header>
+      <h2><a class="h-anchor" id="desk" href="#desk">the agent panel, on your desk</a></h2>
+    </header>
+
+    <!--
+      A Creator Micro 2, face on, showing the same five agents as the panel
+      above it: the six lightable caps are the panel's first six rows, in the
+      panel's order - amon.sh main and detect-flake working on workspace 1,
+      docs-portal done on 2, atlas waiting on 3, the website checkout idle on
+      4, and no sixth agent, so a dark key. The ring is orange because atlas is
+      waiting: the fleet's most urgent state. Below, the seven macro keys with
+      their defaults as legends. A picture, not a control.
+    -->
+    <figure class="desk">
+      <div class="desk-card">
+        <svg viewBox="0 0 324 324" role="img"
+             aria-label="A Creator Micro 2 keypad. Its top two rows of keys are lit in the states of the agents on the panel: two breathing blue, one green, one orange, one dim white, one dark. An orange glow surrounds the board. The lower rows carry the agent panel mark, a plus, arrows, escape, mic and enter.">
+          <rect class="ring" x="20" y="20" width="284" height="284" rx="26"/>
+          <rect class="body" x="20" y="20" width="284" height="284" rx="26"/>
+          <g>
+            <rect class="halo lit is-working" x="44" y="44" width="50" height="50" rx="9"/>
+            <rect class="cap lit is-working" x="44" y="44" width="50" height="50" rx="9"/>
+            <rect class="halo lit is-working later" x="106" y="44" width="50" height="50" rx="9"/>
+            <rect class="cap lit is-working later" x="106" y="44" width="50" height="50" rx="9"/>
+            <circle class="stick-base" cx="193.0" cy="69.0" r="19"/><circle class="stick" cx="197.0" cy="66.0" r="9"/>
+            <circle class="dial" cx="255.0" cy="69.0" r="24"/><path class="dial-tick" d="M 255.0 50.0 L 255.0 58.0"/>
+            <rect class="halo lit is-done" x="44" y="106" width="50" height="50" rx="9"/>
+            <rect class="cap lit is-done" x="44" y="106" width="50" height="50" rx="9"/>
+            <rect class="halo lit is-blocked" x="106" y="106" width="50" height="50" rx="9"/>
+            <rect class="cap lit is-blocked" x="106" y="106" width="50" height="50" rx="9"/>
+            <rect class="halo lit is-idle" x="168" y="106" width="50" height="50" rx="9"/>
+            <rect class="cap lit is-idle" x="168" y="106" width="50" height="50" rx="9"/>
+            <rect class="cap " x="230" y="106" width="50" height="50" rx="9"/>
+            <rect class="cap " x="44" y="168" width="50" height="50" rx="9"/>
+            <svg x="60.0" y="184.5" width="18" height="17" viewBox="33.75 16 194.5 183.5" aria-hidden="true">
+              <path fill="var(--muted)" fill-rule="evenodd" d="M 205.5 133 C 205.5 163.75 205.56 180.06 194.64 189.81 C 182.77 200.41 159.67 199.5 131 199.5 C 102.33 199.5 79.23 200.41 67.36 189.81 C 56.44 180.06 56.5 163.75 56.5 133 C 56.5 102.25 56.44 85.94 67.36 76.19 C 79.23 65.59 102.33 66.5 131 66.5 C 159.67 66.5 182.77 65.59 194.64 76.19 C 205.56 85.94 205.5 102.25 205.5 133 Z M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/>
+              <path fill="var(--muted)" d="M 33.75 120.5 A 7.25 7.25 0 0 1 48.25 120.5 L 48.25 145.5 A 7.25 7.25 0 0 1 33.75 145.5 Z M 213.75 120.5 A 7.25 7.25 0 0 1 228.25 120.5 L 228.25 145.5 A 7.25 7.25 0 0 1 213.75 145.5 Z"/>
+              <circle fill="var(--muted)" cx="131" cy="29" r="13"/>
+              <path d="M 131 42 L 131 56" fill="none" stroke="var(--muted)" stroke-width="7" stroke-linecap="round"/>
+            </svg>
+            <rect class="cap " x="106" y="168" width="50" height="50" rx="9"/>
+            <text class="legend" x="131.0" y="193.0">+</text>
+            <rect class="cap " x="168" y="168" width="50" height="50" rx="9"/>
+            <text class="legend" x="193.0" y="193.0">&#x2191;</text>
+            <rect class="cap " x="230" y="168" width="50" height="50" rx="9"/>
+            <text class="legend" x="255.0" y="193.0">esc</text>
+            <rect class="cap " x="44" y="230" width="50" height="50" rx="9"/>
+            <text class="legend" x="69.0" y="255.0">mic</text>
+            <rect class="cap " x="106" y="230" width="50" height="50" rx="9"/>
+            <text class="legend" x="131.0" y="255.0">&#x2193;</text>
+            <rect class="cap " x="168" y="230" width="50" height="50" rx="9"/>
+            <text class="legend" x="193.0" y="255.0">&#x21B5;</text>
+          </g>
+        </svg>
+      </div>
+    </figure>
+
+    <p>Have a <span class="lift">Work Louder Creator Micro 2</span> on the desk? Connect it
+       and the panel is under your fingers. Six keys, one per agent in the panel's order,
+       each lit by what its agent is doing - tap one to be there. The ring glows when
+       anything, anywhere, needs you. The dial scrolls, and walks the panel while it is
+       open; the stick moves window focus; the key beside the panel key starts a new
+       agent. And one key holds to talk: speak, let go, and your words land in the agent.
+       Nothing to install on the device - <span class="lift">amon</span> speaks to it
+       directly, and every macro key is yours to remap.</p>
+  </section>
+
+  <section class="plate">
+    <header>
       <h2><a class="h-anchor" id="cli" href="#cli">full command line interface</a></h2>
     </header>
 
@@ -1392,6 +1500,12 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
            fleet's most urgent state.</p>
       </div>
       <div>
+        <a class="cli-anchor" id="set-micro2-colors" href="#set-micro2-colors"><code class="cli-cmd">[devices.micro2.colors]</code></a>
+        <p>Per-state key colors: <span class="lift">blocked = "#FF6D00"</span>,
+           <span class="lift">working = "#304FFE"</span>, <span class="lift">done = "#00FF4C"</span>,
+           <span class="lift">idle = "#FFFFFF"</span>. The ring borrows them.</p>
+      </div>
+      <div>
         <a class="cli-anchor" id="set-micro2-keys" href="#set-micro2-keys"><code class="cli-cmd">[devices.micro2.keys]</code></a>
         <p>The seven macro keys, any action. Controls:
            <span class="lift">macro_1</span>..<span class="lift">macro_7</span>
@@ -1403,6 +1517,13 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
            dictation, Down, Enter on the lower. Everything else is fixed: agent key N lights
            and focuses the panel's Nth agent, the encoder scrolls and drives
            the open agent panel, the joystick moves window focus.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-micro2-dictation" href="#set-micro2-dictation"><code class="cli-cmd">[devices.micro2.dictation]</code></a>
+        <p>The dictate key reads two ways, and recording starts on the press
+           either way: a tap toggles, a hold is push-to-talk. <span class="lift">hold_ms = 250</span>
+           is how long a press counts as holding; <span class="lift">auto_submit = true</span>
+           sends Enter when a hold ends and the text has landed. Taps never do.</p>
       </div>
     </div>
   </section>
