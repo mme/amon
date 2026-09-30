@@ -8,6 +8,16 @@ the machinery, not decoration.
 
 <!-- next -->
 
+## v0.5.1
+
+- **No more ghost rows from other homes**: fixes a bug where the daemon
+  adopted every herdr or luvus session on the machine, including ones
+  running under a different home directory - most visibly the sandboxed
+  sessions amon's own test suite starts, which appeared in the panel with a
+  `/tmp` path and no process behind them. A daemon now adopts only the
+  sessions in its own home; `AMON_RUNTIMES_ROOT` remains the explicit
+  override.
+
 ## v0.5.0
 
 - **A Work Louder Creator Micro 2 becomes a hardware agent panel**: connect
