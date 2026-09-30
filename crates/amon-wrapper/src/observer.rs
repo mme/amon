@@ -36,6 +36,9 @@ pub enum Signal {
         source: String,
         agent: String,
         state: AgentState,
+        /// What the agent is blocked on, when the hook says — surfaced as the
+        /// row's Activity, and passed to herdr's own authority slot.
+        message: Option<String>,
         seq: Option<u64>,
         /// Hooks stamp the session id on state reports too, so identity
         /// survives even when the one-shot session report was missed.
@@ -58,6 +61,15 @@ pub enum Signal {
         /// `startup`, `resume`, `new`, … — what began this session, when the
         /// hook knows.
         session_start_source: Option<String>,
+    },
+    /// An amon hook reported an Activity (ADR-0020): a prompt that opens a
+    /// turn, or a narration for a harness whose screen amon cannot read. Only
+    /// where amon installed such a hook — the screen is the fallback
+    /// everywhere else.
+    HookActivity {
+        text: String,
+        kind: amon_protocol::ActivityKind,
+        session_id: Option<String>,
     },
     /// Where the agent is working changed: it moved, or HEAD moved under it.
     /// Carries all of it at once, because a row showing a branch from one
@@ -87,6 +99,21 @@ pub struct Observer {
     /// sequence — only a *different* session needs to prove it is newer.
     last_session_id: Option<String>,
     focus: crate::focus::Tracker,
+    /// What the agent says it is doing, read off the same screen detection
+    /// reads. Held across frames it cannot read, so a blinking marker does
+    /// not make the row flicker.
+    activity: amon_term::ActivityTracker,
+    /// The activity last reported, so the daemon sees changes rather than a
+    /// heartbeat — the same rule the state field follows.
+    last_activity: Option<amon_protocol::Activity>,
+    /// Set inside a runtime pane: activity is routed to the runtime's row by
+    /// this `(kind, pane_id)`, and state is left to the runtime (ADR-0021).
+    runtime_pane: Option<(String, String)>,
+    /// The session a hook-opened Turn belongs to, when a hook opened the
+    /// current one. A hook prompt can arrive before the first session report,
+    /// so it cannot be scoped by `last_session_id` alone; this lets the first
+    /// differing session clear a Turn that was never its own.
+    hook_turn_session: Option<String>,
 }
 
 /// What the observer needs to know about the agent it is watching.
@@ -96,6 +123,10 @@ pub struct Setup {
     pub cwd: PathBuf,
     pub cols: u16,
     pub rows: u16,
+    /// `(kind, pane_id)` when amon is wrapping inside a runtime pane. There the
+    /// observer reports activity, not state, and routes it to the runtime's
+    /// adopted row by pane rather than to a row of its own (ADR-0021).
+    pub runtime_pane: Option<(String, String)>,
 }
 
 /// Starts the observer on its own thread.
@@ -131,6 +162,10 @@ impl Observer {
             identity_seqs: std::collections::HashMap::new(),
             last_session_id: None,
             focus: crate::focus::Tracker::default(),
+            activity: amon_term::ActivityTracker::new(),
+            last_activity: None,
+            hook_turn_session: None,
+            runtime_pane: setup.runtime_pane,
         })
     }
 
@@ -195,6 +230,7 @@ impl Observer {
                 source,
                 agent,
                 state,
+                message,
                 seq,
                 session_id,
             } => {
@@ -222,12 +258,18 @@ impl Observer {
                     source,
                     agent,
                     to_detect_state(state),
-                    None,
+                    message.clone(),
                     session_ref,
                     seq,
                     Instant::now(),
                 );
-                if change.is_some() {
+                // The blocking question is the most useful thing the row can
+                // say while blocked — what the agent needs, not just that it
+                // needs something. It is the harness's own words, so it reads
+                // as narration.
+                let activity_changed =
+                    message.is_some_and(|question| self.activity.hook_narration(&question));
+                if change.is_some() || activity_changed {
                     self.publish();
                 }
             }
@@ -247,6 +289,18 @@ impl Observer {
                 // it gets filled in even when the session report lost the race.
                 let same_session = self.last_session_id.as_deref() == Some(session_id.as_str());
                 if self.identity_report_is_fresh(&source, seq) || same_session {
+                    // A different session is a different piece of work, and
+                    // what the last one was doing is not a fact about this
+                    // one. Only a *replaced* session clears: the first report
+                    // names the session the screen was already showing.
+                    let hook_turn_elsewhere = self
+                        .hook_turn_session
+                        .as_deref()
+                        .is_some_and(|its| its != session_id);
+                    if (!same_session && self.last_session_id.is_some()) || hook_turn_elsewhere {
+                        self.activity.clear();
+                    }
+                    self.hook_turn_session = None;
                     self.last_session_id = Some(session_id.clone());
                     let mut patch = AgentPatch::new(&self.agent_id);
                     patch.agent = Some(agent.clone());
@@ -275,6 +329,35 @@ impl Observer {
                     amon_term::normalize_session_start_source(session_start_source),
                 );
                 if change.is_some() {
+                    self.publish();
+                }
+            }
+            Signal::HookActivity {
+                text,
+                kind,
+                session_id,
+            } => {
+                // Hook activity is an event where the screen only ever infers.
+                // Scope it to the reported session, as the screen tracker's
+                // clear() is scoped, so a report from a session that has since
+                // been replaced cannot speak for the current one.
+                let stale = session_id.is_some()
+                    && self.last_session_id.is_some()
+                    && session_id != self.last_session_id;
+                if stale {
+                    return;
+                }
+                let changed = match kind {
+                    amon_protocol::ActivityKind::Prompt => {
+                        let opened = self.activity.begin_turn(&text);
+                        if opened {
+                            self.hook_turn_session = session_id;
+                        }
+                        opened
+                    }
+                    amon_protocol::ActivityKind::Narration => self.activity.hook_narration(&text),
+                };
+                if changed {
                     self.publish();
                 }
             }
@@ -308,12 +391,9 @@ impl Observer {
         self.dirty = false;
 
         let title = self.shadow.title();
-        let detection = detect_agent_with_osc(
-            self.agent,
-            &self.shadow.detection_text(),
-            title.as_deref().unwrap_or_default(),
-            "",
-        );
+        let title = title.as_deref().unwrap_or_default();
+        let screen = self.shadow.detection_text();
+        let detection = detect_agent_with_osc(self.agent, &screen, title, "");
 
         if !detection.skip_state_update {
             self.state.set_detected_state_with_screen_signals_at(
@@ -327,26 +407,77 @@ impl Observer {
             );
         }
 
+        // Read from the same frame detection just read, so the row's state
+        // and the row's account of itself can never describe different
+        // screens. An agent amon could not identify has no carrier and would
+        // read nothing anyway.
+        if let Some(agent) = self.agent {
+            self.activity.observe(
+                agent,
+                amon_detect::detect::manifest::DetectionInput {
+                    screen: &screen,
+                    osc_title: title,
+                    osc_progress: "",
+                },
+            );
+        }
+
         self.publish();
     }
 
-    /// Reports the arbitrated state, but only when it actually changed — the
-    /// daemon's subscribers should see transitions, not a heartbeat.
+    /// Reports the arbitrated state and the activity line, but only what
+    /// actually changed — the daemon's subscribers should see transitions,
+    /// not a heartbeat. The two move independently: an agent working its way
+    /// through a long turn narrates several steps without changing state, and
+    /// a state change can arrive on a frame whose activity is unchanged.
     fn publish(&mut self) {
-        let state = from_detect_state(self.state.state);
-        if state == self.last_reported {
+        let activity = self.activity.current().map(to_wire_activity);
+
+        // Inside a runtime the row is the runtime's: report only activity, and
+        // route it there by pane rather than to a row of our own (ADR-0021).
+        if let Some((kind, pane)) = self.runtime_pane.clone() {
+            if activity != self.last_activity {
+                self.last_activity = activity.clone();
+                self.link.runtime_activity(kind, pane, activity);
+            }
             return;
         }
-        self.last_reported = state;
-        // Seen is per-state: whatever the user saw of the last state says
-        // nothing about this one.
-        self.focus.state_began();
+
+        let state = from_detect_state(self.state.state);
+        let state_changed = state != self.last_reported;
+        let activity_changed = activity != self.last_activity;
+        if !state_changed && !activity_changed {
+            return;
+        }
 
         let mut patch = AgentPatch::new(&self.agent_id);
-        patch.state = Some(state);
-        patch.state_since = Some(crate::now_millis());
-        patch.seen = Some(self.focus.seen());
+        if state_changed {
+            self.last_reported = state;
+            // Seen is per-state: whatever the user saw of the last state says
+            // nothing about this one.
+            self.focus.state_began();
+            patch.state = Some(state);
+            patch.state_since = Some(crate::now_millis());
+            patch.seen = Some(self.focus.seen());
+        }
+        if activity_changed {
+            self.last_activity = activity.clone();
+            patch.activity = Some(activity);
+        }
         self.link.update(patch);
+    }
+}
+
+/// The tracker's Activity, in the wire's clothes. Two types on purpose:
+/// amon-term does not depend on the protocol crate, and the wrapper is the
+/// seam where screen-derived facts become wire facts.
+fn to_wire_activity(activity: &amon_term::Activity) -> amon_protocol::Activity {
+    amon_protocol::Activity {
+        text: activity.text.clone(),
+        kind: match activity.kind {
+            amon_term::ActivityKind::Narration => amon_protocol::ActivityKind::Narration,
+            amon_term::ActivityKind::Prompt => amon_protocol::ActivityKind::Prompt,
+        },
     }
 }
 

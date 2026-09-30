@@ -72,6 +72,10 @@ pub fn entry_for<H: Hosted>(
         started_at: now_ms,
         agent_session_id: None,
         agent_session_path: None,
+        // A hosted agent has no shadow terminal behind it, so there is no
+        // screen to read its own account of its work off. herdr's record
+        // does not carry one either.
+        activity: None,
         window: window.map(|window| window.address.clone()),
         workspace: window.and_then(|window| window.workspace.clone()),
         // No branch and no Project for a hosted agent. Both are facts about

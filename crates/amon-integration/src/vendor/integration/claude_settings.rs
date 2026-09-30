@@ -575,7 +575,7 @@ fn reject_duplicate_keys(node: &CstNode, settings_path: &Path) -> io::Result<()>
     Ok(())
 }
 
-fn strict_parse_options() -> ParseOptions {
+pub(crate) fn strict_parse_options() -> ParseOptions {
     ParseOptions {
         allow_comments: false,
         allow_loose_object_property_names: false,

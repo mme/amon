@@ -152,14 +152,155 @@ FocusScope {
 
   readonly property int columnGap: Style.space(10)
 
-  // Left to right. Position is priority: what sits further right goes first
-  // when the pane is too narrow to hold everything.
-  readonly property var columnOrder: ["glyph", "identity", "branch", "age", "state", "kind"]
+  // Left to right. The age sits at the far edge, where a column of short
+  // right-aligned values reads down cleanly, and the message runs between the
+  // branch and it.
+  readonly property var columnOrder: ["glyph", "identity", "branch", "activity", "age"]
 
-  // Everything except the glyph and the identity, rightmost first. Whatever
-  // else goes, a row still says whether it wants you and which agent it is —
-  // which is the whole question the pane exists to answer.
-  readonly property var droppable: ["state", "kind", "age", "branch"]
+  // Only the branch. Every other column either identifies a row or gives way
+  // by shrinking, and a pane too narrow for the branch has already given up
+  // the message.
+  readonly property var droppable: ["branch"]
+
+  // Below this the message is more ellipsis than words, and the space reads
+  // better as nothing at all.
+  readonly property int activityMinimum: view.textWidth("m".repeat(10))
+
+  // A little air before the message, so a sentence does not start hard against
+  // the branch the way a short fixed value can. Taken out of the column's own
+  // width rather than added to the row, which keeps the age against the edge.
+  readonly property int activityInset: Style.space(4)
+
+  // A band of light crossing the message while an agent is working.
+  //
+  // One phase drives every row, and the band is measured against the message
+  // *column* rather than against each row's own sentence — the column is one
+  // width for the whole list, so the highlight is at the same place on every
+  // working row at the same instant. What crosses the pane is one wave, not
+  // several rows each animating on their own clock. A short message simply
+  // stops being lit sooner than a long one, which is what a single wave
+  // passing over text of different lengths looks like.
+  //
+  // Nothing moves: the glyphs are fixed and only their colour travels, which
+  // is what keeps this readable rather than distracting. The colours are the
+  // row's own two tokens, so the effect follows any theme instead of naming
+  // colours of its own.
+  // The shimmer crosses quickly and then the row rests. Named as two spans
+  // rather than as a period the sweep is subtracted from, because the wait is
+  // the thing being chosen — a band drawn out to fill a period would not read
+  // as a shimmer at all, it would read as text slowly changing colour. 900ms
+  // is a duration the shell already animates at elsewhere.
+  readonly property int shimmerSweep: 900
+  readonly property int shimmerRest: 2000
+
+  // Parked at 1, which is the band already past the right edge: nothing is lit
+  // between shimmers, and nothing is lit before the first one.
+  property real shimmerPhase: 1
+  property bool shimmerRunning: false
+  property bool sweeping: false
+
+  // Raised as each shimmer finishes. A row that has stopped working waits for
+  // this rather than dropping out under a band that is still crossing it.
+  signal sweepFinished()
+
+  readonly property bool anyWorking: {
+    const rows = view.agents.rows
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].state === "working") return true
+    }
+    return false
+  }
+
+  onAnyWorkingChanged: {
+    if (view.anyWorking) view.shimmerRunning = true
+    else if (!view.sweeping) view.shimmerRunning = false
+  }
+  Component.onCompleted: if (view.anyWorking) view.shimmerRunning = true
+
+  // Stopped outright when no agent is working, so an idle pane costs nothing —
+  // but never mid-shimmer: the run ends where a band has finished crossing.
+  SequentialAnimation {
+    running: view.shimmerRunning
+    loops: Animation.Infinite
+
+    ScriptAction { script: view.sweeping = true }
+    NumberAnimation {
+      target: view
+      property: "shimmerPhase"
+      from: 0
+      to: 1
+      duration: view.shimmerSweep
+    }
+    ScriptAction {
+      script: {
+        view.sweeping = false
+        view.sweepFinished()
+        if (!view.anyWorking) view.shimmerRunning = false
+      }
+    }
+    PauseAnimation { duration: view.shimmerRest }
+  }
+
+  // The band's shape, in characters. It is flat across the peak and falls off
+  // either side — a single cosine bump, which is what this was, only ever
+  // reaches full brightness at one point, so the light read as a moving dot
+  // rather than as a lit word.
+  //
+  // Flat top plus cosine shoulders is a Tukey window. The plateau is what you
+  // set when you want "three characters lit"; the shoulders are what keep it
+  // from looking like a rectangle sliding past.
+  readonly property int shimmerPeakChars: 3
+  readonly property int shimmerFalloffChars: 8
+
+  // One character per piece, because a three-character plateau cannot be drawn
+  // by pieces five characters wide — the band would land inside a single piece
+  // and light all of it. The font is monospace, so a piece per character costs
+  // nothing in layout: every glyph is one advance and the Row rebuilds the same
+  // line the plain Text would have drawn.
+  readonly property int shimmerChunkChars: 1
+
+  readonly property real shimmerCharWidth: Math.max(1, view.textWidth("m"))
+  readonly property real shimmerPeak: view.shimmerPeakChars * view.shimmerCharWidth
+  readonly property real shimmerFalloff: view.shimmerFalloffChars * view.shimmerCharWidth
+  readonly property real shimmerReach: view.shimmerPeak / 2 + view.shimmerFalloff
+
+  // How lit a character is: 1 across the plateau, a cosine shoulder down to 0,
+  // nothing beyond. Distance is measured in the message column's own
+  // coordinates, which every working row shares — that is what puts them in
+  // step.
+  function shimmerAt(centerX) {
+    const half = view.shimmerPeak / 2
+    const falloff = view.shimmerFalloff
+    // Starts and ends off the column, so the band enters and leaves rather
+    // than appearing mid-message.
+    const head = -view.shimmerReach
+      + view.shimmerPhase * (view.columnWidth("activity") + 2 * view.shimmerReach)
+    const distance = Math.abs(centerX - head)
+    if (distance <= half) return 1
+    if (distance >= half + falloff || falloff <= 0) return 0
+    return (1 + Math.cos((distance - half) / falloff * Math.PI)) / 2
+  }
+
+  function shimmerColor(centerX) {
+    const lit = view.shimmerAt(centerX)
+    if (lit <= 0) return view.dim
+    const from = view.dim
+    const to = view.foreground
+    return Qt.rgba(
+      from.r + (to.r - from.r) * lit,
+      from.g + (to.g - from.g) * lit,
+      from.b + (to.b - from.b) * lit,
+      1)
+  }
+
+  // The message split into pieces the band can resolve.
+  function shimmerChunks(text) {
+    if (!text) return []
+    const size = Math.max(1, view.shimmerChunkChars)
+    const out = []
+    for (let i = 0; i < text.length; i += size) out.push(text.slice(i, i + size))
+    return out
+  }
 
   // Where the agent is, split into the one segment that identifies it and the
   // qualification around it. Inside a repository that is the Project, and the
@@ -189,8 +330,6 @@ FocusScope {
       return parts.prefix + parts.bold + parts.suffix
     }
     if (column === "branch") return entry.branch
-    if (column === "kind") return entry.agent
-    if (column === "state") return view.labels[entry.state] || entry.state
     return ""
   }
 
@@ -207,30 +346,51 @@ FocusScope {
       glyph: Style.space(18),
       identity: 0,
       branch: 0,
+      activity: 0,
       // Sized for the longest age this column can hold rather than for the
       // one showing now, so the row does not shuffle when 59s becomes 1m.
-      age: view.textWidth("9999h"),
-      kind: 0,
-      state: 0
+      age: view.textWidth("9999h")
     }
 
     for (let i = 0; i < rows.length; i++) {
       const entry = rows[i]
       natural.identity = Math.max(natural.identity, view.textWidth(view.cellText(entry, "identity")))
       natural.branch = Math.max(natural.branch, view.textWidth(entry.branch))
-      natural.state = Math.max(natural.state, view.textWidth(view.cellText(entry, "state")))
-      natural.kind = Math.max(natural.kind, view.textWidth(entry.agent))
+      natural.activity = Math.max(natural.activity, view.textWidth(entry.activity))
     }
 
     let present = view.columnOrder.filter(column => natural[column] > 0)
     const width = {}
     for (let i = 0; i < present.length; i++) width[present[i]] = natural[present[i]]
 
+    // Every column but the message keeps its natural width. The message takes
+    // whatever is left and elides into it, which is why nothing else has to be
+    // dropped to make a pane fit: the slack has somewhere to go, and a long
+    // sentence costs its own tail rather than a column that identifies a row.
     while (true) {
       const gaps = Math.max(0, present.length - 1) * gap
-      let total = 0
-      for (let i = 0; i < present.length; i++) total += width[present[i]]
-      if (total + gaps <= available) break
+      let fixed = 0
+      for (let i = 0; i < present.length; i++) {
+        if (present[i] !== "activity") fixed += width[present[i]]
+      }
+
+      const carries = present.indexOf("activity")
+      if (carries >= 0) {
+        const slack = available - gaps - fixed
+        if (slack >= view.activityMinimum) {
+          // All of it, not just what the longest message needs. Taking the
+          // slack is what puts the age against the pane's edge, and a message
+          // shorter than its column simply does not fill it.
+          width.activity = slack
+          break
+        }
+        // Not enough room left to read one. Take it out and let the columns
+        // that identify a row use the space.
+        present.splice(carries, 1)
+        continue
+      }
+
+      if (fixed + gaps <= available) break
 
       let dropped = false
       for (let i = present.length - 1; i >= 0; i--) {
@@ -243,7 +403,11 @@ FocusScope {
       // Nothing left that may go. The identity takes what remains and elides
       // its dim half; the bold segment is never truncated away.
       if (!dropped) {
-        width.identity = Math.max(0, available - gaps - natural.glyph)
+        let others = 0
+        for (let i = 0; i < present.length; i++) {
+          if (present[i] !== "identity") others += width[present[i]]
+        }
+        width.identity = Math.max(0, available - gaps - others)
         break
       }
     }
@@ -253,6 +417,12 @@ FocusScope {
     for (let i = 0; i < present.length; i++) {
       x[present[i]] = cursor
       cursor += width[present[i]] + gap
+    }
+    // The age belongs at the edge whether or not a message pushed it there, so
+    // that a list with nothing to narrate still reads down the same way. When
+    // the message did take the slack this changes nothing.
+    if (present.indexOf("age") >= 0) {
+      x.age = Math.max(x.age, available - width.age)
     }
     return { present: present, width: width, x: x }
   }
@@ -702,9 +872,113 @@ FocusScope {
       elide: Text.ElideRight
     }
 
+    // What the agent says it is doing, in the harness's own words — "Reading 5
+    // files", "Bash(cargo test)", the opening line of a reply. Never a phrase
+    // amon composed: a column that said "Working…" would repeat the glyph
+    // beside it, which is the mistake ADR-0017 records.
+    //
+    // The elastic column. It takes whatever the fixed ones leave and elides
+    // into it, so a narrow pane costs this column its tail rather than costing
+    // a row something that identifies it.
+    //
+    // Drawn two ways. A working agent's message is split into chunks so a band
+    // of light can cross it; everything else is one plain Text. The split is
+    // not the layout — Qt still does the eliding, through the TextMetrics
+    // below, and the chunks are cut from the string it hands back. So both
+    // paths break the sentence in the same place, with Qt's own ellipsis,
+    // whatever font the theme resolves to.
+    readonly property int activityWidth:
+      Math.max(0, view.columnWidth("activity") - view.activityInset)
+
+    // A prompt is your words, not the agent's, so it wears the harness's own
+    // ❯ and leans into italic — the same two cues everywhere the activity is
+    // drawn (the plain path, the eliding metrics, the shimmer chunks), so
+    // eliding and the shimmer treat marker and text as one run.
+    readonly property bool activityIsPrompt: row.entry.activityIsPrompt
+    readonly property string activityDisplay:
+      row.entry.activity === "" ? ""
+        : (row.activityIsPrompt ? "\u276F " + row.entry.activity : row.entry.activity)
+
+    // Whether this row is drawn in chunks so a shimmer can cross it. It is not
+    // simply "is working": a row that stops mid-shimmer keeps its chunks until
+    // the band has finished crossing, because cutting the light off half way
+    // over a sentence is more noticeable than the shimmer itself. Stopping
+    // between shimmers takes effect at once, there being nothing to finish.
+    readonly property bool working: row.entry.state === "working"
+    property bool shimmering: false
+
+    onWorkingChanged: {
+      if (row.working) row.shimmering = true
+      else if (!view.sweeping) row.shimmering = false
+    }
+    Component.onCompleted: if (row.working) row.shimmering = true
+
+    Connections {
+      target: view
+      function onSweepFinished() {
+        if (!row.working) row.shimmering = false
+      }
+    }
+
+    // Qt's elision, asked for rather than left implicit. Reaching for
+    // `Math.floor(width / advanceWidth)` instead would be a second answer to a
+    // question the other columns already answer one way, and would hold only
+    // while the theme's font stayed monospace.
+    TextMetrics {
+      id: activityMetrics
+      font.family: view.fontFamily
+      font.pixelSize: Style.font.body
+      font.italic: row.activityIsPrompt
+      text: row.activityDisplay
+      elide: Text.ElideRight
+      elideWidth: row.activityWidth
+    }
+
+    Text {
+      id: activityText
+      visible: view.columnVisible("activity") && !row.shimmering
+      x: Style.space(10) + view.columnX("activity") + view.activityInset
+      anchors.verticalCenter: parent.verticalCenter
+      width: row.activityWidth
+      text: row.activityDisplay
+      color: view.dim
+      font.family: view.fontFamily
+      font.pixelSize: Style.font.body
+      font.italic: row.activityIsPrompt
+      elide: Text.ElideRight
+    }
+
+    Row {
+      id: activityShimmer
+      visible: view.columnVisible("activity") && row.shimmering
+      x: Style.space(10) + view.columnX("activity") + view.activityInset
+      anchors.verticalCenter: parent.verticalCenter
+      width: row.activityWidth
+
+      Repeater {
+        // Built from the elided string, so the chunks are exactly what the
+        // plain Text would have drawn.
+        model: activityShimmer.visible ? view.shimmerChunks(activityMetrics.elidedText) : []
+
+        Text {
+          text: modelData
+          // Measured at the chunk's middle, in the message column's own
+          // coordinates — the same coordinates every other working row uses,
+          // which is what puts them all in step.
+          color: view.shimmerColor(x + width / 2 + view.activityInset)
+          font.family: view.fontFamily
+          font.pixelSize: Style.font.body
+          font.italic: row.activityIsPrompt
+        }
+      }
+    }
+
     // How long the agent has been in the state it is in — not how long it has
     // been running. A row that has wanted you for forty minutes is a different
     // thing from one that has wanted you for one, and the glyph cannot say so.
+    //
+    // Last, and right-aligned: these are short values of varying length, and
+    // flushing them to the pane's edge makes the column read down as one.
     Text {
       id: ageText
       visible: view.columnVisible("age")
@@ -715,42 +989,10 @@ FocusScope {
       color: view.dim
       font.family: view.fontFamily
       font.pixelSize: Style.font.body
+      horizontalAlignment: Text.AlignRight
       // The column is sized for a very old agent, but age() counts hours
       // without end. Eliding rather than overflowing keeps a row that has been
       // idle for years from drawing over the column beside it.
-      elide: Text.ElideRight
-    }
-
-    // Which agent it is. Last, and so the first thing to go when the pane
-    // narrows: on a machine running one kind of agent it writes the same word
-    // down the list, and it is only worth its width while there is width to
-    // spare.
-    Text {
-      id: kindText
-      visible: view.columnVisible("kind")
-      x: Style.space(10) + view.columnX("kind")
-      anchors.verticalCenter: parent.verticalCenter
-      width: view.columnWidth("kind")
-      text: row.entry.agent
-      color: view.dim
-      font.family: view.fontFamily
-      font.pixelSize: Style.font.body
-      elide: Text.ElideRight
-    }
-
-    // The state in words. First to go when the pane narrows, because the glyph
-    // beside the identity already carries it — this is the elaboration, and
-    // "needs input" is worth the width only while there is width to spare.
-    Text {
-      id: stateText
-      visible: view.columnVisible("state")
-      x: Style.space(10) + view.columnX("state")
-      anchors.verticalCenter: parent.verticalCenter
-      width: view.columnWidth("state")
-      text: view.labels[row.entry.state] || row.entry.state
-      color: view.dim
-      font.family: view.fontFamily
-      font.pixelSize: Style.font.body
       elide: Text.ElideRight
     }
   }

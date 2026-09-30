@@ -29,12 +29,14 @@ pub(crate) mod noninteractive_process;
 #[path = "vendor/integration/mod.rs"]
 pub mod integration;
 
+pub mod activity_hooks;
 pub mod alias;
 mod api_surface;
 pub mod bindings;
 pub mod desktop;
 pub mod ducking;
 mod fence;
+pub mod prompt_hook;
 pub mod shims;
 
 pub use api::schema::IntegrationTarget;

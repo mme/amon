@@ -28,6 +28,63 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
             &where_it_is(status.state, &status.path),
         );
     }
+    // amon's own Claude prompt hook (ADR-0020) — reported beside the vendored
+    // integrations, since amon owns its lifecycle and doctor is where that
+    // shows.
+    if let Ok(state) = amon_integration::prompt_hook::state() {
+        use amon_integration::prompt_hook::PromptHookState;
+        let note = match state {
+            PromptHookState::Current => "installed (reports what each turn is working on)",
+            PromptHookState::Outdated => "outdated (amon setup claude reinstalls it)",
+            PromptHookState::NotInstalled => "not installed (amon setup claude adds it)",
+        };
+        print_line("claude prompt hook", note, "");
+    }
+    if let Ok(state) = amon_integration::activity_hooks::codex::state() {
+        use amon_integration::activity_hooks::HookState;
+        let note = match state {
+            HookState::Current => "installed (reports what each turn is working on)",
+            HookState::Outdated => "outdated (amon setup codex reinstalls it)",
+            HookState::NotInstalled => "not installed (amon setup codex adds it)",
+        };
+        print_line("codex prompt hook", note, "");
+    }
+    if let Ok(state) = amon_integration::activity_hooks::pi::state() {
+        use amon_integration::activity_hooks::HookState;
+        let note = match state {
+            HookState::Current => "installed (reports the prompt and each tool call)",
+            HookState::Outdated => "outdated (amon setup pi reinstalls it)",
+            HookState::NotInstalled => "not installed (amon setup pi adds it)",
+        };
+        print_line("pi activity extension", note, "");
+    }
+    if let Ok(state) = amon_integration::activity_hooks::omp::state() {
+        use amon_integration::activity_hooks::HookState;
+        let note = match state {
+            HookState::Current => "installed (reports the prompt and each tool call)",
+            HookState::Outdated => "outdated (amon setup omp reinstalls it)",
+            HookState::NotInstalled => "not installed (amon setup omp adds it)",
+        };
+        print_line("omp activity extension", note, "");
+    }
+    if let Ok(state) = amon_integration::activity_hooks::opencode::state() {
+        use amon_integration::activity_hooks::HookState;
+        let note = match state {
+            HookState::Current => "installed (reports the prompt, tool calls, and the reply)",
+            HookState::Outdated => "outdated (amon setup opencode reinstalls it)",
+            HookState::NotInstalled => "not installed (amon setup opencode adds it)",
+        };
+        print_line("opencode activity plugin", note, "");
+    }
+    if let Ok(state) = amon_integration::activity_hooks::grok::state() {
+        use amon_integration::activity_hooks::HookState;
+        let note = match state {
+            HookState::Current => "installed (reports what each turn is working on)",
+            HookState::Outdated => "outdated (amon setup grok reinstalls it)",
+            HookState::NotInstalled => "not installed (amon setup grok adds it)",
+        };
+        print_line("grok prompt hook", note, "");
+    }
     for status in desktop::statuses() {
         let installed = status.installed_version.unwrap_or_else(|| "?".into());
         print_line(
@@ -143,6 +200,25 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Some(note) = alias::stranded() {
             print_line("bashrc", &note, "");
+        }
+    }
+
+    // An integration set up but not aliased is the silent trap: typing the
+    // agent's own name runs it bare, so it never registers and never appears
+    // on the bar — which looks like amon being broken, not a missing alias.
+    // Flag every installed integration whose alias is absent, so the cause is
+    // named rather than guessed. (`amon setup <agent> --no-alias` is a
+    // deliberate way to reach this, so it is a caution, not an error.)
+    for status in amon_integration::statuses() {
+        if status.state != InstallState::NotInstalled && !alias::is_installed(status.target) {
+            print_line(
+                status.label,
+                &format!(
+                    "set up but not aliased — typing its name runs it unwrapped                      (amon setup {} re-adds the alias)",
+                    status.label
+                ),
+                "",
+            );
         }
     }
 

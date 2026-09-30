@@ -1288,7 +1288,7 @@ fn compiled_gate_matches(gate: &CompiledGate, text: &str, lower_text: &str) -> b
     true
 }
 
-fn region<'a>(input: DetectionInput<'a>, spec: &str) -> &'a str {
+pub fn region<'a>(input: DetectionInput<'a>, spec: &str) -> &'a str {
     let trimmed = spec.trim();
     // OSC regions source from their dedicated fields, not the screen.
     match trimmed {

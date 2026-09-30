@@ -229,6 +229,7 @@ mod tests {
             started_at: 0,
             agent_session_id: None,
             agent_session_path: None,
+            activity: None,
             window: None,
             workspace: None,
             project: None,

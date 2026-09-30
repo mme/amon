@@ -12,8 +12,8 @@ use std::os::unix::net::UnixStream;
 use std::process::ExitCode;
 
 use amon_protocol::{
-    AgentEntry, AgentState, Hello, Method, ReportSession, ReportState, Request, Response, Role,
-    StatusResult, PROTOCOL_VERSION,
+    AgentEntry, AgentState, Hello, Method, ReportActivity, ReportSession, ReportState, Request,
+    Response, Role, StatusResult, PROTOCOL_VERSION,
 };
 use clap::{Parser, Subcommand};
 
@@ -144,9 +144,41 @@ enum HookReport {
         state: AgentState,
         #[arg(long)]
         seq: u64,
+        /// What the agent is blocked on, when the hook knows
+        #[arg(long)]
+        message: Option<String>,
         #[arg(long)]
         agent_session_id: Option<String>,
     },
+    /// Report an Activity — a submitted prompt or a narration (amon-only;
+    /// ADR-0020)
+    #[command(name = "report-activity")]
+    Activity {
+        /// The `AMON_AGENT_ID` the hook was given
+        agent_id: String,
+        #[arg(long)]
+        source: String,
+        #[arg(long)]
+        agent: String,
+        #[arg(long)]
+        seq: u64,
+        #[arg(long)]
+        text: String,
+        #[arg(long, value_parser = parse_activity_kind)]
+        kind: amon_protocol::ActivityKind,
+        #[arg(long)]
+        agent_session_id: Option<String>,
+    },
+}
+
+fn parse_activity_kind(value: &str) -> Result<amon_protocol::ActivityKind, String> {
+    match value {
+        "prompt" => Ok(amon_protocol::ActivityKind::Prompt),
+        "narration" => Ok(amon_protocol::ActivityKind::Narration),
+        other => Err(format!(
+            "unknown activity kind: {other} (expected prompt or narration)"
+        )),
+    }
 }
 
 fn parse_state(value: &str) -> Result<AgentState, String> {
@@ -296,6 +328,19 @@ fn run_status(json: bool) -> Result<(), Box<dyn std::error::Error>> {
         .filter_map(|agent| agent.branch.as_deref())
         .map(|branch| branch.chars().count())
         .max();
+    // The kind was the last column and needed no width of its own. It does now
+    // that something follows it — and only while something does, so a run with
+    // nothing to say about activity prints exactly what it printed before.
+    let kind_width = agents
+        .iter()
+        .any(|agent| agent.activity.is_some())
+        .then(|| {
+            agents
+                .iter()
+                .map(|agent| agent.agent.chars().count())
+                .max()
+                .unwrap_or(0)
+        });
 
     let column = |value: Option<&str>, width: Option<usize>| match width {
         Some(width) => format!("{:<width$}  ", value.unwrap_or(""), width = width),
@@ -303,16 +348,33 @@ fn run_status(json: bool) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     for (agent, identity) in agents.iter().zip(&identities) {
-        println!(
-            "{}{:<identity_width$}  {}{:>5}  {:<8}  {}",
+        // Trimmed at the end because the columns before the last one pad to a
+        // shared width, and a row whose last columns are empty would otherwise
+        // trail spaces into whatever this is piped to.
+        let line = format!(
+            "{}{:<identity_width$}  {}{:>5}  {:<8}  {}{}",
             column(agent.workspace.as_deref(), workspace_width),
             identity,
             column(agent.branch.as_deref(), branch_width),
             age(agent.state_since),
             agent.state.as_str(),
-            agent.agent,
+            // Padded only when an activity follows it; bare otherwise.
+            match kind_width {
+                Some(width) => format!("{:<width$}  ", agent.agent, width = width),
+                None => agent.agent.clone(),
+            },
+            // A Prompt wears the ask's own marker, so the terminal reader
+            // can tell your words from the agent's the same way the panel
+            // does.
+            match &agent.activity {
+                Some(activity) if activity.kind == amon_protocol::ActivityKind::Prompt =>
+                    format!("\u{276F} {}", activity.text),
+                Some(activity) => activity.text.clone(),
+                None => String::new(),
+            },
             identity_width = identity_width,
         );
+        println!("{}", line.trim_end());
     }
     Ok(())
 }
@@ -489,6 +551,7 @@ fn run_hook(report: HookReport) -> Result<(), Box<dyn std::error::Error>> {
             agent,
             state,
             seq,
+            message,
             agent_session_id,
         } => Method::AgentReportState(ReportState {
             agent_id,
@@ -496,6 +559,24 @@ fn run_hook(report: HookReport) -> Result<(), Box<dyn std::error::Error>> {
             agent,
             state,
             seq,
+            message,
+            agent_session_id,
+        }),
+        HookReport::Activity {
+            agent_id,
+            source,
+            agent,
+            seq,
+            text,
+            kind,
+            agent_session_id,
+        } => Method::AgentReportActivity(ReportActivity {
+            agent_id,
+            source,
+            agent,
+            seq,
+            text,
+            kind,
             agent_session_id,
         }),
     };

@@ -1,0 +1,93 @@
+# Which lines on screen say what an agent is doing.
+#
+# One entry names regions of the rendered screen and patterns that recognise
+# the lines inside them. Both halves are borrowed rather than invented:
+# regions are evaluated by herdr's own accessor (a seam, ADR-0020), so the
+# structural knowledge of where a harness draws things stays in the vendored
+# engine, and patterns are ordinary regexes over the lines that come back.
+#
+# Fields:
+#   agent           which harness this describes
+#   gate_region     where to look for proof the agent's own live input is on
+#                   screen; defaults to herdr's "prompt_box_body"
+#   gate_pattern    what that proof looks like; absent means the region just
+#                   has to hold something
+#   region          where the Narration lives
+#   pattern         what a Narration line looks like; may name a `text` group
+#                   to keep only part of it
+#   reject          Narration lines to skip even when `pattern` matches, for a
+#                   harness that marks its steps and its notices the same way
+#   prompt_region   where submitted Prompts live. MUST structurally exclude
+#                   the live input line — text still being typed belongs to no
+#                   Turn and appears nowhere
+#   prompt_pattern  what a submitted Prompt line looks like
+#   prompt_reject   prompt-shaped lines that are not asks
+#
+# A Narration counts only after the newest Prompt (the Turn rule); the reader
+# orders the two by their position in the whole screen, so the regions may
+# differ. The engine never sees these patterns, so a capture group here costs
+# nothing. Entries are tried in file order and the first that yields wins.
+#
+# Adding an agent is adding an entry. There is no per-agent code.
+# `cargo run -p amon-term --example carrier-scout -- <capture> <agent>` says
+# what a harness offers before one is written; `turn-probe` shows where its
+# prompts sit relative to its narration.
+
+# Claude prefixes every tool call and reply with a filled circle, and echoes a
+# submitted prompt with the same ❯ its input box uses — told apart from the
+# box structurally: above_prompt_box ends at the box's top border.
+#
+# The narration marker blinks while a tool call runs; the tracker's Turn
+# latch is what keeps the row from flapping between ask and answer on those
+# frames. The trailing "(ctrl+o to expand)" is a keyboard hint, not something
+# the agent is doing, so the pattern drops it.
+#
+# Prompt rejects: the startup tip line ("❯ Try …") is drawn prompt-shaped
+# without anyone having submitted anything, and a slash command is an
+# instruction to the harness, not an ask the agent will narrate against —
+# showing "/rc" as the current Turn would open a Turn no work belongs to.
+[[carrier]]
+agent = "claude"
+region = "above_prompt_box"
+pattern = '^\s*●\s+(?<text>\S.*?)(?:\s*\(ctrl\+[a-z] to [a-z]+\))?\s*$'
+prompt_region = "above_prompt_box"
+prompt_pattern = '^\s*❯\s+(?<text>\S.*?)\s*$'
+prompt_reject = '^\s*❯\s+(?:/\S|Try\b)'
+
+# Codex draws no box around its live prompt — a bare "›" line — so the
+# default proof does not apply; the marker line itself is the honest signal,
+# present on 38 of a 47-frame session where the box region matched 2.
+#
+# Codex bullets its steps, its live status and its system notices identically.
+# "Working (7s • esc to interrupt)" is both the generic label this column
+# exists to avoid and a value that changes every second, so it is rejected
+# along with startup notices; scanning continues to the newest real step.
+#
+# The submitted prompt is read from before_current_prompt_marker — herdr's
+# own region for cutting the live "›" line away from the earlier ones, which
+# is exactly the exclusion the Turn rule requires.
+[[carrier]]
+agent = "codex"
+gate_region = "bottom_non_empty_lines(4)"
+gate_pattern = '^\s*›\s'
+region = "bottom_non_empty_lines(12)"
+pattern = '^\s*[•■✗✓]\s+(?<text>\S.*?)\s*$'
+reject = 'esc to interrupt|usage limit reset|^\s*[•■✗✓]\s+(?:Starting|Updating|Loading)\b'
+prompt_region = "before_current_prompt_marker"
+prompt_pattern = '^\s*›\s+(?<text>\S.*?)\s*$'
+
+# grok marks tool calls with ◈ ("Read 1 file") but prefixes neither its
+# "Thought for Xs" nor its reply, so narration is tool calls only — the reply
+# cannot be told from any other prose. Its submitted prompt is a ❯ line in the
+# transcript, but the render litters it with a block cursor and a trailing
+# timestamp; grok's own hook engine reports the prompt cleanly instead
+# (activity_hooks::grok), so the carrier reads only the ◈ narration. Its live
+# input is a rounded box (╭╰), not the ─ rule herdr's box regions look for, so
+# like codex grok names its own gate. Verified against a captured turn
+# (grok-turn.raw).
+[[carrier]]
+agent = "grok"
+gate_region = "bottom_non_empty_lines(6)"
+gate_pattern = 'Ctrl\+x:shortcuts'
+region = "whole_recent"
+pattern = '^\s*◈\s+(?<text>\S.*?)\s*$'
