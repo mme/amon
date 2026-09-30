@@ -10,42 +10,38 @@ the machinery, not decoration.
 
 ## v0.5.0
 
-- **The Creator Micro 2 joins the desk**: Work Louder's macropad becomes a
-  hardware panel for your agents. Its six keys mirror the agent panel's
-  rows and light with each agent's own state - tap one to jump straight to
-  that agent, exactly like the panel does, even when the agent lives inside
-  a herdr or luvus pane. The ring glows the fleet's most urgent color and
-  taps to focus whichever agent needs you. The encoder scrolls the agent
-  panel or drives its selection, and once you have more than six agents it
-  walks the rest of the list; the joystick moves window focus. Seven macro
-  keys are yours to bind under `[devices.micro2]` - the second one defaults
-  to starting a new agent (Omarchy's own agent picker), the rest ship
-  blank.
-- **Hold a macro key to dictate**: a tap still toggles dictation as before;
-  a hold is push-to-talk, ending in voxtype's own auto-submit so the text
-  is typed and entered together. Music now ducks to silence for exactly as
-  long as the microphone is live - the mechanism that actually works,
-  since stock Omarchy's own media-pausing turns out to be broken. Tunable
-  under `[devices.micro2.dictation]` (`hold_ms`, `auto_submit`).
-- **Setup and doctor understand the keypad**: `amon setup` writes the one
-  udev rule the device needs and can write amon's own agent layer onto the
-  keypad's firmware, telling you which layer to tap the touch sensor to.
-  `amon doctor` now checks the hardware itself - firmware version, whether
-  the agent layer is active, whether the device and its virtual keyboard
-  are reachable - instead of assuming a device it can open is already lit.
-- **The agent panel orders rows by where they sit on screen**: left to
-  right, then top to bottom, instead of by when the agent started. The
-  Micro 2's keys follow the same order, so key N is always the panel's row
-  N.
-- **Fix**: a key press (or anything else that spawns `amon focus`) could
-  silently do nothing right after an update, because amon looked for its
-  own binary at a path the installer had just replaced.
-- **Protocol**: `AgentEntry` gains `position`, reported by the compositor
-  crate and kept in step between the panel and the Micro 2 module.
-  `docs/protocol.schema.json` is updated.
-- The README, website and a new ADR document the whole path - firmware
-  floor, udev rule, agent layer, dictation settings - with a complete
-  config example.
+- **A Work Louder Creator Micro 2 becomes a hardware agent panel**: connect
+  one over USB or Bluetooth and its six lit keys stand for the first six
+  agents in the panel's order, each colored by its agent's state - breathing
+  while it works, solid while it waits for you, lit when it finished while
+  you were away. Tap a key to be at that agent. The ring around the board
+  shows the most urgent state anywhere. The dial scrolls, and walks the
+  agent panel while it is open; the stick moves window focus like
+  Super+arrows. Seven macro keys are yours to map under
+  `[devices.micro2.keys]`; by default they open the panel, start a new
+  default agent, send Up and Escape, dictate, and send Down and Enter.
+- **Hold to talk**: the dictate key records on a tap and toggles off on the
+  next; held, it is push-to-talk and presses Enter for you when the text has
+  landed. Music ducks while it records. Needs voxtype.
+- **Setting the board up is amon's job**: `amon setup` offers the one udev
+  rule the device needs, and offers to write the agent layer - the layer on
+  which the keys report to amon instead of typing - onto an empty slot,
+  after saving the board's current keymap under `~/.local/share/amon/micro2/`.
+  `amon doctor` asks the board for its firmware and active layer and says
+  what is missing: firmware below 0.6.0, no agent layer, a layer written but
+  not switched to (tap the touch sensor), or six layers all in use. The
+  README walks through all of it.
+- **One workspace's rows read like the screen**: within a workspace the panel
+  now lists agents left to right, then top to bottom, by where their windows
+  sit, and follows when you move them. Rows never reorder by state.
+- **Upgrading survives an upgrade**: fixes a bug where a daemon that outlived
+  a reinstall could no longer start `amon focus` for a key tap, silently,
+  until it happened to restart.
+- **Protocol**: `AgentEntry` gains `position` (`x`, `y`), the window's place
+  on its workspace. `docs/protocol.schema.json` is updated.
+- **Upgrading**: run the installer, or `just install` then `amon setup
+  --upgrade`, to refresh the panel. A config file from before this release
+  has no `[devices]` block; see the README's example for the one to add.
 
 ## v0.4.0
 
