@@ -1,5 +1,5 @@
 // amon's own opencode plugin — NOT vendored from herdr, NOT rewritten by
-// revendor. Reports Activity over the wrapper socket (ADR-0021: a seam): the
+// revendor. Reports Activity over the wrapper socket (ADR-0020: a seam): the
 // submitted prompt as a turn boundary, and each tool call and the reply's
 // first line as narration. opencode's screen amon has never read; its plugin
 // API carries all of it, verified live against gpt-5.6-sol. herdr's own plugin

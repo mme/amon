@@ -125,7 +125,7 @@ vendor_file() {
 }
 
 # Vendored files whose role an amon-owned implementation has taken over
-# (ADR-0021). Still vendored and refreshed above — superseding never ends the
+# (ADR-0020). Still vendored and refreshed above — superseding never ends the
 # watch — but no longer routed to, so their changes would otherwise escape the
 # diff review that watches the code we run. Reported separately instead:
 # a diffstat inline, the full diff under target/ for reading.
@@ -138,10 +138,10 @@ report_superseded_drift() {
     git -C "$repo_root" diff -- "${SUPERSEDED[@]}" >"$drift"
     echo
     if [ -s "$drift" ]; then
-        echo "superseded upstream code moved (ADR-0021) — full diff: target/revendor-superseded.diff"
+        echo "superseded upstream code moved (ADR-0020) — full diff: target/revendor-superseded.diff"
         git -C "$repo_root" diff --stat -- "${SUPERSEDED[@]}"
     else
-        echo "superseded upstream code unchanged (ADR-0021)"
+        echo "superseded upstream code unchanged (ADR-0020)"
     fi
 }
 

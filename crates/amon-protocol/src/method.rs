@@ -92,7 +92,7 @@ pub struct ReportSession {
 }
 
 /// A hook reporting an Activity. amon-only: herdr has no counterpart, because
-/// herdr collects state, not content (ADR-0021 — a seam, not a modified
+/// herdr collects state, not content (ADR-0020 — a seam, not a modified
 /// vendored asset). A `prompt` opens a Turn with the exact submitted text; a
 /// `narration` is the harness's own account of its current step, for agents
 /// whose screens amon cannot read. The wrapper bounds the text.
@@ -109,7 +109,7 @@ pub struct ReportActivity {
 }
 
 /// A wrapper running inside a runtime pane reporting the agent's activity
-/// (ADR-0022). It carries no row of its own — the runtime owns the row — so the
+/// (ADR-0021). It carries no row of its own — the runtime owns the row — so the
 /// daemon joins this to the adopted entry by `kind` and `pane`, the id both
 /// runtimes stamp on the entry and inject into the pane.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -154,10 +154,10 @@ pub enum Method {
     /// Hook → wrapper.
     #[serde(rename = "agent.report_session")]
     AgentReportSession(ReportSession),
-    /// Hook → wrapper. amon-only (ADR-0021).
+    /// Hook → wrapper. amon-only (ADR-0020).
     #[serde(rename = "agent.report_activity")]
     AgentReportActivity(ReportActivity),
-    /// Wrapper (in a runtime pane) → daemon. amon-only (ADR-0022).
+    /// Wrapper (in a runtime pane) → daemon. amon-only (ADR-0021).
     #[serde(rename = "runtime.activity")]
     RuntimeActivity(RuntimeActivity),
 }

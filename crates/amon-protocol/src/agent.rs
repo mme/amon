@@ -76,7 +76,7 @@ pub struct AgentEntry {
     pub agent_session_path: Option<String>,
     /// What the agent is doing, in words. Never a phrase amon composed — a
     /// label amon wrote itself would say no more than the state column already
-    /// does (ADR-0017, ADR-0020).
+    /// does (ADR-0017, ADR-0019).
     ///
     /// Absent for an agent whose harness amon cannot yet read, and for one
     /// whose screen cannot be believed right now.

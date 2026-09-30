@@ -1,4 +1,4 @@
-//! opencode's activity plugin (ADR-0021: a seam).
+//! opencode's activity plugin (ADR-0020: a seam).
 //!
 //! opencode loads any `.js` in its `plugins/` directory, so installing is one
 //! amon-owned file beside herdr's and uninstalling is its removal. The plugin

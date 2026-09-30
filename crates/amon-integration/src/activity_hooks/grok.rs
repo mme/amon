@@ -1,4 +1,4 @@
-//! grok's prompt hook (ADR-0021: a seam).
+//! grok's prompt hook (ADR-0020: a seam).
 //!
 //! grok merges every `~/.grok/hooks/*.json` at startup, so a hook is installed
 //! by dropping a dedicated amon config file (and its script) into that

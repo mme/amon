@@ -1,5 +1,5 @@
 // amon's own omp extension — NOT vendored from herdr, NOT rewritten by revendor.
-// Reports Activity over the wrapper socket (ADR-0021: a seam): the submitted
+// Reports Activity over the wrapper socket (ADR-0020: a seam): the submitted
 // prompt as a turn boundary, and tool calls / the reply's first line as
 // narration. omp (oh-my-pi) is a pi fork whose screen amon has never been
 // able to read; its extension API is pi's, minus the newest events — these

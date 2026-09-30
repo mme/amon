@@ -54,7 +54,7 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     // `exec_bare`.
 
     // Inside a runtime's pane (herdr, luvus), amon no longer steps aside: it
-    // wraps for the activity it collects and the control it will (ADR-0022).
+    // wraps for the activity it collects and the control it will (ADR-0021).
     // But it reports activity, not state — the runtime owns the row — and it
     // wears the agent's name so the runtime's name-based scan still recognises
     // the agent instead of seeing `amon`. Captured here; applied below.

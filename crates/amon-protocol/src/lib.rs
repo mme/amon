@@ -66,7 +66,7 @@ pub mod env {
 
     /// Per runtime: the marker env (`"1"` in a pane), the runtime kind, and the
     /// env var carrying the pane id. The pane id is the key the daemon joins
-    /// wrapper activity to an adopted row on (ADR-0022) — both runtimes stamp
+    /// wrapper activity to an adopted row on (ADR-0021) — both runtimes stamp
     /// this same id on the entry they adopt.
     pub const RUNTIME_PANES: &[(&str, &str, &str)] = &[
         ("HERDR_ENV", "herdr", "HERDR_PANE_ID"),

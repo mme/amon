@@ -1,7 +1,7 @@
 //! What the agent is doing, read off the rendered screen.
 //!
 //! Every column in a row says *where* an agent is. The Activity says what it
-//! is busy with, in words that are never amon's own (ADR-0017, ADR-0020). It
+//! is busy with, in words that are never amon's own (ADR-0017, ADR-0019). It
 //! comes in two kinds: a **Narration** — the line the harness draws to
 //! narrate its step, `●` for Claude, a bullet for Codex — or the **Prompt**,
 //! the submitted ask the current Turn is working on. Narration outranks
@@ -21,7 +21,7 @@
 //! Which lines to read is an entry in `carriers.toml`, not code: regions of
 //! the screen and patterns that recognise the lines inside them. Adding an
 //! agent is adding an entry. The regions are evaluated by herdr's accessor
-//! (a seam, ADR-0021), so the structural knowledge — where a harness draws
+//! (a seam, ADR-0020), so the structural knowledge — where a harness draws
 //! its input box, how to cut the live prompt away from earlier ones — stays
 //! in the vendored engine and keeps tracking it across re-vendors.
 //!

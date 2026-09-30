@@ -1,4 +1,4 @@
-//! amon's own Claude prompt hook (ADR-0021: a seam).
+//! amon's own Claude prompt hook (ADR-0020: a seam).
 //!
 //! herdr registers exactly one Claude hook — `SessionStart`, for session
 //! identity — and its migration actively *removes* `UserPromptSubmit`, which
@@ -131,7 +131,7 @@ fn entry_input(path: &Path) -> CstInputValue {
 
 /// Adds the hook to `settings`, preserving the file's formatting — only the
 /// bytes that change are touched, because the edit is herdr's own CST
-/// (ADR-0021: a seam). Idempotent: an entry with our command already present
+/// (ADR-0020: a seam). Idempotent: an entry with our command already present
 /// leaves the file untouched.
 ///
 /// Robust against a settings file amon did not write. A read error that is not

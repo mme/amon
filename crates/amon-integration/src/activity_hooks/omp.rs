@@ -1,4 +1,4 @@
-//! omp's activity extension (ADR-0021: a seam).
+//! omp's activity extension (ADR-0020: a seam).
 //!
 //! omp (oh-my-pi) is a pi fork and loads extensions the same way: the whole
 //! install is one amon-owned file beside herdr's, the whole uninstall is its

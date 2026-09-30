@@ -1,4 +1,4 @@
-//! Wearing the agent's name inside a runtime pane (ADR-0022).
+//! Wearing the agent's name inside a runtime pane (ADR-0021).
 //!
 //! herdr and luvus identify the agent in a pane by the process's *name* —
 //! never its executable path. When amon wraps, the pane's process is amon, so

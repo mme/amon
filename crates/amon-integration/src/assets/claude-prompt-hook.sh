@@ -1,7 +1,7 @@
 #!/bin/sh
 # amon's own hook — NOT vendored from herdr, NOT rewritten by revendor.
 # Registered on Claude's UserPromptSubmit to report the submitted prompt as a
-# turn boundary (ADR-0021: a seam). herdr collects state, not content, so this
+# turn boundary (ADR-0020: a seam). herdr collects state, not content, so this
 # is amon's alone. Installed and removed by amon-integration/src/prompt_hook.rs.
 #
 # installed by amon

@@ -16,7 +16,7 @@ use crate::integration;
 pub fn install(target: IntegrationTarget) -> io::Result<Vec<String>> {
     let mut notes = integration::install_target(target)?;
     // amon's own additions run after herdr's install, which for Claude
-    // removes the very event the prompt hook needs (ADR-0021). Idempotent, so
+    // removes the very event the prompt hook needs (ADR-0020). Idempotent, so
     // safe on every setup and upgrade.
     //
     // Non-fatal on purpose: the prompt hook is an enhancement over the screen
@@ -46,7 +46,7 @@ pub fn install(target: IntegrationTarget) -> io::Result<Vec<String>> {
 
 /// Reverts exactly what [`install`] did.
 pub fn uninstall(target: IntegrationTarget) -> io::Result<Vec<String>> {
-    // What amon added, amon removes (ADR-0021) — before herdr's uninstall, so
+    // What amon added, amon removes (ADR-0020) — before herdr's uninstall, so
     // the settings file is edited by our step while its hooks object is still
     // whole. Best-effort: a failure here must not stop herdr's uninstall from
     // running, or a remove could strand the state hook it was meant to take.

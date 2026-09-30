@@ -28,7 +28,7 @@ struct Inner {
     /// Held so a subscriber arriving after the check hears about it too.
     update: Option<(String, String)>,
     /// Activity a wrapper inside a runtime pane reported for the agent the
-    /// runtime hosts, keyed by `(kind, pane)` (ADR-0022). Held here so it
+    /// runtime hosts, keyed by `(kind, pane)` (ADR-0021). Held here so it
     /// survives the runtime's re-registration of the entry on every resnapshot
     /// and can be re-applied.
     runtime_activity: HashMap<(String, String), amon_protocol::Activity>,
@@ -117,7 +117,7 @@ impl Registry {
     }
 
     /// A wrapper inside a runtime pane reported activity for the agent the
-    /// runtime hosts (ADR-0022). Stored by `(kind, pane)` so it survives the
+    /// runtime hosts (ADR-0021). Stored by `(kind, pane)` so it survives the
     /// runtime re-registering the entry, and applied now to whichever adopted
     /// entry is in that pane. No row of the wrapper's own is involved.
     pub fn set_runtime_activity(

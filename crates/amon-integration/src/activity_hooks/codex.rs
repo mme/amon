@@ -1,4 +1,4 @@
-//! Codex's prompt hook (ADR-0021: a seam).
+//! Codex's prompt hook (ADR-0020: a seam).
 //!
 //! Codex's hook engine mirrors Claude's: JSON registrations in
 //! `~/.codex/hooks.json`, delivered to scripts as JSON on stdin with a

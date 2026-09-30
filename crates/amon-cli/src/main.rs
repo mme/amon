@@ -151,7 +151,7 @@ enum HookReport {
         agent_session_id: Option<String>,
     },
     /// Report an Activity — a submitted prompt or a narration (amon-only;
-    /// ADR-0021)
+    /// ADR-0020)
     #[command(name = "report-activity")]
     Activity {
         /// The `AMON_AGENT_ID` the hook was given

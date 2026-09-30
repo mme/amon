@@ -43,7 +43,7 @@
               "type": "null"
             }
           ],
-          "description": "What the agent is doing, in words. Never a phrase amon composed — a\nlabel amon wrote itself would say no more than the state column already\ndoes (ADR-0017, ADR-0020).\n\nAbsent for an agent whose harness amon cannot yet read, and for one\nwhose screen cannot be believed right now."
+          "description": "What the agent is doing, in words. Never a phrase amon composed — a\nlabel amon wrote itself would say no more than the state column already\ndoes (ADR-0017, ADR-0019).\n\nAbsent for an agent whose harness amon cannot yet read, and for one\nwhose screen cannot be believed right now."
         },
         "agent": {
           "description": "Agent kind, e.g. `claude`. Free-form so that a wrapper built against a\nnewer agent list still registers against an older daemon.",
@@ -580,7 +580,7 @@
       "type": "object"
     },
     "ReportActivity": {
-      "description": "A hook reporting an Activity. amon-only: herdr has no counterpart, because\nherdr collects state, not content (ADR-0021 — a seam, not a modified\nvendored asset). A `prompt` opens a Turn with the exact submitted text; a\n`narration` is the harness's own account of its current step, for agents\nwhose screens amon cannot read. The wrapper bounds the text.",
+      "description": "A hook reporting an Activity. amon-only: herdr has no counterpart, because\nherdr collects state, not content (ADR-0020 — a seam, not a modified\nvendored asset). A `prompt` opens a Turn with the exact submitted text; a\n`narration` is the harness's own account of its current step, for agents\nwhose screens amon cannot read. The wrapper bounds the text.",
       "properties": {
         "agent": {
           "type": "string"
@@ -848,7 +848,7 @@
           "type": "object"
         },
         {
-          "description": "Hook → wrapper. amon-only (ADR-0021).",
+          "description": "Hook → wrapper. amon-only (ADR-0020).",
           "properties": {
             "method": {
               "const": "agent.report_activity",
@@ -865,7 +865,7 @@
           "type": "object"
         },
         {
-          "description": "Wrapper (in a runtime pane) → daemon. amon-only (ADR-0022).",
+          "description": "Wrapper (in a runtime pane) → daemon. amon-only (ADR-0021).",
           "properties": {
             "method": {
               "const": "runtime.activity",
@@ -996,7 +996,7 @@
       ]
     },
     "RuntimeActivity": {
-      "description": "A wrapper running inside a runtime pane reporting the agent's activity\n(ADR-0022). It carries no row of its own — the runtime owns the row — so the\ndaemon joins this to the adopted entry by `kind` and `pane`, the id both\nruntimes stamp on the entry and inject into the pane.",
+      "description": "A wrapper running inside a runtime pane reporting the agent's activity\n(ADR-0021). It carries no row of its own — the runtime owns the row — so the\ndaemon joins this to the adopted entry by `kind` and `pane`, the id both\nruntimes stamp on the entry and inject into the pane.",
       "properties": {
         "activity": {
           "anyOf": [

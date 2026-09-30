@@ -103,7 +103,7 @@ screen: exact text rather than a wrapped rendering, an event rather than an
 inferred boundary, and no startup-tip or slash-command noise to reject. Claude
 has one — `UserPromptSubmit`, which herdr registers only to *remove*, having
 used it for state before screen detection replaced it. amon installs its own
-script for it beside the vendored hook (ADR-0021: a seam, editing `settings.json` through herdr's own
+script for it beside the vendored hook (ADR-0020: a seam, editing `settings.json` through herdr's own
 formatting-preserving CST splice — only the bytes that change are touched,
 never a whole-file reserialize; `vendor/patches/0006` and `0007` widen the
 primitives a seam needs, which is a mechanical visibility change and so a

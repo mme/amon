@@ -1,7 +1,7 @@
 #!/bin/sh
 # amon's own hook — NOT vendored from herdr, NOT rewritten by revendor.
 # Registered on Codex's UserPromptSubmit to report the submitted prompt as a
-# turn boundary (ADR-0021: a seam). Codex's hook engine mirrors Claude's —
+# turn boundary (ADR-0020: a seam). Codex's hook engine mirrors Claude's —
 # behind `[features] hooks = true`, registered in ~/.codex/hooks.json — and
 # herdr registers only SessionStart there, so this event is amon's alone.
 # Installed and removed by amon-integration/src/activity_hooks/codex.rs.

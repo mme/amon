@@ -111,7 +111,7 @@ of these cases before. Not worth more machinery than that.
 
 ## Narrowed
 
-ADR-0022 narrows the runtime-pane step-aside: inside a runtime the wrapper now
+ADR-0021 narrows the runtime-pane step-aside: inside a runtime the wrapper now
 runs (wearing the agent's name so the runtime still recognises it) and reports
 activity rather than state, because activity — and later control — cannot come
 from a process that has exec'd itself away. The no-terminal step-aside here is

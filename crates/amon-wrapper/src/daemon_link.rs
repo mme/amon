@@ -78,7 +78,7 @@ impl DaemonLink {
         let _ = self.tx.send(Message::Update(Box::new(patch)));
     }
 
-    /// Report activity for a runtime-hosted agent (ADR-0022): no row of our
+    /// Report activity for a runtime-hosted agent (ADR-0021): no row of our
     /// own, joined to the runtime's by `(kind, pane)`.
     pub fn runtime_activity(
         &self,

@@ -62,7 +62,7 @@ pub enum Signal {
         /// hook knows.
         session_start_source: Option<String>,
     },
-    /// An amon hook reported an Activity (ADR-0021): a prompt that opens a
+    /// An amon hook reported an Activity (ADR-0020): a prompt that opens a
     /// turn, or a narration for a harness whose screen amon cannot read. Only
     /// where amon installed such a hook — the screen is the fallback
     /// everywhere else.
@@ -107,7 +107,7 @@ pub struct Observer {
     /// heartbeat — the same rule the state field follows.
     last_activity: Option<amon_protocol::Activity>,
     /// Set inside a runtime pane: activity is routed to the runtime's row by
-    /// this `(kind, pane_id)`, and state is left to the runtime (ADR-0022).
+    /// this `(kind, pane_id)`, and state is left to the runtime (ADR-0021).
     runtime_pane: Option<(String, String)>,
     /// The session a hook-opened Turn belongs to, when a hook opened the
     /// current one. A hook prompt can arrive before the first session report,
@@ -125,7 +125,7 @@ pub struct Setup {
     pub rows: u16,
     /// `(kind, pane_id)` when amon is wrapping inside a runtime pane. There the
     /// observer reports activity, not state, and routes it to the runtime's
-    /// adopted row by pane rather than to a row of its own (ADR-0022).
+    /// adopted row by pane rather than to a row of its own (ADR-0021).
     pub runtime_pane: Option<(String, String)>,
 }
 
@@ -434,7 +434,7 @@ impl Observer {
         let activity = self.activity.current().map(to_wire_activity);
 
         // Inside a runtime the row is the runtime's: report only activity, and
-        // route it there by pane rather than to a row of our own (ADR-0022).
+        // route it there by pane rather than to a row of our own (ADR-0021).
         if let Some((kind, pane)) = self.runtime_pane.clone() {
             if activity != self.last_activity {
                 self.last_activity = activity.clone();

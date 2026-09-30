@@ -85,7 +85,7 @@ const REPORTS_ITS_WRAPPING: &str = "#!/bin/sh\necho \"amon_env=${AMON_ENV:-unset
                                     sock=${AMON_SOCKET_PATH:-unset}\"\nexit 7\n";
 
 /// Inside a runtime's pane the user's alias still expands `claude` to
-/// `amon claude`, and amon now wraps rather than stepping aside (ADR-0022):
+/// `amon claude`, and amon now wraps rather than stepping aside (ADR-0021):
 /// it needs the PTY for the activity it reads and the control it will add.
 /// It reports activity, not state — the runtime owns the row it adopts by
 /// pane id — and registers no row of its own. So the agent must see
@@ -788,7 +788,7 @@ sleep 5
 
 #[test]
 fn a_prompt_hook_report_becomes_the_turns_activity() {
-    // The amon-only prompt hook (ADR-0021): a UserPromptSubmit report over the
+    // The amon-only prompt hook (ADR-0020): a UserPromptSubmit report over the
     // wrapper socket opens a turn, and its exact text — not the screen's
     // rendering — is what the row shows, marked as the user's words.
     let sandbox = Sandbox::new();

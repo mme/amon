@@ -2,7 +2,7 @@
 #
 # One entry names regions of the rendered screen and patterns that recognise
 # the lines inside them. Both halves are borrowed rather than invented:
-# regions are evaluated by herdr's own accessor (a seam, ADR-0021), so the
+# regions are evaluated by herdr's own accessor (a seam, ADR-0020), so the
 # structural knowledge of where a harness draws things stays in the vendored
 # engine, and patterns are ordinary regexes over the lines that come back.
 #

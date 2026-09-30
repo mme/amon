@@ -24,7 +24,7 @@ its identity, the row you jump to. The wrapper, inside a runtime:
 
 One row, two contributors: the runtime says where the agent is and how it is;
 the wrapper says what it is doing (and, later, makes it do things). This is the
-same split ADR-0020 drew between state and activity, now drawn across two
+same split ADR-0019 drew between state and activity, now drawn across two
 processes instead of one.
 
 ## The problem: the runtime identifies the agent by its name
@@ -93,7 +93,7 @@ and cwd to agree too.
 
 ## Consequences
 
-**Coverage inside a runtime is the hook-and-screen split of ADR-0020, minus
+**Coverage inside a runtime is the hook-and-screen split of ADR-0019, minus
 nothing amon can read.** The wrapper still owns a shadow terminal, so screen
 carriers work (claude's `●`, codex's bullets, grok's `◈`), and the hook socket
 is live, so prompt and narration hooks work. The full activity picture is

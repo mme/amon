@@ -6,7 +6,7 @@ index 760945d..fc6e257 100644
  };
  pub(crate) use types::{IntegrationRecommendation, IntegrationStatus, IntegrationStatusKind};
  
-+// Re-exported for amon's own hook seams (ADR-0021), which register hooks
++// Re-exported for amon's own hook seams (ADR-0020), which register hooks
 +// upstream does not — through upstream's own JSON primitives, never a parallel
 +// editor. A mechanical widening, so a patch and not a hand-edit (ADR-0005).
 +pub(crate) use claude_settings::strict_parse_options;

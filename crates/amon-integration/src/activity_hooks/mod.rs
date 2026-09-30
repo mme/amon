@@ -1,4 +1,4 @@
-//! amon's own activity hooks for harnesses beyond Claude (ADR-0021: seams).
+//! amon's own activity hooks for harnesses beyond Claude (ADR-0020: seams).
 //!
 //! Claude's prompt hook lives in `crate::prompt_hook` and edits a settings
 //! file the user also writes, which is why it goes through herdr's

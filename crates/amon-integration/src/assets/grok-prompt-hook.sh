@@ -1,6 +1,6 @@
 #!/bin/sh
 # amon's own hook — NOT vendored from herdr, NOT rewritten by revendor.
-# Reports grok's submitted prompt as a turn boundary (ADR-0021: a seam). grok
+# Reports grok's submitted prompt as a turn boundary (ADR-0020: a seam). grok
 # merges every ~/.grok/hooks/*.json, so this hook's config is a dedicated amon
 # file that edits nobody else's — the purest seam of all. herdr registers only
 # session_start there; user_prompt_submit is amon's alone.

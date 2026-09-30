@@ -349,7 +349,7 @@ fn handle(
         // Hook reports belong to a wrapper's socket, not here.
         Method::RuntimeActivity(report) => {
             // A wrapper inside a runtime pane, joined to the runtime's own row
-            // by pane (ADR-0022). No entry of the wrapper's own.
+            // by pane (ADR-0021). No entry of the wrapper's own.
             registry.set_runtime_activity(report.kind, report.pane, report.activity);
             Outcome::Reply(Box::new(Response::ack))
         }

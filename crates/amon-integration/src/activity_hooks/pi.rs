@@ -1,4 +1,4 @@
-//! pi's activity extension (ADR-0021: a seam).
+//! pi's activity extension (ADR-0020: a seam).
 //!
 //! pi loads any TypeScript file dropped into its extensions directory, so the
 //! whole install is writing one amon-owned file beside herdr's — and the whole

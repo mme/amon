@@ -28,7 +28,7 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
             &where_it_is(status.state, &status.path),
         );
     }
-    // amon's own Claude prompt hook (ADR-0021) — reported beside the vendored
+    // amon's own Claude prompt hook (ADR-0020) — reported beside the vendored
     // integrations, since amon owns its lifecycle and doctor is where that
     // shows.
     if let Ok(state) = amon_integration::prompt_hook::state() {
