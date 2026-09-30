@@ -54,11 +54,53 @@ fn under_root(socket: &Path, root: Option<&Path>) -> bool {
     root.is_none_or(|root| socket.starts_with(root))
 }
 
+/// Whether a client belongs to the same home directory this daemon serves.
+///
+/// `/proc` is machine-wide, and the uid check above only narrows it to this
+/// *user* — not to this user's desktop session. One user can have runtime
+/// clients living in more than one home: a container or a sandbox sets `HOME`
+/// somewhere else and everything under it, sockets included, moves with it.
+/// Those sessions are not this daemon's to show. A row is an offer to go
+/// somewhere (ADR-0016), and there is nowhere to go: the window belongs to
+/// another world, or to no world at all.
+///
+/// This is what [`ROOT_ENV`] could not do on its own. That guard is
+/// one-directional by construction — the e2e harness sets it on the daemon
+/// *it* spawns, so a test daemon ignores the developer's live sessions, but
+/// nothing sets it on the developer's daemon, which went on adopting every
+/// herdr-shaped process on the machine. Running the test suite on a desktop
+/// with a live amon therefore put the suite's own fixtures on the real Agent
+/// Panel: rows with a `/tmp/wl…/home` cwd, an agent that was never running,
+/// and a window borrowed from whatever happened to be focused.
+///
+/// The home and not the socket path, which is the tempting fix and a wrong
+/// one. A socket is not reliably under any root that can be named in advance:
+/// `HERDR_SOCKET_PATH` may be any absolute path its owner likes, and luvus
+/// relocates a socket whose logical path would not fit `sun_path` into
+/// `/tmp/luvus-<uid>/`. Rooting the check at a directory would quietly stop
+/// adopting both — a worse bug than the one being fixed, and a silent one.
+/// The home is where the client's own resolution starts, so it is the thing
+/// the sessions actually hang off.
+///
+/// A client naming no home is adopted. An unreadable or raced `environ` must
+/// not cost someone a real session, and it cannot be the case this guard is
+/// for: anything sandboxed enough to need excluding sets `HOME` — that is how
+/// it got its own one.
+fn same_home(environ: &str, home: Option<&Path>) -> bool {
+    let (Some(home), Some(theirs)) = (home, env_value(environ, "HOME")) else {
+        return true;
+    };
+    Path::new(theirs) == home
+}
+
 /// Every session of runtime `H` that has an attached client right now.
 pub fn sessions<H: Hosted>() -> Vec<Session> {
     use std::os::unix::fs::MetadataExt;
 
     let root = std::env::var_os(ROOT_ENV).map(PathBuf::from);
+    // Read once for the whole scan rather than per candidate: it cannot change
+    // underneath a single pass, and this runs over every process on the box.
+    let home = std::env::var_os("HOME").map(PathBuf::from);
     let mut found: Vec<(PathBuf, u32)> = Vec::new();
     let mut names: HashMap<PathBuf, Option<String>> = HashMap::new();
     let user = unsafe { libc::geteuid() };
@@ -110,6 +152,11 @@ pub fn sessions<H: Hosted>() -> Vec<Session> {
         };
         let environ = std::fs::read(path.join("environ")).unwrap_or_default();
         let environ = String::from_utf8_lossy(&environ).into_owned();
+        // Before classifying: a client in someone else's home is not a client
+        // of this daemon whatever it turns out to be.
+        if !same_home(&environ, home.as_deref()) {
+            continue;
+        }
         if let Role::Client { name } = H::classify(&argv, session_id == pid, tty_nr != 0, &environ)
         {
             let Some(socket) = H::socket_for(&argv, &environ) else {
@@ -179,6 +226,55 @@ mod tests {
         assert!(
             under_root(Path::new("/home/me/.config/herdr/herdr.sock"), None),
             "no root: everything"
+        );
+    }
+
+    #[test]
+    fn a_client_in_another_home_is_not_this_daemons_business() {
+        let mine = Some(Path::new("/home/me"));
+
+        assert!(
+            same_home("HOME=/home/me\0TERM=xterm\0", mine),
+            "the same home is the ordinary case"
+        );
+        assert!(
+            !same_home("HOME=/tmp/wl4321-0/home\0", mine),
+            "a sandbox sets its own HOME, and its sessions are not ours"
+        );
+        assert!(
+            same_home("HOME=/home/me/\0", mine),
+            "a trailing slash is the same directory"
+        );
+    }
+
+    #[test]
+    fn a_client_that_names_no_home_is_still_adopted() {
+        // An `environ` that could not be read must not cost someone a real
+        // session, and it is never the case this guard is for: a sandbox has
+        // its own HOME by definition — setting one is how it became a sandbox.
+        assert!(same_home("TERM=xterm\0", Some(Path::new("/home/me"))));
+        assert!(same_home("", Some(Path::new("/home/me"))));
+        // And a daemon with no HOME of its own has nothing to compare against.
+        assert!(same_home("HOME=/anywhere\0", None));
+    }
+
+    #[test]
+    fn the_two_guards_answer_different_questions() {
+        // The regression this pair exists for: the e2e harness sets ROOT_ENV
+        // on the daemon it spawns, so a test daemon ignores the developer's
+        // live sessions — but nothing sets it on the developer's daemon, and
+        // `under_root` with no root admits everything. The suite's own herdr
+        // fixtures therefore landed on the real Agent Panel. The home check is
+        // what holds that direction, and it holds it on the one key that
+        // survives both runtimes' socket relocation.
+        let sandbox = "/tmp/wl4321-0/home/.config/herdr/herdr.sock";
+        assert!(
+            under_root(Path::new(sandbox), None),
+            "the socket guard is inert without a root — this is the hole"
+        );
+        assert!(
+            !same_home("HOME=/tmp/wl4321-0/home\0", Some(Path::new("/home/me"))),
+            "and this is what closes it"
         );
     }
 }
