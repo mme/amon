@@ -8,6 +8,14 @@ the machinery, not decoration.
 
 <!-- next -->
 
+## v0.5.1
+
+- **The panel no longer fills with sessions that were never really there**: a
+  daemon now only adopts runtime sessions that belong to its own home
+  directory, instead of any process on the machine that merely looked like
+  one. Stray or unrelated processes can no longer show up as ghost rows in
+  the Agent Panel.
+
 ## v0.5.0
 
 - **A Work Louder Creator Micro 2 becomes a hardware agent panel**: connect
