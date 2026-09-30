@@ -381,9 +381,9 @@ changes apply within a second:
 brightness = 0.7
 
 [devices.micro2.keys]
-macro_2 = "exec:obsidian"          # the sparkle key opens Obsidian
-macro_4 = "key:super+shift+f"      # the hand key sends a chord
-macro_7 = "workspace:5"            # "run" jumps to workspace 5
+macro_2 = "exec:obsidian"          # second key, upper row: open Obsidian
+macro_4 = "key:super+shift+f"      # fourth key, upper row: send a chord
+macro_7 = "workspace:5"            # last key, lower row: jump to workspace 5
 
 [devices.micro2.dictation]
 hold_ms = 300                      # a press this long counts as holding
