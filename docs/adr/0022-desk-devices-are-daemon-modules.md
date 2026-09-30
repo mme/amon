@@ -19,6 +19,20 @@ the finger landed; a key that stands for one agent sends you to the agent
 whose light you read. Past the sixth agent the keys are dark and the knob,
 which walks the whole list, takes over.
 
+## The agent layer is a setup step amon owns
+
+The keys report to amon only on a layer whose keycodes are the firmware's
+vendor ones; on any other layer they type letters, and the lighting probe
+still answers, so nothing in the daemon can tell. A fresh board has no such
+layer. Rather than send people to Work Louder's app for it, `amon setup`
+reads the board's keymap over the same channel the daemon lights it through,
+saves a copy under amon's data directory, writes the layout the firmware's
+own profile uses onto an empty layer (or adds one, up to the board's six),
+and says which layer to tap the touch sensor to — the one step that stays
+physical. `amon doctor` asks the board directly for its firmware and active
+layer and reports both, so the likeliest way a new board fails is named on
+the machine rather than guessed at.
+
 ## Where device support lives
 
 In the daemon, as compiled-in modules on their own threads — the same shape

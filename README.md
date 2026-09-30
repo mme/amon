@@ -182,6 +182,44 @@ Building from source instead: `just install` does the same install from this
 repository (see Building above), and `just uninstall` reverses it,
 integrations first so nothing is left pointing at a binary that is gone.
 
+### Setting up a Creator Micro 2
+
+A Work Louder Creator Micro 2 needs three things, and `amon doctor` checks
+each one:
+
+1. **Firmware 0.6.0 or newer.** Older firmware has no agent keys at all and
+   doctor says so. Update it in Work Louder's Input app; 0.6.2 has been the
+   stable release since August 2026.
+2. **Access to the device.** `/dev/hidraw*` and `/dev/uinput` are root-only
+   on a stock system. `amon setup` shows the one udev rule that grants the
+   logged-in seat access and installs it with your sudo if you say yes. A
+   machine that has run the Input app usually has an equivalent rule
+   already, and then this step never appears.
+3. **The agent layer, and the board on it.** The six lit keys only report to
+   amon on a layer whose keys are the firmware's vendor keycodes; on any
+   other layer they type letters and light the way the app said. A fresh
+   board has no such layer. `amon setup` offers to write one onto an empty
+   layer, after saving the board's current keymap to
+   `~/.local/share/amon/micro2/`; the Input app can add the same layer
+   ("Add a new Codex layer"). Then tap the touch sensor at the board's
+   bottom left until its LEDs show that layer - switching is physical, and
+   amon cannot do it for you.
+
+Connect the board over USB or Bluetooth and run `amon setup`. When all three
+are in place, `amon doctor` reads:
+
+```
+devices:
+  micro2       connected (the daemon lights it) /dev/hidraw5
+  firmware     0.6.3-rc.10
+  layer        agents on layer 1 of 3, active
+```
+
+Anything short of that, doctor names: the firmware floor, the missing rule,
+a layer written but not active, or a board whose six layers are all in use.
+Dictation on the mic key needs [voxtype](https://github.com/voxtype/voxtype)
+installed; without it the key does nothing.
+
 ## Command line reference
 
 **`amon setup [target] [--all] [--no-alias] [--upgrade] [--duck | --no-duck]`**
@@ -333,6 +371,34 @@ fixed: agent key N lights and focuses the panel's Nth agent (grouped by
 workspace, left to right as their windows sit), the encoder scrolls
 (and walks the agent panel while it is open, its click selecting), the
 joystick moves window focus like Super+arrows.
+
+A complete example, in `~/.config/amon/config.toml` - a file from before
+this section existed has no `[devices]` block, so add it by hand; saved
+changes apply within a second:
+
+```toml
+[devices.micro2]
+brightness = 0.7
+
+[devices.micro2.keys]
+macro_2 = "exec:obsidian"          # the sparkle key opens Obsidian
+macro_4 = "key:super+shift+f"      # the hand key sends a chord
+macro_7 = "workspace:5"            # "run" jumps to workspace 5
+
+[devices.micro2.dictation]
+hold_ms = 300                      # a press this long counts as holding
+auto_submit = false                # a hold's end no longer presses Enter
+
+[devices.micro2.colors]
+working = "#7D74F0"                # any state, any color
+```
+
+**`[devices.micro2.dictation]`**
+
+The dictate key reads two ways, and recording starts on the press either
+way: a tap toggles (tap again to stop), a hold is push-to-talk. `hold_ms =
+250` is how long a press counts as holding; `auto_submit = true` presses
+Enter for you when a hold ends and the text has landed. Taps never do.
 
 ## Credits
 

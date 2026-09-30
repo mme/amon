@@ -1494,9 +1494,14 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
         <p>A Work Louder Creator Micro 2 lights up by itself when
            connected - six keys, one per agent in the panel's order, each
            colored by its agent's state, the ring glowing when anything
-           needs you, tap a key to be at that agent. These settings only tune it. On a machine that never had
-           Work Louder udev rules, one root step grants access;
-           <span class="lift">amon setup</span> offers it.</p>
+           needs you, tap a key to be at that agent. These settings only tune it.
+           Three things have to be in place, and <span class="lift">amon doctor</span>
+           checks each: firmware 0.6.0 or newer, access to the device (one udev
+           rule, which <span class="lift">amon setup</span> offers), and the agent
+           layer on the board with the board switched to it -
+           <span class="lift">amon setup</span> writes the layer onto an empty slot
+           after saving the current keymap; the touch sensor at the bottom left
+           cycles to it.</p>
       </div>
       <div>
         <a class="cli-anchor" id="set-micro2-enabled" href="#set-micro2-enabled"><code class="cli-cmd">enabled = true</code></a>
@@ -1533,6 +1538,26 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
            either way: a tap toggles, a hold is push-to-talk. <span class="lift">hold_ms = 250</span>
            is how long a press counts as holding; <span class="lift">auto_submit = true</span>
            sends Enter when a hold ends and the text has landed. Taps never do.</p>
+      </div>
+      <div>
+        <p>All of it together, in <span class="lift">~/.config/amon/config.toml</span>.
+           Saved changes apply within a second:</p>
+        <figure class="snippet">
+          <pre><code><span class="t-o">[devices.micro2]
+brightness = 0.7
+
+[devices.micro2.keys]
+macro_2 = "exec:obsidian"          # the sparkle key opens Obsidian
+macro_4 = "key:super+shift+f"      # the hand key sends a chord
+macro_7 = "workspace:5"            # "run" jumps to workspace 5
+
+[devices.micro2.dictation]
+hold_ms = 300
+auto_submit = false
+
+[devices.micro2.colors]
+working = "#7D74F0"</span></code></pre>
+        </figure>
       </div>
     </div>
   </section>
