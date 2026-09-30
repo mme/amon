@@ -13,7 +13,9 @@
 //! open earns a single desktop notification saying exactly that.
 
 pub mod actions;
+pub mod layer;
 pub mod micro2;
+pub mod query;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -231,6 +231,14 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
                     ),
                 }
             }
+            // What the board itself says, asked directly: the daemon's
+            // lighting probe only proves the firmware answers, not that the
+            // keys are on a layer where they report to amon — on any other
+            // layer they type letters and light the way the app said, and
+            // "the daemon lights it" would be the wrong answer.
+            if udev::accessible(&found.node) && enabled != Some(false) {
+                report_board(&found.node);
+            }
             if enabled != Some(false) && !udev::accessible(std::path::Path::new("/dev/uinput")) {
                 print_line(
                     "input",
@@ -413,6 +421,68 @@ fn dictation_row(
         (_, false) => "duck_while_dictating is on, but no voxtype state file — is voxtype running?",
         (_, true) => "music ducks while dictation records",
     })
+}
+
+/// Firmware and layer, from the board over its own channel. Two lines: the
+/// firmware, with the floor the agent keys need when it is below it; and
+/// where the agent layer is, whether the board is on it, and what to do
+/// when it is not.
+fn report_board(node: &std::path::Path) {
+    use amon_daemon::devices::{layer, query};
+    let mut board = match query::Board::open(node) {
+        Ok(board) => board,
+        Err(_) => return,
+    };
+    let status = match query::status(&mut board) {
+        Ok(status) => status,
+        Err(_) => {
+            print_line("firmware", "no answer from the board", "");
+            return;
+        }
+    };
+    if layer::firmware_supports(&status.firmware) {
+        print_line("firmware", &status.firmware, "");
+    } else {
+        print_line(
+            "firmware",
+            &format!(
+                "{} — the agent keys need {}.{}.{} or newer (update it in Work Louder's Input app)",
+                status.firmware,
+                layer::FIRMWARE_MIN.0,
+                layer::FIRMWARE_MIN.1,
+                layer::FIRMWARE_MIN.2
+            ),
+            "",
+        );
+        return;
+    }
+    let keymap = match query::read_keymap(&mut board) {
+        Ok(keymap) => keymap,
+        Err(_) => {
+            print_line("layer", "could not read the board's keymap", "");
+            return;
+        }
+    };
+    let state = match layer::report(&keymap, status.layer) {
+        layer::LayerReport::Active { layer, total } => {
+            format!("agents on layer {layer} of {total}, active")
+        }
+        layer::LayerReport::Inactive {
+            layer,
+            active,
+            total,
+        } => format!(
+            "agents on layer {layer} of {total}; the board is on layer {active} — tap the touch sensor to cycle"
+        ),
+        layer::LayerReport::Missing {
+            slot: Some(slot),
+            total: _,
+        } => format!("no agent layer on the board — amon setup writes one (to layer {slot})"),
+        layer::LayerReport::Missing { slot: None, total } => format!(
+            "no agent layer, and all {total} layers are in use — free one in Work Louder's Input app"
+        ),
+    };
+    print_line("layer", &state, "");
 }
 
 fn print_line(label: &str, state: &str, path: &str) {

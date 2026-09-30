@@ -179,6 +179,7 @@ pub fn interactive() -> Result<(), Box<dyn std::error::Error>> {
     }
     let result = apply(&actions);
     offer_udev_rule(true);
+    offer_agent_layer(true);
     result
 }
 
@@ -243,6 +244,114 @@ fn offer_udev_rule(interactive: bool) {
     }
 }
 
+/// The other setup step a Creator Micro 2 can need, and the one amon owns
+/// (ADR-0022): a layer on the board whose keys report to amon rather than
+/// type. A fresh board has none; Work Louder's app can add one, and so can
+/// this — over the same channel the daemon lights it through, onto an empty
+/// layer, with the board's current keymap saved beside amon's other files
+/// first. Interactive runs ask; scripts are told what to run.
+///
+/// Silent when there is nothing to say: no board, no access (the udev step
+/// above covers that), firmware too old to have the keys at all (doctor
+/// says so), or the layer already there.
+fn offer_agent_layer(interactive: bool) {
+    use amon_daemon::devices::{layer, query};
+    let Some(found) = amon_daemon::devices::discover() else {
+        return;
+    };
+    if !amon_integration::udev::accessible(&found.node) {
+        return;
+    }
+    let Ok(mut board) = query::Board::open(&found.node) else {
+        return;
+    };
+    let Ok(status) = query::status(&mut board) else {
+        return;
+    };
+    if !layer::firmware_supports(&status.firmware) {
+        return;
+    }
+    let Ok(keymap) = query::read_keymap(&mut board) else {
+        return;
+    };
+    if layer::agent_layer(&keymap).is_some() {
+        return;
+    }
+    let total = layer::layer_count(&keymap);
+    println!();
+    println!("a Creator Micro 2 is connected, but none of its layers reports to amon —");
+    println!("its keys type letters. The agent layer is what lights the six keys and");
+    println!("sends their presses to amon.");
+    let Some(slot) = layer::slot_for_agent_layer(&keymap) else {
+        println!("all {total} of its layers are in use; free one in Work Louder's Input app,");
+        println!("or add a Codex layer there, and run amon setup again.");
+        return;
+    };
+    let target = slot + 1;
+    let backup = keymap_backup_path();
+    if slot < total {
+        println!("amon can write it onto layer {target}, which is empty today.");
+    } else {
+        println!("amon can add it as layer {target}.");
+    }
+    println!(
+        "the board's current keymap is saved first, to {}",
+        backup.display()
+    );
+    println!();
+
+    if !interactive {
+        println!("write it with: amon setup   (interactive; it asks first)");
+        return;
+    }
+    print!("write the agent layer to the board now? [y/N] ");
+    let _ = io::stdout().flush();
+    let mut answer = String::new();
+    let _ = io::stdin().read_line(&mut answer);
+    if !matches!(answer.trim(), "y" | "Y" | "yes") {
+        println!("skipped — run amon setup again whenever you like");
+        return;
+    }
+    if let Some(parent) = backup.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let saved = serde_json::to_string_pretty(&keymap)
+        .map_err(io::Error::other)
+        .and_then(|text| std::fs::write(&backup, text));
+    if let Err(error) = saved {
+        println!("✗ could not save the current keymap ({error}); nothing written to the board");
+        return;
+    }
+    match query::write_keymap(&mut board, &layer::with_agent_layer(&keymap, slot)) {
+        Ok(()) => {
+            println!("✓ agent layer written to layer {target}");
+            println!("  tap the touch sensor at the board's bottom left until its LEDs show layer {target};");
+            println!("  amon doctor confirms, and the keys light within moments");
+        }
+        Err(error) => {
+            println!("✗ the board refused the write ({error}); its keymap is unchanged");
+            println!("  the saved copy is at {}", backup.display());
+        }
+    }
+}
+
+/// Beside amon's other files: `~/.local/share/amon/micro2/keymap-<epoch>.json`.
+fn keymap_backup_path() -> std::path::PathBuf {
+    let data = std::env::var_os("XDG_DATA_HOME")
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .unwrap_or_else(|| {
+            std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
+                .join(".local/share")
+        });
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0);
+    data.join("amon/micro2")
+        .join(format!("keymap-{stamp}.json"))
+}
+
 /// `amon setup --all`: every Detected Agent plus the widget, no screen. Purely
 /// additive — removal is the interactive screen's or `amon remove`'s job.
 /// Ducking rides along by default where WirePlumber exists, the same answer
@@ -271,6 +380,7 @@ pub fn all(no_alias: bool, duck: bool) -> Result<(), Box<dyn std::error::Error>>
     }
     let result = apply(&actions);
     offer_udev_rule(false);
+    offer_agent_layer(false);
     result
 }
 
