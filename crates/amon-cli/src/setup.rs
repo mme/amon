@@ -182,7 +182,7 @@ pub fn interactive() -> Result<(), Box<dyn std::error::Error>> {
     result
 }
 
-/// The one root step a desk device can need (ADR-0016): a udev rule so the
+/// The one root step a desk device can need (ADR-0022): a udev rule so the
 /// seated user may open the device node and `/dev/uinput`. Interactive runs
 /// offer to install it with the user's own sudo — the rule is shown in full
 /// first, and declining is a fine answer. Non-interactive runs print the

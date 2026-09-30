@@ -392,7 +392,7 @@ Consequences for this feature:
 ## 9. Where the setting would live, and the recommended shape (proposal)
 
 **Mechanism:** a small watcher in the daemon (same module shape as sounds/
-updates/devices — ADR-0016's pattern) that follows voxtype state and,
+updates/devices — ADR-0022's pattern) that follows voxtype state and,
 while `recording`/`streaming`, holds open one **silent playback stream
 tagged `media.role=Notification`** — e.g. `pw-play` (already amon's one
 player, `sound.rs:30`) on a bundled silence asset, or `pw-cat --playback`

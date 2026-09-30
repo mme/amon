@@ -413,7 +413,7 @@
       "type": "object"
     },
     "DevicesConfig": {
-      "description": "Physical status devices on the desk (ADR-0016). Today that is the Work\nLouder Creator Micro 2; the shape leaves room for its siblings.",
+      "description": "Physical status devices on the desk (ADR-0022). Today that is the Work\nLouder Creator Micro 2; the shape leaves room for its siblings.",
       "properties": {
         "micro2": {
           "$ref": "#/$defs/Micro2Config",
@@ -656,46 +656,6 @@
       ],
       "type": "object"
     },
-    "ReportActivity": {
-      "description": "A hook reporting an Activity. amon-only: herdr has no counterpart, because\nherdr collects state, not content (ADR-0020 — a seam, not a modified\nvendored asset). A `prompt` opens a Turn with the exact submitted text; a\n`narration` is the harness's own account of its current step, for agents\nwhose screens amon cannot read. The wrapper bounds the text.",
-      "properties": {
-        "agent": {
-          "type": "string"
-        },
-        "agent_id": {
-          "type": "string"
-        },
-        "agent_session_id": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "kind": {
-          "$ref": "#/$defs/ActivityKind"
-        },
-        "seq": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "source": {
-          "type": "string"
-        },
-        "text": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "agent_id",
-        "source",
-        "agent",
-        "seq",
-        "text",
-        "kind"
-      ],
-      "type": "object"
-    },
     "Micro2Config": {
       "description": "The Creator Micro 2: six agent keys lit by agent state, a ring showing\nthe fleet's most urgent state, and every other control mapped to an\naction. Everything here is optional; absent means the tuned default.",
       "properties": {
@@ -737,6 +697,46 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "ReportActivity": {
+      "description": "A hook reporting an Activity. amon-only: herdr has no counterpart, because\nherdr collects state, not content (ADR-0020 — a seam, not a modified\nvendored asset). A `prompt` opens a Turn with the exact submitted text; a\n`narration` is the harness's own account of its current step, for agents\nwhose screens amon cannot read. The wrapper bounds the text.",
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "agent_id": {
+          "type": "string"
+        },
+        "agent_session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/ActivityKind"
+        },
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_id",
+        "source",
+        "agent",
+        "seq",
+        "text",
+        "kind"
+      ],
       "type": "object"
     },
     "ReportSession": {

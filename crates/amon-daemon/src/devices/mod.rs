@@ -1,4 +1,4 @@
-//! Physical status devices on the desk (ADR-0016).
+//! Physical status devices on the desk (ADR-0022).
 //!
 //! A registry of device modules keyed by what the hardware announces:
 //! today the Work Louder Creator Micro 2, wired (`303a:8297`) or Bluetooth

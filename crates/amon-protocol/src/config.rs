@@ -121,7 +121,7 @@ impl Default for UpdatesConfig {
     }
 }
 
-/// Physical status devices on the desk (ADR-0016). Today that is the Work
+/// Physical status devices on the desk (ADR-0022). Today that is the Work
 /// Louder Creator Micro 2; the shape leaves room for its siblings.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]

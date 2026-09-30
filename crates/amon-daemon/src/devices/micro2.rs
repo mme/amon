@@ -1,6 +1,6 @@
 //! The Work Louder Creator Micro 2: six agent keys lit by agent state, a
 //! ring showing the fleet's most urgent state, and every control mapped to
-//! an action (ADR-0016).
+//! an action (ADR-0022).
 //!
 //! The protocol is the one the Codex desktop app speaks, learned from its
 //! published artifacts for interoperability and verified against real
@@ -799,15 +799,17 @@ mod tests {
             args: vec![],
             hostname: "host".into(),
             started_at: 1,
-            title: None,
             agent_session_id: None,
             agent_session_path: None,
+            activity: None,
             window: Some("abc123".into()),
             workspace: Some(workspace.into()),
+            project: None,
+            subpath: None,
             branch: None,
             focused: None,
             seen,
-            herdr: None,
+            runtime: None,
         }
     }
 
