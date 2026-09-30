@@ -198,6 +198,25 @@ Item {
     return "dismissed"
   }
 
+  // The Creator Micro 2's encoder, arriving through the same shell `call` IPC
+  // as Super+W's question above. While the modal is up, the knob walks the
+  // list and its click activates the row; any other time the daemon hears
+  // "closed" and the knob keeps its ordinary job. The popped-out window is
+  // deliberately not driven this way — it is a normal window without the
+  // modal's claim on input, and a knob that reached into an unfocused window
+  // would be acting somewhere the desktop does not say it is.
+  function encoderMove(delta) {
+    if (!root.opened) return "closed"
+    modalView.moveSelection(parseInt(delta, 10) || 0)
+    return "handled"
+  }
+
+  function encoderSelect() {
+    if (!root.opened) return "closed"
+    modalView.activateSelection()
+    return "handled"
+  }
+
   // Going to the agent a row names — through `amon focus`, never by
   // dispatching the compositor here. Getting to an agent is one operation with
   // more than one part: the window, and, for an agent living in a herdr pane,

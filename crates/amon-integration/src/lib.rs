@@ -38,6 +38,7 @@ pub mod ducking;
 mod fence;
 pub mod prompt_hook;
 pub mod shims;
+pub mod udev;
 
 pub use api::schema::IntegrationTarget;
 pub use api_surface::{

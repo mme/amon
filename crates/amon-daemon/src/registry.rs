@@ -311,6 +311,7 @@ mod tests {
             project: None,
             subpath: None,
             window: None,
+            position: None,
             workspace: None,
             branch: None,
             focused: None,

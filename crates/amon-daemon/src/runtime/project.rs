@@ -77,6 +77,9 @@ pub fn entry_for<H: Hosted>(
         // does not carry one either.
         activity: None,
         window: window.map(|window| window.address.clone()),
+        position: window
+            .and_then(|window| window.position)
+            .map(|(x, y)| amon_protocol::Position { x, y }),
         workspace: window.and_then(|window| window.workspace.clone()),
         // No branch and no Project for a hosted agent. Both are facts about
         // a directory, and amon could read them from the cwd the runtime
@@ -143,6 +146,7 @@ mod tests {
         let window = amon_hypr::Window {
             address: "abc123".into(),
             workspace: Some("3".into()),
+            position: None,
         };
         let entry = entry_for::<Herdr>(&agent("done"), &session(), Some(&window), 1000);
         assert!(entry.id.starts_with("herdr:"));

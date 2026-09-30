@@ -81,3 +81,43 @@ pub fn ensure_private_dir(dir: &Path) -> std::io::Result<()> {
     }
     Ok(())
 }
+
+/// This binary, by a path that still runs it.
+///
+/// `current_exe` reads `/proc/self/exe`, and after the installer has swapped
+/// the file underneath a running daemon that link reads
+/// `.../amon (deleted)` — a name nothing can execute. A daemon that spawned
+/// `amon focus` through it did nothing when a key was tapped, silently,
+/// until it happened to restart. So the suffix is stripped and the path is
+/// checked: the installer renames the new binary onto the same path, so
+/// that path is the current build. If it is gone too, `amon` on `PATH` is
+/// the last resort — never as a first choice, because a daemon started from
+/// a build directory must not shell out to whatever `amon` is installed.
+pub fn own_binary() -> PathBuf {
+    let Ok(exe) = std::env::current_exe() else {
+        return PathBuf::from("amon");
+    };
+    let candidate = match exe.file_name().and_then(|name| name.to_str()) {
+        Some(name) if name.ends_with(" (deleted)") => {
+            exe.with_file_name(name.trim_end_matches(" (deleted)"))
+        }
+        _ => exe,
+    };
+    if candidate.is_file() {
+        candidate
+    } else {
+        PathBuf::from("amon")
+    }
+}
+
+#[cfg(test)]
+mod own_binary_tests {
+    use super::*;
+
+    #[test]
+    fn the_running_test_binary_is_found_by_its_own_path() {
+        let path = own_binary();
+        assert!(path.is_file(), "{path:?}");
+        assert!(!path.to_string_lossy().contains("(deleted)"));
+    }
+}

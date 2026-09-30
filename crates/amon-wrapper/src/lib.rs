@@ -152,6 +152,7 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
             // agent has drawn a screen worth reading.
             activity: None,
             window: None,
+            position: None,
             workspace: None,
             // Resolved before the agent is registered, so a row never appears
             // without its Project and branch and then acquires them a second

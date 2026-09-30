@@ -156,6 +156,14 @@ back to the compositor (e.g. to focus it). Absent when there is no compositor
 or the mapping is ambiguous — never guessed.
 _Avoid_: client (Hyprland jargon), terminal (that's the emulator)
 
+**Position**:
+Where a Window sits as the compositor laid it out - its top-left corner. What
+orders one Workspace's Agents wherever they are listed in the Agent Panel's
+order: left to right, then top to bottom, the way the screen reads. It moves
+when the layout does and never with state, and is absent whenever the Window
+is.
+_Avoid_: geometry, coordinates (it is an order, not a measurement)
+
 **Project**:
 The repository an Agent works in, named by its root directory. A linked
 worktree's Project is the repository it was cut from, not the worktree's own

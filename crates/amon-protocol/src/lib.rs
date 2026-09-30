@@ -23,8 +23,11 @@ mod method;
 pub mod paths;
 mod schema;
 
-pub use agent::{Activity, ActivityKind, AgentEntry, AgentPatch, AgentState, Runtime};
-pub use config::{BarConfig, Config, GlyphConfig, SoundConfig, UpdatesConfig};
+pub use agent::{Activity, ActivityKind, AgentEntry, AgentPatch, AgentState, Position, Runtime};
+pub use config::{
+    BarConfig, Config, DeviceColors, DevicesConfig, GlyphConfig, Micro2Config, SoundConfig,
+    UpdatesConfig,
+};
 pub use connect::connect_or_spawn_daemon;
 pub use event::Event;
 pub use frame::{Error, ErrorCode, ParseError, Request, Response, ServerFrame};

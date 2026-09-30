@@ -46,10 +46,12 @@ pub enum Signal {
     },
     /// The terminal reported that the agent's view gained or lost focus.
     Focus(bool),
-    /// The compositor placed the agent's window, or moved it.
+    /// The compositor placed the agent's window, moved it, or moved what
+    /// sits around it.
     Window {
         window: Option<String>,
         workspace: Option<String>,
+        position: Option<amon_protocol::Position>,
     },
     /// An integration hook reported which session the agent is in.
     HookSession {
@@ -208,10 +210,15 @@ impl Observer {
                     self.link.update(patch);
                 }
             }
-            Signal::Window { window, workspace } => {
+            Signal::Window {
+                window,
+                workspace,
+                position,
+            } => {
                 let mut patch = AgentPatch::new(&self.agent_id);
                 patch.window = Some(window);
                 patch.workspace = Some(workspace);
+                patch.position = Some(position);
                 self.link.update(patch);
             }
             Signal::Location(location) => {

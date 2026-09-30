@@ -145,6 +145,10 @@
            background:color-mix(in srgb, var(--ink) 5%, transparent);
            border-radius:6px; padding:.18em .55em}
   .cliref p{margin:.55rem 0 0; color:var(--muted); max-width:60ch}
+  /* An example under its own lead-in: a little more air than a command gets
+     from its explanation, a little less than the gap between entries, so it
+     reads as the entry's second half and not as the next one. */
+  .cliref .snippet{margin-top:.9rem}
   /* TOML section headers between the settings, set as they appear in the file */
   .cli-sect{color:var(--ink); margin-top:.4rem}
   .cli-sect:first-child{margin-top:0}
@@ -668,6 +672,57 @@
   @media (prefers-reduced-motion: reduce){
     .shot img,.shot-name{transition:none}
   }
+
+  /* ---- the desk: a Creator Micro 2, drawn ---------------------------------
+     The same card as the panel, holding the device face-on. Thirteen caps in
+     the board's own rows of 2 / 4 / 4 / 3, the dial and the stick in the gap
+     the short first row leaves. The six caps that can light are the panel's
+     first six rows, in its order, in the state palette the daemon sends the
+     hardware; the ring is the fleet's most urgent state. Only what moves on
+     the real board moves here: a working key breathes. */
+  .desk{margin:0; display:flex; flex-direction:column}
+  /* No card: the board supplies its own ground and edge, so a box around it
+     would only frame a frame. It sits at the left margin like the copy. */
+  .desk-card{padding:6px 0 2px; display:flex; justify-content:flex-start; overflow:visible}
+  .desk svg{width:100%; max-width:400px; height:auto; display:block; overflow:visible}
+  .desk .body{fill:var(--sunk); stroke:var(--rule)}
+  /* The underglow: the body's own outline, wide, soft and behind it. */
+  .desk .ring{fill:none; stroke:var(--ink); stroke-width:10; opacity:.16; filter:blur(10px)}
+  .desk .frame{fill:none; stroke:var(--rule); stroke-width:1.5; opacity:.7}
+  .desk .cap{fill:var(--ground); stroke:var(--rule)}
+  /* A lit cap is frosted: the colour fills it thinly and a brighter core sits
+     where the switch's light comes through, the way the real caps read. */
+  /* Monochrome, like the rest of the page: the state is how much light a cap
+     gives, not which colour. Waiting is brightest and still, working breathes,
+     done is lit and calm, at rest is barely there. The board's real palette is
+     in the settings table below. */
+  .desk .cap.lit{stroke:none; fill:var(--ink)}
+  .desk .core{fill:var(--ink)}
+  .desk .is-blocked .cap.lit{opacity:.34} .desk .is-blocked .core{opacity:1}
+  .desk .is-working .cap.lit{opacity:.24} .desk .is-working .core{opacity:.9}
+  .desk .is-done .cap.lit{opacity:.18} .desk .is-done .core{opacity:.7}
+  .desk .is-idle .cap.lit{opacity:.07} .desk .is-idle .core{opacity:.3}
+  .desk .key.is-working{animation:desk-breathe 2400ms ease-in-out infinite}
+  .desk .key.is-working.later{animation-delay:-900ms}
+  /* A little of each colour spills onto the plate around the cap, the way a
+     lit switch does. Same shape, behind, blurred. */
+  .desk .halo{filter:blur(7px); fill:var(--ink); opacity:.16}
+  .desk .is-idle .halo{opacity:0}
+  .desk .is-done .halo{opacity:.1}
+  /* Legends drawn rather than typed: the same muted ink, thin strokes. */
+  .desk .icon{fill:none; stroke:var(--muted); stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round}
+  .desk .icon-fill{fill:var(--muted)}
+  .desk .legend{fill:var(--muted); font-size:12.5px; letter-spacing:.02em; text-anchor:middle;
+                dominant-baseline:central; font-family:"Duo","Glyphs",ui-monospace,monospace}
+  .desk .legend.mark{fill:var(--muted)}
+  .desk .dial{fill:var(--ground); stroke:var(--rule)}
+  .desk .dial-tick{stroke:var(--muted); stroke-width:2; stroke-linecap:round}
+  .desk .stick-base{fill:var(--ground); stroke:var(--rule)}
+  .desk .stick{fill:var(--rule); stroke:var(--muted)}
+  @keyframes desk-breathe{0%,100%{opacity:.55} 50%{opacity:1}}
+  @media (prefers-reduced-motion: reduce){
+    .desk .key.is-working{animation:none; opacity:.85}
+  }
 </style>
 </head>
 <body>
@@ -1079,6 +1134,72 @@
 
   <section class="plate">
     <header>
+      <h2><a class="h-anchor" id="desk" href="#desk">control your agents from a hardware keypad</a></h2>
+    </header>
+
+    <!--
+      A Creator Micro 2, face on, in the board's own arrangement: the dial top
+      left, the stick top right, and the six frosted caps that can light
+      between and below them. Those show the same five agents as the panel
+      above, in the panel's order - amon.sh main and detect-flake working on
+      workspace 1, docs-portal done on 2, atlas waiting on 3, the website
+      checkout idle on 4, and no sixth agent, so an unlit cap. Drawn in one
+      ink: the state is how brightly a cap glows, and the board's real colours
+      are left to the settings table. The ring glows because atlas is waiting.
+      Below, the seven macro keys wearing what is printed on the caps: a
+      ringed A, a sparkle, up, a raised hand, then a gap, a speech bubble,
+      down, and "run". A picture, not a control; abstract on
+      purpose, drawn in the page's own inks rather than photographed.
+    -->
+    <figure class="desk">
+      <div class="desk-card">
+        <svg viewBox="0 0 324 324" role="img"
+             aria-label="A Creator Micro 2 keypad, drawn in one ink: a dial top left, a small joystick top right, and between them two frosted keys, lit and breathing. Below, four more frosted keys at different brightnesses: lit, brightest, faint, and unlit. Then a row of four dark keys carrying a ringed A, a sparkle, an up arrow and a raised hand, and a last row of three dark keys set to the right: a speech bubble, a down arrow and the word run.">
+          <rect class="ring" x="20" y="20" width="284" height="284" rx="26"/>
+          <rect class="body" x="20" y="20" width="284" height="284" rx="26"/>
+          <rect class="frame" x="27" y="27" width="270" height="270" rx="21"/>
+          <g>
+            <circle class="dial" cx="69.0" cy="69.0" r="24"/><path class="dial-tick" d="M 59.0 79.0 L 79.0 59.0" />
+            <g class="key is-working"><rect class="halo" x="106" y="44" width="50" height="50" rx="9"/><rect class="cap lit" x="106" y="44" width="50" height="50" rx="9"/><circle class="core" cx="131.0" cy="69.0" r="8"/></g>
+            <g class="key is-working later"><rect class="halo" x="168" y="44" width="50" height="50" rx="9"/><rect class="cap lit" x="168" y="44" width="50" height="50" rx="9"/><circle class="core" cx="193.0" cy="69.0" r="8"/></g>
+            <circle class="stick-base" cx="255.0" cy="69.0" r="19"/><circle class="stick" cx="258.0" cy="66.0" r="9"/>
+            <g class="key is-done"><rect class="halo" x="44" y="106" width="50" height="50" rx="9"/><rect class="cap lit" x="44" y="106" width="50" height="50" rx="9"/><circle class="core" cx="69.0" cy="131.0" r="8"/></g>
+            <g class="key is-blocked"><rect class="halo" x="106" y="106" width="50" height="50" rx="9"/><rect class="cap lit" x="106" y="106" width="50" height="50" rx="9"/><circle class="core" cx="131.0" cy="131.0" r="8"/></g>
+            <g class="key is-idle"><rect class="halo" x="168" y="106" width="50" height="50" rx="9"/><rect class="cap lit" x="168" y="106" width="50" height="50" rx="9"/><circle class="core" cx="193.0" cy="131.0" r="8"/></g>
+            <rect class="cap" x="230" y="106" width="50" height="50" rx="9"/>
+            <rect class="cap" x="44" y="168" width="50" height="50" rx="9"/>
+            <circle class="icon" cx="69.0" cy="193.0" r="10"/><text class="legend" x="69.0" y="193.5" style="font-size:11px">A</text>
+            <rect class="cap" x="106" y="168" width="50" height="50" rx="9"/>
+            <path class="icon-fill" d="M 129.5 184.0 C 130.5 190.0 133.0 192.5 139.0 194.0 C 133.0 195.5 130.5 198.0 129.5 204.0 C 128.5 198.0 126.0 195.5 120.0 194.0 C 126.0 192.5 128.5 190.0 129.5 184.0 Z"/><path class="icon-fill" d="M 138.0 183.0 C 138.4 185.0 139.5 186.1 141.5 186.5 C 139.5 186.9 138.4 188.0 138.0 190.0 C 137.6 188.0 136.5 186.9 134.5 186.5 C 136.5 186.1 137.6 185.0 138.0 183.0 Z"/>
+            <rect class="cap" x="168" y="168" width="50" height="50" rx="9"/>
+            <path class="icon" d="M 193.0 202.0 L 193.0 184.0 M 187.0 190.0 L 193.0 184.0 L 199.0 190.0"/>
+            <rect class="cap" x="230" y="168" width="50" height="50" rx="9"/>
+            <path class="icon" d="M 249.0 194.0 L 249.0 199.0 Q 249.0 204.0 254.0 204.0 L 258.0 204.0 Q 263.0 204.0 263.0 199.0 L 263.0 189.0"/><path class="icon" d="M 249.0 194.0 L 249.0 187.0 M 253.0 194.0 L 253.0 184.0 M 257.0 194.0 L 257.0 183.0 M 261.0 194.0 L 261.0 186.0"/><path class="icon" d="M 249.0 197.0 L 244.0 192.0"/>
+            <rect class="cap" x="106" y="230" width="50" height="50" rx="9"/>
+            <path class="icon" d="M 121.0 248.0 Q 121.0 246.0 123.0 246.0 L 139.0 246.0 Q 141.0 246.0 141.0 248.0 L 141.0 257.0 Q 141.0 259.0 139.0 259.0 L 129.0 259.0 L 124.0 264.0 L 124.0 259.0 L 123.0 259.0 Q 121.0 259.0 121.0 257.0 Z"/>
+            <rect class="cap" x="168" y="230" width="50" height="50" rx="9"/>
+            <path class="icon" d="M 193.0 246.0 L 193.0 264.0 M 187.0 258.0 L 193.0 264.0 L 199.0 258.0"/>
+            <rect class="cap" x="230" y="230" width="50" height="50" rx="9"/>
+            <text class="legend" x="255.0" y="255.0">run</text>
+          </g>
+        </svg>
+      </div>
+    </figure>
+
+    <p><span class="lift">amon</span> drives a <span class="lift">Work Louder Creator Micro 2</span>
+       over USB or Bluetooth. The six keys that can light stand for the first six agents
+       in the panel's order, and each shows its agent's state: breathing while it works,
+       solid while it waits for you, lit when it finished while you were away. Tap one to
+       focus that agent. The ring around the board shows the most urgent state anywhere.
+       The dial scrolls, and walks the agent panel while it is open; the stick moves
+       window focus like <span class="lift">Super+arrows</span>. The other seven keys are
+       yours to map. By default they open the panel, start a new agent, send Up and
+       Escape, dictate through voxtype - hold to talk, release to send - and send Down and
+       Enter. <a href="#set-micro2-keys">Settings</a>.</p>
+  </section>
+
+  <section class="plate">
+    <header>
       <h2><a class="h-anchor" id="cli" href="#cli">full command line interface</a></h2>
     </header>
 
@@ -1370,6 +1491,77 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
            the agent panel shows a one-line footer with the command that
            upgrades; nothing downloads or installs itself. Set to false and
            it never checks.</p>
+      </div>
+
+      <div class="cli-sect">[devices.micro2]</div>
+      <div>
+        <p>A Work Louder Creator Micro 2 lights up by itself when
+           connected - six keys, one per agent in the panel's order, each
+           colored by its agent's state, the ring glowing when anything
+           needs you, tap a key to be at that agent. These settings only tune it.
+           Three things have to be in place, and <span class="lift">amon doctor</span>
+           checks each: firmware 0.6.0 or newer, access to the device (one udev
+           rule, which <span class="lift">amon setup</span> offers), and the agent
+           layer on the board with the board switched to it -
+           <span class="lift">amon setup</span> writes the layer onto an empty slot
+           after saving the current keymap; the touch sensor at the bottom left
+           cycles to it.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-micro2-enabled" href="#set-micro2-enabled"><code class="cli-cmd">enabled = true</code></a>
+        <p>Set false to leave the device alone entirely.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-micro2-brightness" href="#set-micro2-brightness"><code class="cli-cmd">brightness = 1.0</code></a>
+        <p>Keys and ring alike, 0.0-1.0. <span class="lift">ring =
+           false</span> darkens the ambient ring; by default it shows the
+           fleet's most urgent state.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-micro2-colors" href="#set-micro2-colors"><code class="cli-cmd">[devices.micro2.colors]</code></a>
+        <p>Per-state key colors: <span class="lift">blocked = "#FF6D00"</span>,
+           <span class="lift">working = "#304FFE"</span>, <span class="lift">done = "#00FF4C"</span>,
+           <span class="lift">idle = "#FFFFFF"</span>. The ring borrows them.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-micro2-keys" href="#set-micro2-keys"><code class="cli-cmd">[devices.micro2.keys]</code></a>
+        <p>The seven macro keys, any action. Controls:
+           <span class="lift">macro_1</span>..<span class="lift">macro_7</span>
+           in reading order, upper row then lower. Actions: <span class="lift">none</span>,
+           <span class="lift">panel</span>,
+           <span class="lift">workspace:N</span>, <span class="lift">key:&lt;chord&gt;</span>,
+           <span class="lift">exec:&lt;command&gt;</span>. Defaults: the agent
+           panel, a new default agent, Up, Escape on the upper row;
+           dictation, Down, Enter on the lower. Everything else is fixed: agent key N lights
+           and focuses the panel's Nth agent, the encoder scrolls and drives
+           the open agent panel, the joystick moves window focus.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-micro2-dictation" href="#set-micro2-dictation"><code class="cli-cmd">[devices.micro2.dictation]</code></a>
+        <p>The dictate key reads two ways, and recording starts on the press
+           either way: a tap toggles, a hold is push-to-talk. <span class="lift">hold_ms = 250</span>
+           is how long a press counts as holding; <span class="lift">auto_submit = true</span>
+           sends Enter when a hold ends and the text has landed. Taps never do.</p>
+      </div>
+      <div>
+        <p>All of it together, in <span class="lift">~/.config/amon/config.toml</span>.
+           Saved changes apply within a second:</p>
+        <figure class="snippet">
+          <pre><code><span class="t-o">[devices.micro2]
+brightness = 0.7
+
+[devices.micro2.keys]
+macro_2 = "exec:obsidian"          # second key, upper row: open Obsidian
+macro_4 = "key:super+shift+f"      # fourth key, upper row: send a chord
+macro_7 = "workspace:5"            # last key, lower row: jump to workspace 5
+
+[devices.micro2.dictation]
+hold_ms = 300
+auto_submit = false
+
+[devices.micro2.colors]
+working = "#7D74F0"</span></code></pre>
+        </figure>
       </div>
     </div>
   </section>

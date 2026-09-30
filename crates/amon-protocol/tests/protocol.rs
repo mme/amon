@@ -23,6 +23,7 @@ fn entry() -> AgentEntry {
         agent_session_path: None,
         activity: None,
         window: Some("0x1a2b".into()),
+        position: None,
         workspace: None,
         project: None,
         subpath: None,
