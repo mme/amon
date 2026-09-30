@@ -685,29 +685,31 @@
   .desk svg{width:100%; max-width:400px; height:auto; display:block; overflow:visible}
   .desk .body{fill:var(--sunk); stroke:var(--rule)}
   /* The underglow: the body's own outline, wide, soft and behind it. */
-  .desk .ring{fill:none; stroke:#FF6D00; stroke-width:10; opacity:.42; filter:blur(10px)}
+  .desk .ring{fill:none; stroke:var(--ink); stroke-width:10; opacity:.16; filter:blur(10px)}
   .desk .frame{fill:none; stroke:var(--rule); stroke-width:1.5; opacity:.7}
   .desk .cap{fill:var(--ground); stroke:var(--rule)}
   /* A lit cap is frosted: the colour fills it thinly and a brighter core sits
      where the switch's light comes through, the way the real caps read. */
-  .desk .cap.lit{stroke:none; opacity:.42}
-  .desk .core{opacity:.95}
-  .desk .is-working .cap.lit,.desk .cap.is-working{fill:#304FFE}
-  .desk .is-done .cap.lit{fill:#00FF4C}
-  .desk .is-blocked .cap.lit{fill:#FF6D00}
-  .desk .is-idle .cap.lit{fill:#EAE6E4; opacity:.14}
-  .desk .is-working .core{fill:#9FB0FF}
-  .desk .is-done .core{fill:#B8FFCB}
-  .desk .is-blocked .core{fill:#FFC79A}
-  .desk .is-idle .core{fill:#EAE6E4; opacity:.45}
+  /* Monochrome, like the rest of the page: the state is how much light a cap
+     gives, not which colour. Waiting is brightest and still, working breathes,
+     done is lit and calm, at rest is barely there. The board's real palette is
+     in the settings table below. */
+  .desk .cap.lit{stroke:none; fill:var(--ink)}
+  .desk .core{fill:var(--ink)}
+  .desk .is-blocked .cap.lit{opacity:.34} .desk .is-blocked .core{opacity:1}
+  .desk .is-working .cap.lit{opacity:.24} .desk .is-working .core{opacity:.9}
+  .desk .is-done .cap.lit{opacity:.18} .desk .is-done .core{opacity:.7}
+  .desk .is-idle .cap.lit{opacity:.07} .desk .is-idle .core{opacity:.3}
   .desk .key.is-working{animation:desk-breathe 2400ms ease-in-out infinite}
   .desk .key.is-working.later{animation-delay:-900ms}
   /* A little of each colour spills onto the plate around the cap, the way a
      lit switch does. Same shape, behind, blurred. */
-  .desk .halo{filter:blur(7px); opacity:.34}
-  .desk .is-working .halo{fill:#304FFE}
-  .desk .is-done .halo{fill:#00FF4C}
-  .desk .is-blocked .halo{fill:#FF6D00}
+  .desk .halo{filter:blur(7px); fill:var(--ink); opacity:.16}
+  .desk .is-idle .halo{opacity:0}
+  .desk .is-done .halo{opacity:.1}
+  /* Legends drawn rather than typed: the same muted ink, thin strokes. */
+  .desk .icon{fill:none; stroke:var(--muted); stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round}
+  .desk .icon-fill{fill:var(--muted)}
   .desk .legend{fill:var(--muted); font-size:11px; letter-spacing:.02em; text-anchor:middle;
                 dominant-baseline:central; font-family:"Duo","Glyphs",ui-monospace,monospace}
   .desk .legend.mark{fill:var(--muted)}
@@ -1139,16 +1141,18 @@
       between and below them. Those show the same five agents as the panel
       above, in the panel's order - amon.sh main and detect-flake working on
       workspace 1, docs-portal done on 2, atlas waiting on 3, the website
-      checkout idle on 4, and no sixth agent, so an unlit cap. The ring is
-      orange because atlas is waiting: the fleet's most urgent state. Below,
-      the seven macro keys with their defaults as legends; the last row's
-      first slot is left empty. A picture, not a control; abstract on
+      checkout idle on 4, and no sixth agent, so an unlit cap. Drawn in one
+      ink: the state is how brightly a cap glows, and the board's real colours
+      are left to the settings table. The ring glows because atlas is waiting.
+      Below, the seven macro keys wearing what is printed on the caps: a
+      ringed A, a sparkle, up, a raised hand, then a gap, a speech bubble,
+      down, and "run". A picture, not a control; abstract on
       purpose, drawn in the page's own inks rather than photographed.
     -->
     <figure class="desk">
       <div class="desk-card">
         <svg viewBox="0 0 324 324" role="img"
-             aria-label="A Creator Micro 2 keypad, face on: a dial top left, a small joystick top right, and between them two frosted keys glowing blue. Below, four more frosted keys: green, orange, a dim white, and one unlit. Then a row of four dark keys carrying the agent panel mark, a plus, an up arrow and escape, and a last row of three dark keys set to the right: mic, a down arrow and enter. An orange glow surrounds the board.">
+             aria-label="A Creator Micro 2 keypad, drawn in one ink: a dial top left, a small joystick top right, and between them two frosted keys, lit and breathing. Below, four more frosted keys at different brightnesses: lit, brightest, faint, and unlit. Then a row of four dark keys carrying a ringed A, a sparkle, an up arrow and a raised hand, and a last row of three dark keys set to the right: a speech bubble, a down arrow and the word run.">
           <rect class="ring" x="20" y="20" width="284" height="284" rx="26"/>
           <rect class="body" x="20" y="20" width="284" height="284" rx="26"/>
           <rect class="frame" x="27" y="27" width="270" height="270" rx="21"/>
@@ -1162,24 +1166,19 @@
             <g class="key is-idle"><rect class="halo" x="168" y="106" width="50" height="50" rx="9"/><rect class="cap lit" x="168" y="106" width="50" height="50" rx="9"/><circle class="core" cx="193.0" cy="131.0" r="8"/></g>
             <rect class="cap" x="230" y="106" width="50" height="50" rx="9"/>
             <rect class="cap" x="44" y="168" width="50" height="50" rx="9"/>
-            <svg x="60.0" y="184.5" width="18" height="17" viewBox="33.75 16 194.5 183.5" aria-hidden="true">
-              <path fill="var(--muted)" fill-rule="evenodd" d="M 205.5 133 C 205.5 163.75 205.56 180.06 194.64 189.81 C 182.77 200.41 159.67 199.5 131 199.5 C 102.33 199.5 79.23 200.41 67.36 189.81 C 56.44 180.06 56.5 163.75 56.5 133 C 56.5 102.25 56.44 85.94 67.36 76.19 C 79.23 65.59 102.33 66.5 131 66.5 C 159.67 66.5 182.77 65.59 194.64 76.19 C 205.56 85.94 205.5 102.25 205.5 133 Z M 96.5 122.75 A 8 8 0 0 1 112.5 122.75 L 112.5 143.25 A 8 8 0 0 1 96.5 143.25 Z M 149.5 122.75 A 8 8 0 0 1 165.5 122.75 L 165.5 143.25 A 8 8 0 0 1 149.5 143.25 Z"/>
-              <path fill="var(--muted)" d="M 33.75 120.5 A 7.25 7.25 0 0 1 48.25 120.5 L 48.25 145.5 A 7.25 7.25 0 0 1 33.75 145.5 Z M 213.75 120.5 A 7.25 7.25 0 0 1 228.25 120.5 L 228.25 145.5 A 7.25 7.25 0 0 1 213.75 145.5 Z"/>
-              <circle fill="var(--muted)" cx="131" cy="29" r="13"/>
-              <path d="M 131 42 L 131 56" fill="none" stroke="var(--muted)" stroke-width="7" stroke-linecap="round"/>
-            </svg>
+            <circle class="icon" cx="69.0" cy="193.0" r="10"/><text class="legend" x="69.0" y="193.5" style="font-size:10px">A</text>
             <rect class="cap" x="106" y="168" width="50" height="50" rx="9"/>
-            <text class="legend" x="131.0" y="193.0">+</text>
+            <path class="icon-fill" d="M 131.0 184.0 C 132.0 190.0 134.0 192.0 140.0 193.0 C 134.0 194.0 132.0 196.0 131.0 202.0 C 130.0 196.0 128.0 194.0 122.0 193.0 C 128.0 192.0 130.0 190.0 131.0 184.0 Z"/><path class="icon-fill" d="M 139.0 184.0 C 139.3 186.0 140.0 186.7 142.0 187.0 C 140.0 187.3 139.3 188.0 139.0 190.0 C 138.7 188.0 138.0 187.3 136.0 187.0 C 138.0 186.7 138.7 186.0 139.0 184.0 Z"/>
             <rect class="cap" x="168" y="168" width="50" height="50" rx="9"/>
             <text class="legend" x="193.0" y="193.0">&#x2191;</text>
             <rect class="cap" x="230" y="168" width="50" height="50" rx="9"/>
-            <text class="legend" x="255.0" y="193.0">esc</text>
+            <path class="icon" d="M 249.0 194.0 L 249.0 199.0 Q 249.0 204.0 254.0 204.0 L 258.0 204.0 Q 263.0 204.0 263.0 199.0 L 263.0 189.0"/><path class="icon" d="M 249.0 194.0 L 249.0 187.0 M 253.0 194.0 L 253.0 184.0 M 257.0 194.0 L 257.0 183.0 M 261.0 194.0 L 261.0 186.0"/><path class="icon" d="M 249.0 197.0 L 244.0 192.0"/>
             <rect class="cap" x="106" y="230" width="50" height="50" rx="9"/>
-            <text class="legend" x="131.0" y="255.0">mic</text>
+            <path class="icon" d="M 121.0 248.0 Q 121.0 246.0 123.0 246.0 L 139.0 246.0 Q 141.0 246.0 141.0 248.0 L 141.0 257.0 Q 141.0 259.0 139.0 259.0 L 129.0 259.0 L 124.0 264.0 L 124.0 259.0 L 123.0 259.0 Q 121.0 259.0 121.0 257.0 Z"/>
             <rect class="cap" x="168" y="230" width="50" height="50" rx="9"/>
             <text class="legend" x="193.0" y="255.0">&#x2193;</text>
             <rect class="cap" x="230" y="230" width="50" height="50" rx="9"/>
-            <text class="legend" x="255.0" y="255.0">&#x21B5;</text>
+            <text class="legend" x="255.0" y="255.0">run</text>
           </g>
         </svg>
       </div>
