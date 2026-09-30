@@ -10,11 +10,13 @@ the machinery, not decoration.
 
 ## v0.5.1
 
-- **The panel no longer fills with sessions that were never really there**: a
-  daemon now only adopts runtime sessions that belong to its own home
-  directory, instead of any process on the machine that merely looked like
-  one. Stray or unrelated processes can no longer show up as ghost rows in
-  the Agent Panel.
+- **No more ghost rows from other homes**: fixes a bug where the daemon
+  adopted every herdr or luvus session on the machine, including ones
+  running under a different home directory - most visibly the sandboxed
+  sessions amon's own test suite starts, which appeared in the panel with a
+  `/tmp` path and no process behind them. A daemon now adopts only the
+  sessions in its own home; `AMON_RUNTIMES_ROOT` remains the explicit
+  override.
 
 ## v0.5.0
 
