@@ -8,6 +8,28 @@ the machinery, not decoration.
 
 <!-- next -->
 
+## v0.4.0
+
+- **The panel says what each agent is doing**: a new activity column shows
+  the harness's own narration of its current step — "Reading 1 file…" while
+  it works, the opening line of its reply once it's done — or, before it's
+  said anything yet, the prompt you just gave it. A working row's message
+  shimmers gently to mark it as live. This replaces the old kind and state
+  columns, whose information a glance at the row's glyph already carried.
+- **Every wrapped agent narrates, each through whatever channel it actually
+  offers**: Claude and Codex report their prompt and narration through their
+  own hooks; pi, omp, and opencode report prompt, tool calls, and replies
+  through their extension or plugin APIs; grok reports its prompt by hook and
+  its tool calls by reading the screen.
+- **A blocked pi or omp agent says what it's waiting for**: the question
+  blocking it now reaches the row, instead of just "blocked".
+- **Agents in herdr and luvus panes keep narrating too**: amon no longer
+  steps fully aside inside a runtime pane — it still reports what the
+  wrapped agent is doing, joined onto the runtime's own row for it.
+- **`amon doctor` catches a setup integration with no alias**: skip the
+  alias `amon setup <agent>` writes and that agent runs bare, never showing
+  up on the bar or in the panel; doctor now points that out.
+
 ## v0.3.0
 
 - **Agents in luvus show up**: amon watches for
