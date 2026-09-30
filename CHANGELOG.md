@@ -8,6 +8,41 @@ the machinery, not decoration.
 
 <!-- next -->
 
+## v0.5.0
+
+- **A Work Louder Creator Micro 2 becomes a hardware agent panel**: connect
+  one over USB or Bluetooth and its six lit keys stand for the first six
+  agents in the panel's order, each colored by its agent's state - breathing
+  while it works, solid while it waits for you, lit when it finished while
+  you were away. Tap a key to be at that agent. The ring around the board
+  shows the most urgent state anywhere. The dial scrolls, and walks the
+  agent panel while it is open; the stick moves window focus like
+  Super+arrows. Seven macro keys are yours to map under
+  `[devices.micro2.keys]`; by default they open the panel, start a new
+  default agent, send Up and Escape, dictate, and send Down and Enter.
+- **Hold to talk**: the dictate key records on a tap and toggles off on the
+  next; held, it is push-to-talk and presses Enter for you when the text has
+  landed. Music ducks while it records. Needs voxtype.
+- **Setting the board up is amon's job**: `amon setup` offers the one udev
+  rule the device needs, and offers to write the agent layer - the layer on
+  which the keys report to amon instead of typing - onto an empty slot,
+  after saving the board's current keymap under `~/.local/share/amon/micro2/`.
+  `amon doctor` asks the board for its firmware and active layer and says
+  what is missing: firmware below 0.6.0, no agent layer, a layer written but
+  not switched to (tap the touch sensor), or six layers all in use. The
+  README walks through all of it.
+- **One workspace's rows read like the screen**: within a workspace the panel
+  now lists agents left to right, then top to bottom, by where their windows
+  sit, and follows when you move them. Rows never reorder by state.
+- **Upgrading survives an upgrade**: fixes a bug where a daemon that outlived
+  a reinstall could no longer start `amon focus` for a key tap, silently,
+  until it happened to restart.
+- **Protocol**: `AgentEntry` gains `position` (`x`, `y`), the window's place
+  on its workspace. `docs/protocol.schema.json` is updated.
+- **Upgrading**: run the installer, or `just install` then `amon setup
+  --upgrade`, to refresh the panel. A config file from before this release
+  has no `[devices]` block; see the README's example for the one to add.
+
 ## v0.4.0
 
 - **The row says what the agent is doing**: every panel row now carries the
