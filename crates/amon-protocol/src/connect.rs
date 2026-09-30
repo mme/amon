@@ -31,12 +31,10 @@ pub fn connect_or_spawn_daemon() -> Option<UnixStream> {
 }
 
 /// Spawns `amon daemon` detached from this process's stdio. The daemon is a
-/// subcommand of the one amon binary, so the current executable is it.
+/// subcommand of the one amon binary, so our own binary is it — by the path
+/// that still runs after an installer has swapped the file (`own_binary`).
 fn spawn_daemon() {
-    let Ok(exe) = std::env::current_exe() else {
-        return;
-    };
-    let _ = std::process::Command::new(exe)
+    let _ = std::process::Command::new(crate::paths::own_binary())
         .arg("daemon")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())

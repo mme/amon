@@ -27,19 +27,29 @@ pub fn spawn(signals: Sender<Signal>) {
         let _ = signals.send(Signal::Window {
             window: Some(window.address.clone()),
             workspace: window.workspace.clone(),
+            position: position_of(&window),
         });
 
         amon_hypr::follow(&directory, events, pid, window, |window| {
             let _ = signals.send(match window {
                 Some(window) => Signal::Window {
+                    position: position_of(&window),
                     window: Some(window.address),
                     workspace: window.workspace,
                 },
                 None => Signal::Window {
                     window: None,
                     workspace: None,
+                    position: None,
                 },
             });
         });
     });
+}
+
+/// The compositor's placement, in the protocol's words.
+fn position_of(window: &amon_hypr::Window) -> Option<amon_protocol::Position> {
+    window
+        .position
+        .map(|(x, y)| amon_protocol::Position { x, y })
 }

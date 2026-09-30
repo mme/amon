@@ -44,6 +44,12 @@ long it has been at it. Pick one and Enter puts you in front of it.
 `Super+W` closes the panel while it is open - amon rebinds Omarchy's
 close-window key to ask the panel first, so the window underneath survives.
 
+Have a Work Louder Creator Micro 2 on the desk? Connect it (USB or
+Bluetooth) and it becomes a hardware agent panel: six keys, one per agent in
+the panel's order, each colored by its agent's state, the ring glowing when
+anything needs you, tap a key to be at that agent. The encoder scrolls, the joystick moves window focus, and every
+control is remappable - see Settings.
+
 There is nothing to configure. `amon setup` makes it all work automatically -
 agent hooks, aliases, the bar widget, the panel, the keybindings - and
 `amon doctor` reports what is wired up and what is not.
@@ -176,6 +182,44 @@ Building from source instead: `just install` does the same install from this
 repository (see Building above), and `just uninstall` reverses it,
 integrations first so nothing is left pointing at a binary that is gone.
 
+### Setting up a Creator Micro 2
+
+A Work Louder Creator Micro 2 needs three things, and `amon doctor` checks
+each one:
+
+1. **Firmware 0.6.0 or newer.** Older firmware has no agent keys at all and
+   doctor says so. Update it in Work Louder's Input app; 0.6.2 has been the
+   stable release since August 2026.
+2. **Access to the device.** `/dev/hidraw*` and `/dev/uinput` are root-only
+   on a stock system. `amon setup` shows the one udev rule that grants the
+   logged-in seat access and installs it with your sudo if you say yes. A
+   machine that has run the Input app usually has an equivalent rule
+   already, and then this step never appears.
+3. **The agent layer, and the board on it.** The six lit keys only report to
+   amon on a layer whose keys are the firmware's vendor keycodes; on any
+   other layer they type letters and light the way the app said. A fresh
+   board has no such layer. `amon setup` offers to write one onto an empty
+   layer, after saving the board's current keymap to
+   `~/.local/share/amon/micro2/`; the Input app can add the same layer
+   ("Add a new Codex layer"). Then tap the touch sensor at the board's
+   bottom left until its LEDs show that layer - switching is physical, and
+   amon cannot do it for you.
+
+Connect the board over USB or Bluetooth and run `amon setup`. When all three
+are in place, `amon doctor` reads:
+
+```
+devices:
+  micro2       connected (the daemon lights it) /dev/hidraw5
+  firmware     0.6.3-rc.10
+  layer        agents on layer 1 of 3, active
+```
+
+Anything short of that, doctor names: the firmware floor, the missing rule,
+a layer written but not active, or a board whose six layers are all in use.
+Dictation on the mic key needs [voxtype](https://github.com/voxtype/voxtype)
+installed; without it the key does nothing.
+
 ## Command line reference
 
 **`amon setup [target] [--all] [--no-alias] [--upgrade] [--duck | --no-duck]`**
@@ -296,6 +340,65 @@ stereo - on a surround or bitstream-passthrough setup, skip ducking.
   nothing about your machine in it. When a newer release exists, the agent
   panel shows a one-line footer with the command that upgrades; nothing
   downloads or installs itself. Set to false and it never checks.
+
+**`[devices.micro2]`**
+
+A Work Louder Creator Micro 2 lights up by itself when connected - these
+only tune it. On a machine that has never had Work Louder udev rules, one
+root step grants access; `amon setup` offers it.
+
+- `enabled = true` - set false to leave the device alone entirely.
+- `brightness = 1.0` - keys and ring alike, 0.0-1.0.
+- `ring = true` - the ambient ring shows the fleet's most urgent state:
+  solid orange when anything needs input, snaking blue while anything
+  works, breathing green when something finished unseen.
+
+**`[devices.micro2.colors]`**
+
+- `blocked = "#FF6D00"`, `working = "#304FFE"`, `done = "#00FF4C"`,
+  `idle = "#FFFFFF"` - per-state key colors.
+
+**`[devices.micro2.keys]`**
+
+The seven macro keys, any action. Controls: `macro_1`..`macro_7` in
+reading order - `macro_1`-`macro_4` across the upper row, `macro_5`-
+`macro_7` across the lower. Actions: `none`, `panel`, `workspace:N`,
+`key:<chord>` (e.g. `key:super+shift+f`), `exec:<command>`. The defaults:
+the agent panel, a new default agent (`omarchy-agent --pick`, what
+Super+Shift+Ctrl+A runs), Up, Escape on the upper row; dictation
+(`voxtype record toggle`), Down, Enter on the lower. Everything else is
+fixed: agent key N lights and focuses the panel's Nth agent (grouped by
+workspace, left to right as their windows sit), the encoder scrolls
+(and walks the agent panel while it is open, its click selecting), the
+joystick moves window focus like Super+arrows.
+
+A complete example, in `~/.config/amon/config.toml` - a file from before
+this section existed has no `[devices]` block, so add it by hand; saved
+changes apply within a second:
+
+```toml
+[devices.micro2]
+brightness = 0.7
+
+[devices.micro2.keys]
+macro_2 = "exec:obsidian"          # second key, upper row: open Obsidian
+macro_4 = "key:super+shift+f"      # fourth key, upper row: send a chord
+macro_7 = "workspace:5"            # last key, lower row: jump to workspace 5
+
+[devices.micro2.dictation]
+hold_ms = 300                      # a press this long counts as holding
+auto_submit = false                # a hold's end no longer presses Enter
+
+[devices.micro2.colors]
+working = "#7D74F0"                # any state, any color
+```
+
+**`[devices.micro2.dictation]`**
+
+The dictate key reads two ways, and recording starts on the press either
+way: a tap toggles (tap again to stop), a hold is push-to-talk. `hold_ms =
+250` is how long a press counts as holding; `auto_submit = true` presses
+Enter for you when a hold ends and the text has landed. Taps never do.
 
 ## Credits
 

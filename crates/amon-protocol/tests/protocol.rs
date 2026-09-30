@@ -21,7 +21,9 @@ fn entry() -> AgentEntry {
         started_at: 1_699_999_999_000,
         agent_session_id: None,
         agent_session_path: None,
+        activity: None,
         window: Some("0x1a2b".into()),
+        position: None,
         workspace: None,
         project: None,
         subpath: None,
@@ -66,6 +68,7 @@ fn methods_are_named_as_the_hooks_send_them() {
             agent: "claude".into(),
             state: AgentState::Working,
             seq: 1,
+            message: None,
             agent_session_id: None,
         })
         .name(),

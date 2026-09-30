@@ -145,6 +145,10 @@
            background:color-mix(in srgb, var(--ink) 5%, transparent);
            border-radius:6px; padding:.18em .55em}
   .cliref p{margin:.55rem 0 0; color:var(--muted); max-width:60ch}
+  /* An example under its own lead-in: a little more air than a command gets
+     from its explanation, a little less than the gap between entries, so it
+     reads as the entry's second half and not as the next one. */
+  .cliref .snippet{margin-top:.9rem}
   /* TOML section headers between the settings, set as they appear in the file */
   .cli-sect{color:var(--ink); margin-top:.4rem}
   .cli-sect:first-child{margin-top:0}
@@ -438,14 +442,14 @@
 
   /* One grid shared by every row, so the columns line up down the list the way
      they do in the real panel: the glyph, where the agent is working, the
-     branch, how long, the state in words, and last the kind of agent.
+     branch, what it is doing, and last how long it has been at it.
 
-     Every width is fixed. Each row is its own grid here, so a column that sized
-     itself to its own content would start somewhere different on every line -
-     and a grid whose columns move per row is not one. The leftover falls after
-     the last column rather than pooling in the middle, which is where the real
-     panel leaves it: it packs the columns from the left and stops. */
-  .panel-row{display:grid; grid-template-columns:18px 4rem 7.75rem 2rem 5.5rem 4rem;
+     Every fixed column keeps its width; the activity column takes the slack and
+     elides into it, which is why the age still lands at the edge and a long
+     message costs its own tail rather than a column that identifies the row.
+     Each row is its own grid, so the fixed widths are what keep a column
+     starting in the same place on every line. */
+  .panel-row{display:grid; grid-template-columns:18px 6rem 8.25rem minmax(0,1fr) 2.25rem;
              align-items:center; gap:0 10px; border-radius:6px}
   .panel-row.is-cursor{background:color-mix(in oklab, var(--ink) 7%, transparent)}
 
@@ -495,23 +499,58 @@
      full ink - but not the weight: two bold columns compete and neither leads. */
   .panel-cell.is-branch{color:var(--ink)}
   .panel-cell.is-where,.panel-cell.is-branch,
-  .panel-cell.is-state,.panel-cell.is-kind{overflow:hidden;
-                            text-overflow:ellipsis; white-space:nowrap}
+  .panel-cell.is-activity{overflow:hidden;
+                          text-overflow:ellipsis; white-space:nowrap}
 
+  /* What the agent says it is doing, in the harness's own words - "Reading 5
+     files", "Bash(cargo nextest run)", the opening line of a reply. Never a
+     phrase amon composed: the glyph beside it already carries the state, so a
+     column that said "Working..." would only repeat it. Dim, a little air
+     before it, and it takes the slack the fixed columns leave. */
+  .panel-cell.is-activity{color:var(--muted); padding-left:6px}
+  /* A prompt is your words, not the agent's, so it wears the harness's own
+     marker and leans into italic - the same two cues the real panel draws. */
+  .panel-cell.is-activity.is-prompt{font-style:italic}
+  .panel-cell.is-activity.is-prompt::before{content:"\276F\A0"; font-style:normal}
 
-  /* Narrow: the columns give way from the right, in the order the real panel
-     drops them. The kind of agent goes first - on a machine running one kind it
-     writes the same word down every line, and it is worth its width only while
-     there is width to spare. The state goes next, because the glyph beside the
-     project already carries it. What survives still says where the agent is,
-     which line of work it is on, and how long it has been there. */
-  @media (max-width:640px){
-    .panel-row{grid-template-columns:18px 4rem 7.75rem 2rem 5.5rem}
-    .panel-cell.is-kind{display:none}
+  /* The age sits at the pane's edge, where a column of short right-aligned
+     values reads down as one. */
+  .panel-cell.is-age{text-align:right}
+
+  /* A band of light crossing the message while an agent is working. Nothing
+     moves - only the colour travels, the row's own two inks, dim lifting to
+     full and settling back - which is what keeps it readable rather than
+     distracting. The band sweeps across quickly and then the row rests, the
+     900ms-over-2900ms the real panel animates at. The text is painted through
+     the gradient, so a narrow band of ink rides a dim line. */
+  .panel-cell.is-activity.is-working{
+    color:transparent;
+    /* Three box-widths wide, so the box is always fully painted - a narrow ink
+       peak rides a dim field, and at the ends of the sweep the peak is off the
+       visible window and the whole message rests dim. */
+    background-image:linear-gradient(100deg,
+      var(--muted) 0%, var(--muted) 47%, var(--ink) 50%, var(--muted) 53%, var(--muted) 100%);
+    background-size:300% 100%; background-repeat:no-repeat;
+    -webkit-background-clip:text; background-clip:text;
+    animation:panel-shimmer 2900ms linear infinite}
+  @keyframes panel-shimmer{
+    0%{background-position:0% 0}
+    31%{background-position:100% 0}
+    100%{background-position:100% 0} }
+  /* A shimmer is motion; when motion is unwelcome the message simply rests dim,
+     the same as any settled row. */
+  @media (prefers-reduced-motion: reduce){
+    .panel-cell.is-activity.is-working{animation:none; color:var(--muted);
+      background-image:none; -webkit-background-clip:border-box; background-clip:border-box}
   }
-  @media (max-width:460px){
-    .panel-row{grid-template-columns:18px 4rem minmax(0,1fr) 2rem}
-    .panel-cell.is-state{display:none}
+
+  /* Narrow: the branch gives way first, the one column the real panel drops -
+     every other either identifies the row or, like the message, gives way by
+     shrinking. What survives still says where the agent is and what it is
+     doing. */
+  @media (max-width:600px){
+    .panel-row{grid-template-columns:18px 5rem minmax(0,1fr) 2.25rem}
+    .panel-cell.is-branch{display:none}
   }
 
   /* ---- the install block ------------------------------------------- */
@@ -632,6 +671,57 @@
 
   @media (prefers-reduced-motion: reduce){
     .shot img,.shot-name{transition:none}
+  }
+
+  /* ---- the desk: a Creator Micro 2, drawn ---------------------------------
+     The same card as the panel, holding the device face-on. Thirteen caps in
+     the board's own rows of 2 / 4 / 4 / 3, the dial and the stick in the gap
+     the short first row leaves. The six caps that can light are the panel's
+     first six rows, in its order, in the state palette the daemon sends the
+     hardware; the ring is the fleet's most urgent state. Only what moves on
+     the real board moves here: a working key breathes. */
+  .desk{margin:0; display:flex; flex-direction:column}
+  /* No card: the board supplies its own ground and edge, so a box around it
+     would only frame a frame. It sits at the left margin like the copy. */
+  .desk-card{padding:6px 0 2px; display:flex; justify-content:flex-start; overflow:visible}
+  .desk svg{width:100%; max-width:400px; height:auto; display:block; overflow:visible}
+  .desk .body{fill:var(--sunk); stroke:var(--rule)}
+  /* The underglow: the body's own outline, wide, soft and behind it. */
+  .desk .ring{fill:none; stroke:var(--ink); stroke-width:10; opacity:.16; filter:blur(10px)}
+  .desk .frame{fill:none; stroke:var(--rule); stroke-width:1.5; opacity:.7}
+  .desk .cap{fill:var(--ground); stroke:var(--rule)}
+  /* A lit cap is frosted: the colour fills it thinly and a brighter core sits
+     where the switch's light comes through, the way the real caps read. */
+  /* Monochrome, like the rest of the page: the state is how much light a cap
+     gives, not which colour. Waiting is brightest and still, working breathes,
+     done is lit and calm, at rest is barely there. The board's real palette is
+     in the settings table below. */
+  .desk .cap.lit{stroke:none; fill:var(--ink)}
+  .desk .core{fill:var(--ink)}
+  .desk .is-blocked .cap.lit{opacity:.34} .desk .is-blocked .core{opacity:1}
+  .desk .is-working .cap.lit{opacity:.24} .desk .is-working .core{opacity:.9}
+  .desk .is-done .cap.lit{opacity:.18} .desk .is-done .core{opacity:.7}
+  .desk .is-idle .cap.lit{opacity:.07} .desk .is-idle .core{opacity:.3}
+  .desk .key.is-working{animation:desk-breathe 2400ms ease-in-out infinite}
+  .desk .key.is-working.later{animation-delay:-900ms}
+  /* A little of each colour spills onto the plate around the cap, the way a
+     lit switch does. Same shape, behind, blurred. */
+  .desk .halo{filter:blur(7px); fill:var(--ink); opacity:.16}
+  .desk .is-idle .halo{opacity:0}
+  .desk .is-done .halo{opacity:.1}
+  /* Legends drawn rather than typed: the same muted ink, thin strokes. */
+  .desk .icon{fill:none; stroke:var(--muted); stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round}
+  .desk .icon-fill{fill:var(--muted)}
+  .desk .legend{fill:var(--muted); font-size:12.5px; letter-spacing:.02em; text-anchor:middle;
+                dominant-baseline:central; font-family:"Duo","Glyphs",ui-monospace,monospace}
+  .desk .legend.mark{fill:var(--muted)}
+  .desk .dial{fill:var(--ground); stroke:var(--rule)}
+  .desk .dial-tick{stroke:var(--muted); stroke-width:2; stroke-linecap:round}
+  .desk .stick-base{fill:var(--ground); stroke:var(--rule)}
+  .desk .stick{fill:var(--rule); stroke:var(--muted)}
+  @keyframes desk-breathe{0%,100%{opacity:.55} 50%{opacity:1}}
+  @media (prefers-reduced-motion: reduce){
+    .desk .key.is-working{animation:none; opacity:.85}
   }
 </style>
 </head>
@@ -957,14 +1047,16 @@
       The agent panel, replicated. A picture and not a control: nothing here is
       clickable, because nothing here does anything - the cursor follows the
       pointer the way it does in the real panel, and that is the whole of the
-      interaction. The one thing that moves is the spinner, which moves there
-      too.
+      interaction. Two things move, and both move there too: the spinner beside
+      a running agent, and the band of light that crosses what it is doing.
 
-      Three of the four rows say amon.sh, and that is the layout making its
-      point rather than a mistake in the mock: the last of them is an agent in
-      a worktree at ~/.cache/worktrees/site, which belongs to the same
-      repository, and the branch beside it is the only thing telling the three
-      apart.
+      Three of the five rows say amon.sh, and that is the layout making its
+      point rather than a mistake in the mock: they are three checkouts of one
+      repository, and the branch beside each is the only thing telling them
+      apart. The message is what each agent last said it was doing - a running
+      row narrates and its light travels; a row waiting on you says what it is
+      waiting for; the top row is showing the prompt it was given, in your
+      words, so it wears the harness's own marker and leans italic.
     -->
     <figure class="panel">
       <div class="panel-card">
@@ -983,7 +1075,7 @@
           </svg>
           <span class="panel-name">
             <b>amon</b>
-            <span class="panel-counts">1 NEEDS INPUT &middot; 1 DONE &middot; 1 RUNNING &middot; 1 IDLE</span>
+            <span class="panel-counts">1 NEEDS INPUT &middot; 1 DONE &middot; 2 RUNNING &middot; 1 IDLE</span>
           </span>
         </div>
 
@@ -994,35 +1086,39 @@
             <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle class="panel-dot tl" cx="8.7" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot tr" cx="15.3" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot bl" cx="8.7" cy="14.55" r="2.35" fill="currentColor"/><circle class="panel-dot br" cx="15.3" cy="14.55" r="2.35" fill="currentColor"/></svg></span>
             <span class="panel-cell is-where">amon.sh</span>
             <span class="panel-cell is-branch">main</span>
+            <span class="panel-cell is-activity is-working is-prompt">add a login rate limiter</span>
             <span class="panel-cell is-age">4m</span>
-            <span class="panel-cell is-state">running</span>
-            <span class="panel-cell is-kind">claude</span>
           </div>
           <div class="panel-row">
-            <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg></span>
+            <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle class="panel-dot tl" cx="8.7" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot tr" cx="15.3" cy="9.45" r="2.35" fill="currentColor"/><circle class="panel-dot bl" cx="8.7" cy="14.55" r="2.35" fill="currentColor"/><circle class="panel-dot br" cx="15.3" cy="14.55" r="2.35" fill="currentColor"/></svg></span>
             <span class="panel-cell is-where">amon.sh</span>
-            <span class="panel-cell is-branch">fix/detect-flake</span>
-            <span class="panel-cell is-age">2m</span>
-            <span class="panel-cell is-state">done</span>
-            <span class="panel-cell is-kind">codex</span>
+            <span class="panel-cell is-branch">detect-flake</span>
+            <span class="panel-cell is-activity is-working">Bash(cargo nextest run)</span>
+            <span class="panel-cell is-age">9m</span>
+          </div>
+          <div class="panel-group" style="grid-column:1/-1">WORKSPACE 2</div>
+          <div class="panel-row">
+            <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-done"/></svg></span>
+            <span class="panel-cell is-where">docs-portal</span>
+            <span class="panel-cell is-branch">docs-refresh</span>
+            <span class="panel-cell is-activity">Updated 3 pages</span>
+            <span class="panel-cell is-age">12m</span>
           </div>
           <div class="panel-group" style="grid-column:1/-1">WORKSPACE 3</div>
           <div class="panel-row">
             <span class="panel-cell is-glyph"><svg class="panel-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#gl-blocked"/></svg></span>
             <span class="panel-cell is-where">atlas</span>
             <span class="panel-cell is-branch">atlas-api</span>
+            <span class="panel-cell is-activity">Apply migration to production?</span>
             <span class="panel-cell is-age">6m</span>
-            <span class="panel-cell is-state">needs input</span>
-            <span class="panel-cell is-kind">pi</span>
           </div>
           <div class="panel-group" style="grid-column:1/-1">WORKSPACE 4</div>
           <div class="panel-row">
             <span class="panel-cell is-glyph"></span>
             <span class="panel-cell is-where">amon.sh</span>
             <span class="panel-cell is-branch">website</span>
+            <span class="panel-cell is-activity"></span>
             <span class="panel-cell is-age">41m</span>
-            <span class="panel-cell is-state">idle</span>
-            <span class="panel-cell is-kind">opencode</span>
           </div>
       </div>
 
@@ -1038,26 +1134,94 @@
 
   <section class="plate">
     <header>
+      <h2><a class="h-anchor" id="desk" href="#desk">control your agents from a hardware keypad</a></h2>
+    </header>
+
+    <!--
+      A Creator Micro 2, face on, in the board's own arrangement: the dial top
+      left, the stick top right, and the six frosted caps that can light
+      between and below them. Those show the same five agents as the panel
+      above, in the panel's order - amon.sh main and detect-flake working on
+      workspace 1, docs-portal done on 2, atlas waiting on 3, the website
+      checkout idle on 4, and no sixth agent, so an unlit cap. Drawn in one
+      ink: the state is how brightly a cap glows, and the board's real colours
+      are left to the settings table. The ring glows because atlas is waiting.
+      Below, the seven macro keys wearing what is printed on the caps: a
+      ringed A, a sparkle, up, a raised hand, then a gap, a speech bubble,
+      down, and "run". A picture, not a control; abstract on
+      purpose, drawn in the page's own inks rather than photographed.
+    -->
+    <figure class="desk">
+      <div class="desk-card">
+        <svg viewBox="0 0 324 324" role="img"
+             aria-label="A Creator Micro 2 keypad, drawn in one ink: a dial top left, a small joystick top right, and between them two frosted keys, lit and breathing. Below, four more frosted keys at different brightnesses: lit, brightest, faint, and unlit. Then a row of four dark keys carrying a ringed A, a sparkle, an up arrow and a raised hand, and a last row of three dark keys set to the right: a speech bubble, a down arrow and the word run.">
+          <rect class="ring" x="20" y="20" width="284" height="284" rx="26"/>
+          <rect class="body" x="20" y="20" width="284" height="284" rx="26"/>
+          <rect class="frame" x="27" y="27" width="270" height="270" rx="21"/>
+          <g>
+            <circle class="dial" cx="69.0" cy="69.0" r="24"/><path class="dial-tick" d="M 59.0 79.0 L 79.0 59.0" />
+            <g class="key is-working"><rect class="halo" x="106" y="44" width="50" height="50" rx="9"/><rect class="cap lit" x="106" y="44" width="50" height="50" rx="9"/><circle class="core" cx="131.0" cy="69.0" r="8"/></g>
+            <g class="key is-working later"><rect class="halo" x="168" y="44" width="50" height="50" rx="9"/><rect class="cap lit" x="168" y="44" width="50" height="50" rx="9"/><circle class="core" cx="193.0" cy="69.0" r="8"/></g>
+            <circle class="stick-base" cx="255.0" cy="69.0" r="19"/><circle class="stick" cx="258.0" cy="66.0" r="9"/>
+            <g class="key is-done"><rect class="halo" x="44" y="106" width="50" height="50" rx="9"/><rect class="cap lit" x="44" y="106" width="50" height="50" rx="9"/><circle class="core" cx="69.0" cy="131.0" r="8"/></g>
+            <g class="key is-blocked"><rect class="halo" x="106" y="106" width="50" height="50" rx="9"/><rect class="cap lit" x="106" y="106" width="50" height="50" rx="9"/><circle class="core" cx="131.0" cy="131.0" r="8"/></g>
+            <g class="key is-idle"><rect class="halo" x="168" y="106" width="50" height="50" rx="9"/><rect class="cap lit" x="168" y="106" width="50" height="50" rx="9"/><circle class="core" cx="193.0" cy="131.0" r="8"/></g>
+            <rect class="cap" x="230" y="106" width="50" height="50" rx="9"/>
+            <rect class="cap" x="44" y="168" width="50" height="50" rx="9"/>
+            <circle class="icon" cx="69.0" cy="193.0" r="10"/><text class="legend" x="69.0" y="193.5" style="font-size:11px">A</text>
+            <rect class="cap" x="106" y="168" width="50" height="50" rx="9"/>
+            <path class="icon-fill" d="M 129.5 184.0 C 130.5 190.0 133.0 192.5 139.0 194.0 C 133.0 195.5 130.5 198.0 129.5 204.0 C 128.5 198.0 126.0 195.5 120.0 194.0 C 126.0 192.5 128.5 190.0 129.5 184.0 Z"/><path class="icon-fill" d="M 138.0 183.0 C 138.4 185.0 139.5 186.1 141.5 186.5 C 139.5 186.9 138.4 188.0 138.0 190.0 C 137.6 188.0 136.5 186.9 134.5 186.5 C 136.5 186.1 137.6 185.0 138.0 183.0 Z"/>
+            <rect class="cap" x="168" y="168" width="50" height="50" rx="9"/>
+            <path class="icon" d="M 193.0 202.0 L 193.0 184.0 M 187.0 190.0 L 193.0 184.0 L 199.0 190.0"/>
+            <rect class="cap" x="230" y="168" width="50" height="50" rx="9"/>
+            <path class="icon" d="M 249.0 194.0 L 249.0 199.0 Q 249.0 204.0 254.0 204.0 L 258.0 204.0 Q 263.0 204.0 263.0 199.0 L 263.0 189.0"/><path class="icon" d="M 249.0 194.0 L 249.0 187.0 M 253.0 194.0 L 253.0 184.0 M 257.0 194.0 L 257.0 183.0 M 261.0 194.0 L 261.0 186.0"/><path class="icon" d="M 249.0 197.0 L 244.0 192.0"/>
+            <rect class="cap" x="106" y="230" width="50" height="50" rx="9"/>
+            <path class="icon" d="M 121.0 248.0 Q 121.0 246.0 123.0 246.0 L 139.0 246.0 Q 141.0 246.0 141.0 248.0 L 141.0 257.0 Q 141.0 259.0 139.0 259.0 L 129.0 259.0 L 124.0 264.0 L 124.0 259.0 L 123.0 259.0 Q 121.0 259.0 121.0 257.0 Z"/>
+            <rect class="cap" x="168" y="230" width="50" height="50" rx="9"/>
+            <path class="icon" d="M 193.0 246.0 L 193.0 264.0 M 187.0 258.0 L 193.0 264.0 L 199.0 258.0"/>
+            <rect class="cap" x="230" y="230" width="50" height="50" rx="9"/>
+            <text class="legend" x="255.0" y="255.0">run</text>
+          </g>
+        </svg>
+      </div>
+    </figure>
+
+    <p><span class="lift">amon</span> drives a <span class="lift">Work Louder Creator Micro 2</span>
+       over USB or Bluetooth. The six keys that can light stand for the first six agents
+       in the panel's order, and each shows its agent's state: breathing while it works,
+       solid while it waits for you, lit when it finished while you were away. Tap one to
+       focus that agent. The ring around the board shows the most urgent state anywhere.
+       The dial scrolls, and walks the agent panel while it is open; the stick moves
+       window focus like <span class="lift">Super+arrows</span>. The other seven keys are
+       yours to map. By default they open the panel, start a new agent, send Up and
+       Escape, dictate through voxtype - hold to talk, release to send - and send Down and
+       Enter. <a href="#set-micro2-keys">Settings</a>.</p>
+  </section>
+
+  <section class="plate">
+    <header>
       <h2><a class="h-anchor" id="cli" href="#cli">full command line interface</a></h2>
     </header>
 
     <!--
-      The same four agents as the panel above, answered in the terminal - the
+      The same five agents as the panel above, answered in the terminal - the
       same fields in the same order, so the two surfaces cannot drift - and
       sorted the way everything in amon sorts: blocked first, then finished-
       but-unseen (which the CLI prints as idle; only its place in the order
-      gives it away), then working. The workspace leads here where the panel
-      makes it a heading, and the full path stands in for the project where an
-      agent is not in a repository, because this output gets piped. The
-      trailing focus command is typed and not yet run, the way the panel's
-      cursor rests on a row.
+      gives it away), then working. The message trails each row exactly as it
+      does in the panel, a prompt wearing the same marker; the workspace leads
+      here where the panel makes it a heading, and the full path stands in for
+      the project where an agent is not in a repository, because this output
+      gets piped. The trailing focus command is typed and not yet run, the way
+      the panel's cursor rests on a row.
     -->
     <figure class="snippet">
       <pre><code><span class="t-p">~ &#10095;</span> <span class="t-in">amon status</span>
-<span class="t-o">3  atlas    atlas-api            6m  blocked   pi
-1  amon.sh  fix/detect-flake     2m  idle      codex
-1  amon.sh  main                 4m  working   claude
-4  amon.sh  website             41m  idle      opencode</span>
+<span class="t-o">3  atlas        atlas-api        6m  blocked   pi        Apply migration to production?
+2  docs-portal  docs-refresh    12m  idle      pi        Updated 3 pages
+1  amon.sh      main             4m  working   claude    &#10095; add a login rate limiter
+1  amon.sh      detect-flake     9m  working   codex     Bash(cargo nextest run)
+4  amon.sh      website         41m  idle      opencode</span>
 <span class="t-p">~ &#10095;</span> <span class="t-in">amon focus 3</span></code></pre>
     </figure>
 
@@ -1327,6 +1491,77 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
            the agent panel shows a one-line footer with the command that
            upgrades; nothing downloads or installs itself. Set to false and
            it never checks.</p>
+      </div>
+
+      <div class="cli-sect">[devices.micro2]</div>
+      <div>
+        <p>A Work Louder Creator Micro 2 lights up by itself when
+           connected - six keys, one per agent in the panel's order, each
+           colored by its agent's state, the ring glowing when anything
+           needs you, tap a key to be at that agent. These settings only tune it.
+           Three things have to be in place, and <span class="lift">amon doctor</span>
+           checks each: firmware 0.6.0 or newer, access to the device (one udev
+           rule, which <span class="lift">amon setup</span> offers), and the agent
+           layer on the board with the board switched to it -
+           <span class="lift">amon setup</span> writes the layer onto an empty slot
+           after saving the current keymap; the touch sensor at the bottom left
+           cycles to it.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-micro2-enabled" href="#set-micro2-enabled"><code class="cli-cmd">enabled = true</code></a>
+        <p>Set false to leave the device alone entirely.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-micro2-brightness" href="#set-micro2-brightness"><code class="cli-cmd">brightness = 1.0</code></a>
+        <p>Keys and ring alike, 0.0-1.0. <span class="lift">ring =
+           false</span> darkens the ambient ring; by default it shows the
+           fleet's most urgent state.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-micro2-colors" href="#set-micro2-colors"><code class="cli-cmd">[devices.micro2.colors]</code></a>
+        <p>Per-state key colors: <span class="lift">blocked = "#FF6D00"</span>,
+           <span class="lift">working = "#304FFE"</span>, <span class="lift">done = "#00FF4C"</span>,
+           <span class="lift">idle = "#FFFFFF"</span>. The ring borrows them.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-micro2-keys" href="#set-micro2-keys"><code class="cli-cmd">[devices.micro2.keys]</code></a>
+        <p>The seven macro keys, any action. Controls:
+           <span class="lift">macro_1</span>..<span class="lift">macro_7</span>
+           in reading order, upper row then lower. Actions: <span class="lift">none</span>,
+           <span class="lift">panel</span>,
+           <span class="lift">workspace:N</span>, <span class="lift">key:&lt;chord&gt;</span>,
+           <span class="lift">exec:&lt;command&gt;</span>. Defaults: the agent
+           panel, a new default agent, Up, Escape on the upper row;
+           dictation, Down, Enter on the lower. Everything else is fixed: agent key N lights
+           and focuses the panel's Nth agent, the encoder scrolls and drives
+           the open agent panel, the joystick moves window focus.</p>
+      </div>
+      <div>
+        <a class="cli-anchor" id="set-micro2-dictation" href="#set-micro2-dictation"><code class="cli-cmd">[devices.micro2.dictation]</code></a>
+        <p>The dictate key reads two ways, and recording starts on the press
+           either way: a tap toggles, a hold is push-to-talk. <span class="lift">hold_ms = 250</span>
+           is how long a press counts as holding; <span class="lift">auto_submit = true</span>
+           sends Enter when a hold ends and the text has landed. Taps never do.</p>
+      </div>
+      <div>
+        <p>All of it together, in <span class="lift">~/.config/amon/config.toml</span>.
+           Saved changes apply within a second:</p>
+        <figure class="snippet">
+          <pre><code><span class="t-o">[devices.micro2]
+brightness = 0.7
+
+[devices.micro2.keys]
+macro_2 = "exec:obsidian"          # second key, upper row: open Obsidian
+macro_4 = "key:super+shift+f"      # fourth key, upper row: send a chord
+macro_7 = "workspace:5"            # last key, lower row: jump to workspace 5
+
+[devices.micro2.dictation]
+hold_ms = 300
+auto_submit = false
+
+[devices.micro2.colors]
+working = "#7D74F0"</span></code></pre>
+        </figure>
       </div>
     </div>
   </section>

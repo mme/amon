@@ -96,6 +96,7 @@ fn handle(request: Request, signals: &Sender<Signal>) {
                 source: report.source,
                 agent: report.agent,
                 state: report.state,
+                message: report.message,
                 seq: Some(report.seq),
                 session_id: report.agent_session_id,
             });
@@ -108,6 +109,13 @@ fn handle(request: Request, signals: &Sender<Signal>) {
                 session_path: report.agent_session_path,
                 seq: Some(report.seq),
                 session_start_source: report.session_start_source,
+            });
+        }
+        Method::AgentReportActivity(report) => {
+            let _ = signals.send(Signal::HookActivity {
+                text: report.text,
+                kind: report.kind,
+                session_id: report.agent_session_id,
             });
         }
         // Everything else belongs to the daemon's socket, not this one.

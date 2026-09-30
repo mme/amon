@@ -1,8 +1,50 @@
 {
   "$defs": {
-    "AgentEntry": {
-      "description": "One connected agent. Lives exactly as long as its wrapper's connection to\nthe daemon; nothing here is persisted.",
+    "Activity": {
+      "description": "One connected agent. Lives exactly as long as its wrapper's connection to\nthe daemon; nothing here is persisted.\nWhat an agent's row says it is doing right now (see CONTEXT.md: Activity).",
       "properties": {
+        "kind": {
+          "$ref": "#/$defs/ActivityKind"
+        },
+        "text": {
+          "description": "One bounded line. The producer bounds it; consumers render it whole.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ActivityKind": {
+      "description": "Which of its two kinds an Activity is. The ranking between them is the\nproducer's job — a consumer only ever styles them.",
+      "oneOf": [
+        {
+          "const": "narration",
+          "description": "The harness's own account of its current step (\"Reading 1 file…\").",
+          "type": "string"
+        },
+        {
+          "const": "prompt",
+          "description": "The submitted ask the current Turn is working on — never text still\nbeing typed.",
+          "type": "string"
+        }
+      ]
+    },
+    "AgentEntry": {
+      "properties": {
+        "activity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Activity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What the agent is doing, in words. Never a phrase amon composed — a\nlabel amon wrote itself would say no more than the state column already\ndoes (ADR-0017, ADR-0019).\n\nAbsent for an agent whose harness amon cannot yet read, and for one\nwhose screen cannot be believed right now."
+        },
         "agent": {
           "description": "Agent kind, e.g. `claude`. Free-form so that a wrapper built against a\nnewer agent list still registers against an older daemon.",
           "type": "string"
@@ -56,6 +98,17 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Position"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where that window sits, as the compositor laid it out. What orders the\nagents of one workspace wherever they are listed in the panel's order:\nthe left window first, then the one below it. Absent whenever the\nwindow is, and whenever the compositor did not say."
         },
         "project": {
           "description": "The Project [`AgentEntry::cwd`] belongs to: the repository it is in,\nnamed by its root directory. A linked worktree's Project is the\nrepository it was cut from, not the worktree's own directory — a\nworktree's path names neither its project nor its branch.\n\nAbsent outside a repository, where the directory itself identifies the\nagent and a consumer shows that instead.",
@@ -135,6 +188,17 @@
     "AgentPatch": {
       "description": "A partial update to an entry. Absent fields are left alone, which is what\nlets an old wrapper omit fields a newer daemon knows about.",
       "properties": {
+        "activity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Activity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Two levels deep, like [`AgentPatch::window`]: a session that ended took\nits activity with it, and the row has to be able to say so rather than\nkeep narrating the session before it."
+        },
         "agent": {
           "type": [
             "string",
@@ -175,6 +239,17 @@
         },
         "id": {
           "type": "string"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Position"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where the window sits now. Reported with the window, and again\nwhenever the layout around it moves it."
         },
         "project": {
           "description": "Two levels deep, like the branch below: an agent that walks out of a\nrepository has to be able to say so rather than keep naming the last\none it was in.",
@@ -303,9 +378,20 @@
             "glyphs": {}
           }
         },
+        "devices": {
+          "$ref": "#/$defs/DevicesConfig",
+          "default": {
+            "micro2": {
+              "colors": {},
+              "dictation": {},
+              "enabled": true
+            }
+          }
+        },
         "sound": {
           "$ref": "#/$defs/SoundConfig",
           "default": {
+            "duck_while_dictating": true,
             "enabled": true
           }
         },
@@ -314,6 +400,72 @@
           "default": {
             "check": true
           }
+        }
+      },
+      "type": "object"
+    },
+    "DeviceColors": {
+      "description": "Which color stands for each agent state on the device.",
+      "properties": {
+        "blocked": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "done": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "idle": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "working": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "DevicesConfig": {
+      "description": "Physical status devices on the desk (ADR-0022). Today that is the Work\nLouder Creator Micro 2; the shape leaves room for its siblings.",
+      "properties": {
+        "micro2": {
+          "$ref": "#/$defs/Micro2Config",
+          "default": {
+            "colors": {},
+            "dictation": {},
+            "enabled": true
+          }
+        }
+      },
+      "type": "object"
+    },
+    "DictationConfig": {
+      "description": "How the `dictate` action reads its button. Recording always starts on\nthe press; these decide what the release means.",
+      "properties": {
+        "auto_submit": {
+          "description": "Whether ending a hold also presses Enter once the text has landed —\ndictate a message, let go, and it sends itself. Only holds submit;\na tap-stopped recording never does.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "hold_ms": {
+          "description": "Milliseconds a press must last to count as holding: a shorter press\nis a tap (recording runs until the next tap), a longer one is\npush-to-talk (recording stops on release). Absent means the tuned\ndefault.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -526,6 +678,107 @@
       ],
       "type": "object"
     },
+    "Micro2Config": {
+      "description": "The Creator Micro 2: six agent keys lit by agent state, a ring showing\nthe fleet's most urgent state, and every other control mapped to an\naction. Everything here is optional; absent means the tuned default.",
+      "properties": {
+        "brightness": {
+          "description": "0.0–1.0, applied to keys and ring alike.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "colors": {
+          "$ref": "#/$defs/DeviceColors",
+          "default": {},
+          "description": "Per-state key colors, `#RRGGBB`. Defaults are the Codex palette."
+        },
+        "dictation": {
+          "$ref": "#/$defs/DictationConfig",
+          "default": {},
+          "description": "How the `dictate` action reads the button."
+        },
+        "enabled": {
+          "default": true,
+          "description": "On unless turned off. With no device connected this configures\nnothing; the daemon only acts when one appears.",
+          "type": "boolean"
+        },
+        "keys": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Macro-key overrides: keys are the seven macro keys in reading\norder (`macro_1`..`macro_4` upper row, `macro_5`..`macro_7` lower),\nvalues are actions (`none`, `panel`, `workspace:N`, `key:<spec>`,\n`exec:<command>`). The agent keys, encoder, and joystick have fixed\nroles and are not remappable.",
+          "type": "object"
+        },
+        "ring": {
+          "description": "Whether the ambient ring shows the fleet's most urgent state.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Position": {
+      "description": "Where a Window sits, as the compositor laid it out: its top-left corner in\nthe compositor's coordinates. Two windows on one workspace compare by `x`\nand then `y` — the left one first, then the one below it — which is the\norder the eye reads a screen in, and so the order one workspace's rows take\non the panel and its agents take on a desk device's keys. It follows the\nlayout: a neighbour opening or closing moves it. It never follows state.",
+      "properties": {
+        "x": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "y": {
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "type": "object"
+    },
+    "ReportActivity": {
+      "description": "A hook reporting an Activity. amon-only: herdr has no counterpart, because\nherdr collects state, not content (ADR-0020 — a seam, not a modified\nvendored asset). A `prompt` opens a Turn with the exact submitted text; a\n`narration` is the harness's own account of its current step, for agents\nwhose screens amon cannot read. The wrapper bounds the text.",
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "agent_id": {
+          "type": "string"
+        },
+        "agent_session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/ActivityKind"
+        },
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_id",
+        "source",
+        "agent",
+        "seq",
+        "text",
+        "kind"
+      ],
+      "type": "object"
+    },
     "ReportSession": {
       "description": "A hook reporting session identity. Mirrors herdr's\n`pane.report_agent_session`.",
       "properties": {
@@ -579,6 +832,13 @@
           "type": "string"
         },
         "agent_session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message": {
+          "description": "What the agent is blocked on, in the harness's words — the question it\nis waiting on. Sent by pi and omp on `blocked` and absent otherwise;\nthe wrapper surfaces it as the row's Activity so a blocked row says\nwhat it needs, not just that it is blocked.",
           "type": [
             "string",
             "null"
@@ -746,6 +1006,40 @@
             "params"
           ],
           "type": "object"
+        },
+        {
+          "description": "Hook → wrapper. amon-only (ADR-0020).",
+          "properties": {
+            "method": {
+              "const": "agent.report_activity",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/ReportActivity"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Wrapper (in a runtime pane) → daemon. amon-only (ADR-0021).",
+          "properties": {
+            "method": {
+              "const": "runtime.activity",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/RuntimeActivity"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
         }
       ],
       "properties": {
@@ -861,6 +1155,33 @@
         }
       ]
     },
+    "RuntimeActivity": {
+      "description": "A wrapper running inside a runtime pane reporting the agent's activity\n(ADR-0021). It carries no row of its own — the runtime owns the row — so the\ndaemon joins this to the adopted entry by `kind` and `pane`, the id both\nruntimes stamp on the entry and inject into the pane.",
+      "properties": {
+        "activity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Activity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The activity, or `None` to clear it (the turn ended, the session\nchanged)."
+        },
+        "kind": {
+          "type": "string"
+        },
+        "pane": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "pane"
+      ],
+      "type": "object"
+    },
     "SoundConfig": {
       "description": "When to make a noise, and which one.",
       "properties": {
@@ -877,6 +1198,11 @@
             "string",
             "null"
           ]
+        },
+        "duck_while_dictating": {
+          "default": true,
+          "description": "Duck other audio while voxtype is recording, the way notifications do.\n\nOn by default, for the same reason the sounds are: it only ever helps,\nand a setting nobody knows exists helps nobody. It needs the ducking\ndrop-in (`amon setup --duck`) to have any effect — without it nothing\nchanges — and it composes with rather than replaces voxtype's own\n`pause_media`, which pauses MPRIS players for transcription accuracy;\nducked audio still reaches the microphone.",
+          "type": "boolean"
         },
         "enabled": {
           "default": true,

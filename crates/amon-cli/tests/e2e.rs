@@ -70,13 +70,13 @@ fn the_agents_exit_code_is_the_wrappers_exit_code() {
 }
 
 #[test]
-fn inside_herdr_the_wrapper_steps_aside() {
-    inside_a_runtime_pane_the_wrapper_steps_aside("HERDR_ENV");
+fn inside_herdr_the_wrapper_wraps_for_activity() {
+    inside_a_runtime_pane_the_wrapper_wraps_for_activity("HERDR_ENV", "HERDR_PANE_ID");
 }
 
 #[test]
-fn inside_luvus_the_wrapper_steps_aside() {
-    inside_a_runtime_pane_the_wrapper_steps_aside("LUVUS_ENV");
+fn inside_luvus_the_wrapper_wraps_for_activity() {
+    inside_a_runtime_pane_the_wrapper_wraps_for_activity("LUVUS_ENV", "LUVUS_PANE_ID");
 }
 
 /// What a fake agent prints so a test can tell wrapped from bare.
@@ -85,11 +85,14 @@ const REPORTS_ITS_WRAPPING: &str = "#!/bin/sh\necho \"amon_env=${AMON_ENV:-unset
                                     sock=${AMON_SOCKET_PATH:-unset}\"\nexit 7\n";
 
 /// Inside a runtime's pane the user's alias still expands `claude` to
-/// `amon claude`, but wrapping there would hide the agent from the runtime
-/// and give amon a row with no window. amon execs the agent bare instead;
-/// the runtime detects it, and the daemon's runtime module brings it back
-/// onto the bar. A wrapped agent sees AMON_ENV=1 — a bypassed one must not.
-fn inside_a_runtime_pane_the_wrapper_steps_aside(pane_env: &str) {
+/// `amon claude`, and amon now wraps rather than stepping aside (ADR-0021):
+/// it needs the PTY for the activity it reads and the control it will add.
+/// It reports activity, not state — the runtime owns the row it adopts by
+/// pane id — and registers no row of its own. So the agent must see
+/// AMON_ENV=1, and its routing must be *this* wrapper's, not an outer one's:
+/// the fresh AGENT_ID and SOCKET_PATH overwrite whatever a runtime that was
+/// itself started under a wrapper left in the environment.
+fn inside_a_runtime_pane_the_wrapper_wraps_for_activity(pane_env: &str, pane_id_env: &str) {
     let sandbox = Sandbox::new();
     let agent = sandbox.fake_agent("claude", REPORTS_ITS_WRAPPING);
 
@@ -98,9 +101,13 @@ fn inside_a_runtime_pane_the_wrapper_steps_aside(pane_env: &str) {
     let (stdin, controller) = harness::open_terminal_stdin();
     let mut command = sandbox.command(&[&path_str(&agent)]);
     command.env(pane_env, "1");
+    // The pane id is what the daemon joins the wrapper's activity to the
+    // runtime's adopted row on; without it there is nothing to join to and
+    // amon has no reason to wrap.
+    command.env(pane_id_env, "w1:p1");
     // As if the runtime had been started from inside a wrapped agent: its
     // server and every pane inherit that wrapper's routing, and this agent
-    // would otherwise report its state into a wrapper watching something else.
+    // would otherwise report into a wrapper watching something else.
     command.env("AMON_ENV", "1");
     command.env("AMON_AGENT_ID", "outer-agent");
     command.env("AMON_SOCKET_PATH", "/nonexistent/outer.sock");
@@ -114,14 +121,18 @@ fn inside_a_runtime_pane_the_wrapper_steps_aside(pane_env: &str) {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("amon_env=unset"),
-        "the agent should run bare, not wrapped: {stdout:?}"
+        stdout.contains("amon_env=1"),
+        "inside a runtime pane the agent is wrapped, not bare: {stdout:?}"
     );
     assert!(
-        stdout.contains("id=unset") && stdout.contains("sock=unset"),
-        "an outer wrapper's routing must not follow the agent in: {stdout:?}"
+        !stdout.contains("id=outer-agent") && !stdout.contains("id=unset"),
+        "the wrapper's own routing must replace the outer one's, not vanish: {stdout:?}"
     );
-    // Exec fidelity: the agent's exit code is the process's exit code.
+    assert!(
+        !stdout.contains("sock=/nonexistent/outer.sock") && !stdout.contains("sock=unset"),
+        "hooks must reach this wrapper's socket, not the outer one's: {stdout:?}"
+    );
+    // Wrapping preserves the agent's exit code.
     assert_eq!(output.status.code(), Some(7));
 }
 
@@ -321,6 +332,121 @@ fn amons_own_subcommands_reject_unknown_flags() {
         "unknown flags on amon's own subcommands are errors: {:?}",
         String::from_utf8_lossy(&output.stdout)
     );
+}
+
+/// Draws what Claude draws: a marker line naming the step, then the input box
+/// between two horizontal rules. Octal escapes rather than literals so the
+/// bytes on the wire are unambiguous — `●` (U+25CF), `─` (U+2500), `❯`
+/// (U+276F).
+const NARRATES_A_STEP: &str = r#"#!/bin/sh
+printf '\342\227\217 Bash(cargo test)\r\n'
+printf '\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\r\n'
+printf '\342\235\257 \r\n'
+printf '\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\r\n'
+sleep 10
+"#;
+
+#[test]
+fn what_the_agent_says_it_is_doing_reaches_status() {
+    // The whole path in one go: the wrapper's shadow terminal renders the
+    // screen, the carrier reads the line off it, the patch carries it, and the
+    // daemon hands it to a client. Every other test of this reads a screen
+    // amon built for itself.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", NARRATES_A_STEP);
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    let want = serde_json::json!({"text": "Bash(cargo test)", "kind": "narration"});
+    let agents = sandbox.wait_for_status("the agent to narrate a step", |agents| {
+        agent_named(agents, "claude").is_some_and(|entry| entry["activity"] == want)
+    });
+    assert!(
+        agent_named(&agents, "claude").is_some(),
+        "the harness's own words, marker stripped, kinded"
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Codex's shape: bullets for the steps, a bare marker line for the prompt,
+/// no box drawn around anything, and its live status wearing the same bullet
+/// as a real step. `\342\200\272` is `›`, `\342\200\242` is `•`.
+const NARRATES_LIKE_CODEX: &str = r#"#!/bin/sh
+printf '\342\200\242 Explored\r\n'
+printf '\342\200\242 Working (7s \342\200\242 esc to interrupt)\r\n'
+printf '\342\200\272 Ask Codex to do anything\r\n'
+sleep 10
+"#;
+
+#[test]
+fn a_second_harness_needs_no_code_of_its_own() {
+    // Codex reaches status through the same reader as Claude, on an entry that
+    // supplies its own proof-of-prompt because herdr finds no box for it. This
+    // is the claim the design rests on: a harness is data.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("codex", NARRATES_LIKE_CODEX);
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    // The newest bullet is the status line, which is rejected — so the step
+    // behind it is what a row shows. Waiting for the value rather than for
+    // any object: the activity latches through several frames.
+    let want = serde_json::json!({"text": "Explored", "kind": "narration"});
+    let agents = sandbox.wait_for_status("codex to narrate the step", |agents| {
+        agent_named(agents, "codex").is_some_and(|entry| entry["activity"] == want)
+    });
+    assert!(agent_named(&agents, "codex").is_some());
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// A submitted prompt with nothing narrated yet: the thinking gap. `\342\235\257`
+/// is `❯` — the echoed ask above the box, and the empty live box below.
+const THINKS_ABOUT_AN_ASK: &str = r#"#!/bin/sh
+printf '\342\235\257 refactor the auth module\r\n'
+printf '\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\r\n'
+printf '\342\235\257 \r\n'
+printf '\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\342\224\200\r\n'
+sleep 10
+"#;
+
+#[test]
+fn the_thinking_gap_shows_the_ask_marked_as_the_users_words() {
+    // Between submitting and the first narrated step, the row's only honest
+    // answer is the ask itself — carried as kind "prompt", so every consumer
+    // can mark it as your words rather than the agent's.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", THINKS_ABOUT_AN_ASK);
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    let want = serde_json::json!({"text": "refactor the auth module", "kind": "prompt"});
+    let agents = sandbox.wait_for_status("the ask to reach status", |agents| {
+        agent_named(agents, "claude").is_some_and(|entry| entry["activity"] == want)
+    });
+    assert!(agent_named(&agents, "claude").is_some());
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn an_agent_that_narrates_nothing_says_nothing() {
+    // The field is absent rather than empty or invented. A row with no
+    // activity has to look different from one narrating an empty string.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent("claude", WORKING_THEN_IDLE);
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent), "5", "5"]);
+
+    let agents = sandbox.wait_for_status("the agent to register", |agents| {
+        agent_named(agents, "claude").is_some()
+    });
+
+    let entry = agent_named(&agents, "claude").expect("registered");
+    assert!(entry["activity"].is_null(), "{entry:#?}");
+
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 #[test]
@@ -655,6 +781,88 @@ sleep 5
         entry["agent_session_path"],
         serde_json::json!("/tmp/transcript.jsonl")
     );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn a_prompt_hook_report_becomes_the_turns_activity() {
+    // The amon-only prompt hook (ADR-0020): a UserPromptSubmit report over the
+    // wrapper socket opens a turn, and its exact text — not the screen's
+    // rendering — is what the row shows, marked as the user's words.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent(
+        "claude",
+        r#"#!/bin/sh
+printf '{"id":"p1","method":"agent.report_activity","params":{"agent_id":"%s","source":"amon:claude","agent":"claude","seq":1,"text":"refactor the auth module and keep the tests green","kind":"prompt"}}\n' "$AMON_AGENT_ID" \
+  | timeout 5 socat - "UNIX-CONNECT:$AMON_SOCKET_PATH" >/dev/null 2>&1
+sleep 5
+"#,
+    );
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    let want = serde_json::json!({
+        "text": "refactor the auth module and keep the tests green",
+        "kind": "prompt"
+    });
+    let agents = sandbox.wait_for_status("the prompt hook's report", |agents| {
+        agent_named(agents, "claude").is_some_and(|agent| agent["activity"] == want)
+    });
+    assert!(agent_named(&agents, "claude").is_some());
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn a_hook_narration_reaches_status_for_a_screenless_harness() {
+    // pi and omp have no readable screen; their extensions report narration
+    // over the same wire. It must land as kind "narration" and outrank the
+    // prompt that opened the turn.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent(
+        "pi",
+        r#"#!/bin/sh
+printf '{"id":"p1","method":"agent.report_activity","params":{"agent_id":"%s","source":"amon:pi","agent":"pi","seq":1,"text":"summarise the findings","kind":"prompt"}}\n' "$AMON_AGENT_ID" \
+  | timeout 5 socat - "UNIX-CONNECT:$AMON_SOCKET_PATH" >/dev/null 2>&1
+printf '{"id":"p2","method":"agent.report_activity","params":{"agent_id":"%s","source":"amon:pi","agent":"pi","seq":2,"text":"read_file(NOTICE)","kind":"narration"}}\n' "$AMON_AGENT_ID" \
+  | timeout 5 socat - "UNIX-CONNECT:$AMON_SOCKET_PATH" >/dev/null 2>&1
+sleep 5
+"#,
+    );
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    let want = serde_json::json!({"text": "read_file(NOTICE)", "kind": "narration"});
+    let agents = sandbox.wait_for_status("the hook narration", |agents| {
+        agent_named(agents, "pi").is_some_and(|agent| agent["activity"] == want)
+    });
+    assert!(agent_named(&agents, "pi").is_some());
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn a_blocked_reason_reaches_status_as_activity() {
+    // pi and omp send the blocking question on the state report; the wrapper
+    // surfaces it as the row's Activity so a blocked row says what it needs.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent(
+        "pi",
+        r#"#!/bin/sh
+printf '{"id":"s1","method":"agent.report_state","params":{"agent_id":"%s","source":"amon:pi","agent":"pi","state":"blocked","seq":1,"message":"Allow write to /etc/hosts?"}}\n' "$AMON_AGENT_ID" \
+  | timeout 5 socat - "UNIX-CONNECT:$AMON_SOCKET_PATH" >/dev/null 2>&1
+sleep 5
+"#,
+    );
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    let want = serde_json::json!({"text": "Allow write to /etc/hosts?", "kind": "narration"});
+    let agents = sandbox.wait_for_status("the blocked reason", |agents| {
+        agent_named(agents, "pi").is_some_and(|agent| agent["activity"] == want)
+    });
+    assert!(agent_named(&agents, "pi").is_some());
 
     let _ = child.kill();
     let _ = child.wait();

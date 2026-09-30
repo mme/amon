@@ -43,7 +43,7 @@ pub struct StatusResult {
     pub agents: Vec<AgentEntry>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ConfigResult {
     pub config: Config,
     /// Why the file on disk is not what `config` says, when it is not: a
@@ -66,6 +66,12 @@ pub struct ReportState {
     pub state: AgentState,
     /// Monotonic per-source sequence number, used to drop out-of-order reports.
     pub seq: u64,
+    /// What the agent is blocked on, in the harness's words — the question it
+    /// is waiting on. Sent by pi and omp on `blocked` and absent otherwise;
+    /// the wrapper surfaces it as the row's Activity so a blocked row says
+    /// what it needs, not just that it is blocked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_id: Option<String>,
 }
@@ -83,6 +89,37 @@ pub struct ReportSession {
     pub agent_session_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_start_source: Option<String>,
+}
+
+/// A hook reporting an Activity. amon-only: herdr has no counterpart, because
+/// herdr collects state, not content (ADR-0020 — a seam, not a modified
+/// vendored asset). A `prompt` opens a Turn with the exact submitted text; a
+/// `narration` is the harness's own account of its current step, for agents
+/// whose screens amon cannot read. The wrapper bounds the text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ReportActivity {
+    pub agent_id: String,
+    pub source: String,
+    pub agent: String,
+    pub seq: u64,
+    pub text: String,
+    pub kind: crate::ActivityKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_session_id: Option<String>,
+}
+
+/// A wrapper running inside a runtime pane reporting the agent's activity
+/// (ADR-0021). It carries no row of its own — the runtime owns the row — so the
+/// daemon joins this to the adopted entry by `kind` and `pane`, the id both
+/// runtimes stamp on the entry and inject into the pane.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RuntimeActivity {
+    pub kind: String,
+    pub pane: String,
+    /// The activity, or `None` to clear it (the turn ended, the session
+    /// changed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activity: Option<crate::Activity>,
 }
 
 /// Every request either socket accepts.
@@ -117,6 +154,12 @@ pub enum Method {
     /// Hook → wrapper.
     #[serde(rename = "agent.report_session")]
     AgentReportSession(ReportSession),
+    /// Hook → wrapper. amon-only (ADR-0020).
+    #[serde(rename = "agent.report_activity")]
+    AgentReportActivity(ReportActivity),
+    /// Wrapper (in a runtime pane) → daemon. amon-only (ADR-0021).
+    #[serde(rename = "runtime.activity")]
+    RuntimeActivity(RuntimeActivity),
 }
 
 impl Method {
@@ -131,6 +174,8 @@ impl Method {
             Self::DaemonShutdown => "daemon.shutdown",
             Self::AgentReportState(_) => "agent.report_state",
             Self::AgentReportSession(_) => "agent.report_session",
+            Self::AgentReportActivity(_) => "agent.report_activity",
+            Self::RuntimeActivity(_) => "runtime.activity",
         }
     }
 
@@ -161,6 +206,8 @@ const KNOWN_METHODS: &[&str] = &[
     "daemon.shutdown",
     "agent.report_state",
     "agent.report_session",
+    "agent.report_activity",
+    "runtime.activity",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
