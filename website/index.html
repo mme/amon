@@ -677,11 +677,9 @@
      hardware; the ring is the fleet's most urgent state. Only what moves on
      the real board moves here: a working key breathes. */
   .desk{margin:0; display:flex; flex-direction:column}
-  /* Bordered, not raised: the same ruled box the runtimes note and the bar
-     sit in. The board supplies its own ground, so a second one behind it
-     would only frame a frame. */
-  .desk-card{border:1px solid var(--rule); border-radius:10px;
-             padding:26px 18px; display:flex; justify-content:center; overflow:hidden}
+  /* No card: the board supplies its own ground and edge, so a box around it
+     would only frame a frame. It sits at the left margin like the copy. */
+  .desk-card{padding:6px 0 2px; display:flex; justify-content:flex-start; overflow:visible}
   .desk svg{width:100%; max-width:400px; height:auto; display:block; overflow:visible}
   .desk .body{fill:var(--sunk); stroke:var(--rule)}
   /* The underglow: the body's own outline, wide, soft and behind it. */
