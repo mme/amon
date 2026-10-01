@@ -41,6 +41,25 @@ passthrough), and every consumer — bar, panel, sounds, `amon focus` — works
 on mirrored rows unchanged, because a mirrored row is an ordinary registry
 entry whose `window` and `workspace` are grafted from the ssh session's own.
 
+## What this side owns
+
+Placement and focus are facts about the window on this desktop, so this side
+says them for the row whoever holds it, and drops the far side's word on
+them: `window`, `workspace` and `position` from the compositor; `focused` and
+`seen` from the focus reports the wrapper takes out of the input - which the
+far side therefore never hears, so it could not say them truthfully if it
+tried. Seen restarts on each of the remote agent's state changes, from this
+window's focus at that moment. Everything else - the agent, its directory,
+project and branch, state, activity - is the far side's.
+
+## A wrapped ssh is not an agent
+
+A program named `ssh` under the wrapper registers no row. It gets one only
+when a remote agent claims the session, and when that agent goes the row is
+withdrawn rather than reverting to an "ssh" row. So an alias that wraps every
+ssh - `amon setup ssh` - costs nothing: a session with no amon on the far
+end, or none running an agent, is invisible.
+
 ## Consequences
 
 Anything that consumes escape sequences between the two wrappers breaks the

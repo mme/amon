@@ -3653,3 +3653,41 @@ fn a_remote_agents_entry_crosses_the_terminal_stream() {
     let _ = child.kill();
     let _ = child.wait();
 }
+
+#[test]
+fn a_wrapped_ssh_shows_nothing_until_a_remote_agent_claims_it() {
+    // A program named ssh is a window onto another machine, not an agent:
+    // it has no row until a remote amon's agent takes the session, and the
+    // row goes again with that agent instead of reverting to "ssh".
+    let local = Sandbox::new();
+    let remote = Sandbox::new();
+    let ssh = local.fake_agent("ssh", "#!/bin/sh\nexec sh -c \"$1\"\n");
+
+    let script = format!(
+        "sleep 1; SSH_TTY=/dev/fake XDG_RUNTIME_DIR={} {} sleep 2; sleep 10",
+        path_str(remote.runtime_dir()),
+        harness::AMON,
+    );
+    let mut child = local.spawn_agent(&[&path_str(&ssh), &script]);
+
+    std::thread::sleep(Duration::from_millis(700));
+    assert!(
+        local
+            .status_json()
+            .as_array()
+            .is_none_or(|agents| agents.is_empty()),
+        "a bare ssh session has no row"
+    );
+
+    let agents = local.wait_for_status("the remote agent to claim the session", |agents| {
+        agent_named(agents, "sleep").is_some()
+    });
+    assert_eq!(agents.len(), 1, "one row, the remote agent's: {agents:#?}");
+
+    local.wait_for_status("the row to go with the remote agent", |agents| {
+        agents.is_empty()
+    });
+
+    let _ = child.kill();
+    let _ = child.wait();
+}

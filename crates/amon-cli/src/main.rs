@@ -464,6 +464,18 @@ fn run_setup(
 /// a subscriber into your desktop, and only one of them wants an alias. The
 /// widget now comes from the screen or `--all`.
 fn setup_one(target: &str, no_alias: bool) -> Result<(), Box<dyn std::error::Error>> {
+    // The one target that is not an agent: alias ssh, so agents on the
+    // machines you ssh into show up here (ADR-0023). There is nothing else to
+    // install for it, which is why --no-alias makes no sense with it.
+    if target == amon_integration::alias::SSH {
+        if no_alias {
+            return Err("`amon setup ssh` is the alias and nothing else".into());
+        }
+        for message in amon_integration::alias::install_ssh()? {
+            println!("{message}");
+        }
+        return Ok(());
+    }
     let agent = require_target(target)?;
     let mut messages = amon_integration::install(agent)?;
     if !no_alias {
@@ -494,8 +506,18 @@ fn run_remove(target: Option<&str>, all: bool) -> Result<(), Box<dyn std::error:
     // No flag on the way out: an alias left behind for an agent amon no longer
     // hooks would keep taking over its name for nothing.
     //
-    // Agents only, matching setup. The widget comes out with the screen or
-    // `amon remove --all`.
+    // Agents only, matching setup — and ssh, its one alias. The widget comes
+    // out with the screen or `amon remove --all`.
+    if target == amon_integration::alias::SSH {
+        let messages = amon_integration::alias::uninstall_ssh()?;
+        if messages.is_empty() {
+            println!("ssh was not aliased");
+        }
+        for message in messages {
+            println!("{message}");
+        }
+        return Ok(());
+    }
     let agent = require_target(target)?;
     let mut messages = amon_integration::uninstall(agent)?;
     messages.extend(amon_integration::alias::uninstall(agent)?);

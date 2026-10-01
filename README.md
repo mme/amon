@@ -124,13 +124,16 @@ one detection authority per context
 ## Remote agents over SSH
 
 An agent running on another machine can be a first-class citizen of your
-desktop. Run `amon ssh build-box` — wrapping ssh like any other program —
-and inside that session run agents as usual; with amon installed on both
-ends, the remote agent takes over the session's row in your bar, your
-panel, and `amon status`, with its own name, directory, branch, and state.
-Sounds fire on your desktop when it blocks or finishes unwatched, and
-`Super+number` lands on the ssh window it lives in. Hooks report on the
-remote host exactly as they do locally.
+desktop. `amon setup ssh` aliases `ssh` to `amon ssh`, so every session you
+open runs under amon - or type `amon ssh build-box` for one. A wrapped ssh
+session has no row of its own and shows nothing; run an agent inside it, with
+amon installed on the far end too, and the agent appears in your bar, your
+panel, and `amon status`, with its own name, directory, branch, state, and
+what it is doing. It sorts where its window sits, chimes when it blocks or
+finishes while you are not looking at that window, and `Super+number` lands
+on the ssh window it lives in. When it ends, the row goes with it. Hooks
+report on the remote host exactly as they do locally. `amon remove ssh`
+takes the alias out.
 
 Nothing is required of the transport beyond an interactive session — plain
 OpenSSH, Tailscale SSH, and jump-host chains all work, with no port
@@ -258,7 +261,8 @@ Intel Macs build from source.
 **`amon setup [target] [--all] [--no-alias] [--upgrade] [--duck | --no-duck]`**
 
 Set up integrations. Without arguments, an interactive screen; with a target,
-one agent (`amon setup claude`). `--all` takes every detected agent plus the
+one agent (`amon setup claude`), or `ssh`, which only aliases ssh to `amon
+ssh` so agents on the machines you reach show up here. `--all` takes every detected agent plus the
 desktop integration without a screen. `--no-alias` skips aliasing the agent's
 name, on the non-interactive forms only; the screen always aliases.
 `--upgrade` refreshes everything already set up after a binary upgrade -

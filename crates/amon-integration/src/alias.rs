@@ -276,11 +276,30 @@ pub fn remove_all() -> io::Result<Vec<String>> {
 /// Idempotent: the block holds one line per command however many times it is
 /// installed, and a second agent joins that block rather than starting another.
 pub fn install(target: IntegrationTarget) -> io::Result<Vec<String>> {
+    install_commands(crate::command_names(target))
+}
+
+/// The one command that is not an agent: `ssh`. Aliased, every ssh session
+/// runs under amon, which costs nothing - a wrapped ssh has no row of its
+/// own - and lets an agent on the far side, under its own amon, show up here
+/// (ADR-0023). Opt-in, through `amon setup ssh`.
+pub const SSH: &str = "ssh";
+
+pub fn install_ssh() -> io::Result<Vec<String>> {
+    install_commands(&[SSH])
+}
+
+pub fn uninstall_ssh() -> io::Result<Vec<String>> {
+    uninstall_commands(&[SSH])
+}
+
+pub fn ssh_installed() -> bool {
+    installed().contains(&alias_line(SSH))
+}
+
+fn install_commands(commands: &[&str]) -> io::Result<Vec<String>> {
     let rc = shell_config().ok_or_else(missing_home)?;
-    let wanted: Vec<String> = crate::command_names(target)
-        .iter()
-        .map(|command| alias_line(command))
-        .collect();
+    let wanted: Vec<String> = commands.iter().map(|command| alias_line(command)).collect();
 
     if is_symlink(&rc) {
         return Ok(manual_note(&rc, &wanted));
@@ -315,6 +334,10 @@ pub fn install(target: IntegrationTarget) -> io::Result<Vec<String>> {
 /// Removes exactly the aliases [`install`] added for this agent, and the block
 /// itself once the last one has gone.
 pub fn uninstall(target: IntegrationTarget) -> io::Result<Vec<String>> {
+    uninstall_commands(crate::command_names(target))
+}
+
+fn uninstall_commands(commands: &[&str]) -> io::Result<Vec<String>> {
     let Some(rc) = shell_config() else {
         return Ok(Vec::new());
     };
@@ -328,10 +351,7 @@ pub fn uninstall(target: IntegrationTarget) -> io::Result<Vec<String>> {
         return Ok(vec![truncated_note(&rc)]);
     }
 
-    let unwanted: Vec<String> = crate::command_names(target)
-        .iter()
-        .map(|command| alias_line(command))
-        .collect();
+    let unwanted: Vec<String> = commands.iter().map(|command| alias_line(command)).collect();
     let before = aliases_in(&existing);
     let after: Vec<String> = before
         .iter()
