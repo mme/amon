@@ -6,6 +6,12 @@
 //! three URLs the script knows (the /releases/latest redirect, the tarball,
 //! the sha256 sidecar), into a scratch HOME. AMON_BASE_URL exists in the
 //! script solely to point it here.
+//!
+//! Linux only: the harness leans on util-linux — `setsid`, `script -qec` —
+//! and `sha256sum`, none of which a Mac ships in that shape. The installer's
+//! Darwin branch is a `case` held by the release-contract tests, and the
+//! platform-refusal tests below exercise it here by faking `uname`.
+#![cfg(target_os = "linux")]
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
@@ -288,7 +294,49 @@ fn a_foreign_architecture_is_turned_away_with_directions() {
     let run = run_installer(&base, &[("PATH", &path)]);
 
     assert!(!run.status.success());
-    assert!(run.stderr.contains("x86_64 only"), "stderr: {}", run.stderr);
+    assert!(
+        run.stderr.contains("x86_64 Linux and Apple Silicon"),
+        "the refusal names what prebuilt amon supports: {}",
+        run.stderr
+    );
+    assert!(
+        run.stderr.contains("build from source"),
+        "and points at the way that works"
+    );
+    assert!(
+        hits.lock().unwrap().is_empty(),
+        "nothing is downloaded first"
+    );
+}
+
+#[test]
+fn an_intel_mac_is_turned_away_with_directions() {
+    let dir = tempdir();
+    let fx = Arc::new(fixture(&dir));
+    let sha = fx.sha256_line.clone();
+    let (base, hits) = serve(fx, sha);
+
+    // A fake uname ahead of the real one: an Intel Mac, the one Darwin that
+    // gets no prebuilt binary.
+    let shims = dir.join("shims");
+    std::fs::create_dir(&shims).unwrap();
+    std::fs::write(
+        shims.join("uname"),
+        "#!/bin/sh\ncase \"$1\" in -m) echo x86_64;; *) echo Darwin;; esac\n",
+    )
+    .unwrap();
+    let mode = std::fs::Permissions::from_mode(0o755);
+    std::fs::set_permissions(shims.join("uname"), mode).unwrap();
+    let path = format!("{}:{}", shims.display(), std::env::var("PATH").unwrap());
+
+    let run = run_installer(&base, &[("PATH", &path)]);
+
+    assert!(!run.status.success());
+    assert!(
+        run.stderr.contains("Apple Silicon only"),
+        "stderr: {}",
+        run.stderr
+    );
     assert!(
         run.stderr.contains("build from source"),
         "and points at the way that works"

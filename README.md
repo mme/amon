@@ -121,6 +121,34 @@ one detection authority per context
 [ADR-0018](./docs/adr/0018-runtimes-live-behind-one-seam.md),
 [the design](./docs/research/herdr-live-integration.md)).
 
+## Remote agents over SSH
+
+An agent running on another machine can be a first-class citizen of your
+desktop. `amon setup ssh` aliases `ssh` to `amon ssh`, so every session you
+open runs under amon - or type `amon ssh build-box` for one. A wrapped ssh
+session has no row of its own and shows nothing; run an agent inside it, with
+amon installed on the far end too, and the agent appears in your bar, your
+panel, and `amon status`, with its own name, directory, branch, state, and
+what it is doing. It sorts where its window sits, chimes when it blocks or
+finishes while you are not looking at that window, and `Super+number` lands
+on the ssh window it lives in. When it ends, the row goes with it. Hooks
+report on the remote host exactly as they do locally. `amon remove ssh`
+takes the alias out.
+
+Nothing is required of the transport beyond an interactive session — plain
+OpenSSH, Tailscale SSH, and jump-host chains all work, with no port
+forwarding and no configuration. The remote wrapper sends one invisible
+~20-byte probe when a session begins, and stays byte-silent unless an amon
+on your side answers it; only then do events travel, as escape sequences
+your wrapper strips back out before your terminal sees them
+([ADR-0023](./docs/adr/0023-agent-events-ride-the-terminal-stream.md)).
+The agent's lifetime is the session's: close the connection and the agent
+ends, exactly like closing a local terminal window
+([ADR-0024](./docs/adr/0024-a-remote-agents-lifetime-is-its-ssh-session.md)).
+Two known limits: tmux on the remote end swallows the events unless its
+`allow-passthrough` is on, and mosh drops them entirely — either way the
+session simply behaves as it does today.
+
 ## Subscribing
 
 The daemon speaks newline-delimited JSON over `$XDG_RUNTIME_DIR/amon/amond.sock`.
@@ -220,12 +248,21 @@ a layer written but not active, or a board whose six layers are all in use.
 Dictation on the mic key needs [voxtype](https://github.com/voxtype/voxtype)
 installed; without it the key does nothing.
 
+The same install command works on an Apple Silicon Mac, for the remote end
+of an SSH session: the wrapper, the daemon, and the CLI — `amon status`,
+`amon setup` for agent hooks and aliases (written to `~/.zshrc` there),
+`amon doctor` — with no desktop surface, since the desktop is Omarchy's
+([ADR-0025](./docs/adr/0025-macos-is-a-headless-target.md)). A remote Mac
+agent's chimes and indicators happen on the Omarchy desktop watching it.
+Intel Macs build from source.
+
 ## Command line reference
 
 **`amon setup [target] [--all] [--no-alias] [--upgrade] [--duck | --no-duck]`**
 
 Set up integrations. Without arguments, an interactive screen; with a target,
-one agent (`amon setup claude`). `--all` takes every detected agent plus the
+one agent (`amon setup claude`), or `ssh`, which only aliases ssh to `amon
+ssh` so agents on the machines you reach show up here. `--all` takes every detected agent plus the
 desktop integration without a screen. `--no-alias` skips aliasing the agent's
 name, on the non-interactive forms only; the screen always aliases.
 `--upgrade` refreshes everything already set up after a binary upgrade -

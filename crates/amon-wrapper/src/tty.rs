@@ -151,3 +151,8 @@ pub fn watch_resizes() -> &'static std::sync::atomic::AtomicBool {
 
     &RESIZED
 }
+
+/// Whether stdin is a terminal.
+pub fn stdin_is_terminal() -> bool {
+    unsafe { libc::isatty(io::stdin().as_raw_fd()) == 1 }
+}

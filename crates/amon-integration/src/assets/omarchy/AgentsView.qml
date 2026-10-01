@@ -809,11 +809,18 @@ FocusScope {
 
       readonly property var parts: view.identityParts(row.entry)
       readonly property real boldWidth: Math.min(view.textWidth(parts.bold), width)
+      // The path leading up to the directory, as much of it as fits beside
+      // the directory itself. The whole cell starts at the column's left
+      // edge, like a Project does, so a directory row lines up with the rows
+      // around it; the prefix gives way from the front when space is short.
+      readonly property real prefixWidth: parts.prefix === ""
+        ? 0
+        : Math.min(view.textWidth(parts.prefix), Math.max(0, width - boldWidth))
 
       Text {
         visible: identity.parts.prefix !== ""
         x: 0
-        width: Math.max(0, identity.width - identity.boldWidth)
+        width: identity.prefixWidth
         anchors.verticalCenter: parent.verticalCenter
         text: identity.parts.prefix
         color: view.dim
@@ -822,11 +829,10 @@ FocusScope {
         // The path leading up to the directory: its tail is what matters, so
         // it gives way from the front.
         elide: Text.ElideLeft
-        horizontalAlignment: Text.AlignRight
       }
 
       Text {
-        x: identity.parts.prefix !== "" ? Math.max(0, identity.width - identity.boldWidth) : 0
+        x: identity.prefixWidth
         width: identity.boldWidth
         anchors.verticalCenter: parent.verticalCenter
         text: identity.parts.bold
