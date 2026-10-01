@@ -57,6 +57,10 @@ pub enum Message {
     },
     /// A knock's answer arrived on the input stream: whispering may begin.
     WhisperArmed,
+    /// The row should no longer exist. Dropping the connection is how the
+    /// daemon learns that (ADR-0002); the link then holds nothing to restore,
+    /// so it stays away until something is registered again.
+    Withdraw,
 }
 
 /// The whisper tee: the link's own traffic, mirrored into the outbox once a
@@ -132,6 +136,12 @@ impl DaemonLink {
 
     pub fn register(&self, entry: AgentEntry) {
         let _ = self.tx.send(Message::Register(Box::new(entry)));
+    }
+
+    /// Takes the row away: the daemon forgets it, and nothing is restored
+    /// until the next register.
+    pub fn withdraw(&self) {
+        let _ = self.tx.send(Message::Withdraw);
     }
 
     pub fn update(&self, patch: AgentPatch) {
@@ -215,6 +225,10 @@ fn run(rx: mpsc::Receiver<Message>, version: String, tee: Tee) {
             }
             Ok(Message::WhisperArmed) => {
                 tee.armed(entry.as_ref());
+            }
+            Ok(Message::Withdraw) => {
+                entry = None;
+                connection = None;
             }
             Err(RecvTimeoutError::Timeout) => {
                 tee.heartbeat(entry.as_ref());

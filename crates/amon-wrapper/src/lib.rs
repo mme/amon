@@ -125,6 +125,10 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     }
 
     let agent_label = agent_label(program);
+    // A wrapped ssh is a window onto another machine, not an agent: it has
+    // no row of its own and gets one only while a remote amon's agent claims
+    // the session (ADR-0023), so wrapping every ssh costs nothing.
+    let quiet = agent_label == "ssh";
     let agent = amon_detect::parse_agent_label(&agent_label);
     let agent_pid = child.process_id().unwrap_or(0);
     // Where the agent starts. It can walk away from here — into a worktree,
@@ -169,7 +173,7 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
         seen: None,
         runtime: None,
     };
-    if runtime_pane.is_none() {
+    if runtime_pane.is_none() && !quiet {
         link.register(entry.clone());
     }
 
@@ -186,6 +190,7 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
             rows,
             runtime_pane: runtime_pane.map(|(kind, pane)| (kind.to_string(), pane)),
             entry,
+            quiet,
         },
         link,
         inbox,
