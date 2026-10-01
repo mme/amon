@@ -330,14 +330,18 @@ mod tests {
             args: vec!["claude".into()],
             hostname: "far".into(),
             started_at: 1,
-            title: None,
             agent_session_id: None,
             agent_session_path: None,
+            activity: None,
             window: None,
+            position: None,
             workspace: None,
+            project: None,
+            subpath: None,
             branch: None,
             focused: None,
             seen: None,
+            runtime: None,
         }
     }
 

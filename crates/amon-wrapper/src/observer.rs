@@ -663,14 +663,18 @@ mod tests {
             args: vec![agent.into()],
             hostname: hostname.into(),
             started_at: 7,
-            title: None,
             agent_session_id: None,
             agent_session_path: None,
+            activity: None,
             window: None,
+            position: None,
             workspace: None,
+            project: None,
+            subpath: None,
             branch: None,
             focused: None,
             seen: None,
+            runtime: None,
         }
     }
 
@@ -684,6 +688,7 @@ mod tests {
                 cols: 80,
                 rows: 24,
                 entry: entry("own", "ssh", "here"),
+                runtime_pane: None,
             },
             link,
         )
@@ -705,6 +710,7 @@ mod tests {
         observer.handle(Signal::Window {
             window: Some("w1".into()),
             workspace: Some("3".into()),
+            position: None,
         });
         let _ = sent(&rx);
 
@@ -780,7 +786,12 @@ mod tests {
         let _ = sent(&rx);
 
         observer.handle(Signal::Focus(false));
-        observer.handle(Signal::Branch(Some("main".into())));
+        observer.handle(Signal::Location(crate::git::Location {
+            cwd: PathBuf::from("/here"),
+            project: Some("here".into()),
+            subpath: None,
+            branch: Some("main".into()),
+        }));
 
         assert!(sent(&rx).is_empty(), "own patches are suppressed");
         assert_eq!(
@@ -799,6 +810,7 @@ mod tests {
         observer.handle(Signal::Window {
             window: Some("w2".into()),
             workspace: Some("5".into()),
+            position: None,
         });
 
         match sent(&rx).as_slice() {

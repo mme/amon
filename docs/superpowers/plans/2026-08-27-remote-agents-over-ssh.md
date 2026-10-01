@@ -510,9 +510,9 @@ Gating approach — keep types, gate implementations and listings:
 ### Task 10: Documentation — ADRs, README, protocol notes
 
 **Files:**
-- Create: `docs/adr/0017-agent-events-ride-the-terminal-stream.md`
-- Create: `docs/adr/0018-a-remote-agents-lifetime-is-its-ssh-session.md`
-- Create: `docs/adr/0019-macos-is-a-headless-target.md`
+- Create: `docs/adr/0023-agent-events-ride-the-terminal-stream.md`
+- Create: `docs/adr/0024-a-remote-agents-lifetime-is-its-ssh-session.md`
+- Create: `docs/adr/0025-macos-is-a-headless-target.md`
 - Modify: `README.md`
 
 Numbering: `0016` exists on another branch (`micro2`); if it has merged by execution time these become 0017–0019 as written, otherwise renumber to the next free numbers — check `ls docs/adr` first.

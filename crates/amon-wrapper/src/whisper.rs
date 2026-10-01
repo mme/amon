@@ -322,14 +322,18 @@ mod tests {
             args: vec!["claude".into()],
             hostname: "workstation".into(),
             started_at: 1,
-            title: None,
             agent_session_id: None,
             agent_session_path: None,
+            activity: None,
             window: None,
+            position: None,
             workspace: None,
+            project: None,
+            subpath: None,
             branch: None,
             focused: None,
             seen: None,
+            runtime: None,
         }
     }
 
@@ -354,7 +358,10 @@ mod tests {
     #[test]
     fn a_serialized_event_never_contains_a_raw_escape() {
         let mut entry = test_entry();
-        entry.title = Some("\u{1b}]0;sneaky".into());
+        entry.activity = Some(amon_protocol::Activity {
+            text: "\u{1b}]0;sneaky".into(),
+            kind: amon_protocol::ActivityKind::Narration,
+        });
         let encoded = encode(&WhisperFrame::Event(Box::new(Method::AgentRegister(entry))));
         let payload = &encoded[PREFIX.len()..encoded.len() - ST.len()];
         assert!(

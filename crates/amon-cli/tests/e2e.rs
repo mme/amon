@@ -2589,7 +2589,7 @@ fn a_symlinked_shell_config_is_not_followed() {
 ///
 /// This helper and the focus tests below are Linux only, like `amon focus`
 /// itself: off Linux the subcommand answers with an error and never
-/// dispatches anything (ADR-0019).
+/// dispatches anything (ADR-0025).
 #[cfg(target_os = "linux")]
 fn fake_hyprctl(sandbox: &Sandbox, record: &std::path::Path, reply: &str) {
     sandbox.fake_agent(
