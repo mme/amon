@@ -242,7 +242,8 @@
   /* The same ruled box inside a section: an aside to the section's own copy,
      drawn exactly like the notes between sections. */
   .plate > .info{border:1px solid var(--rule); border-radius:8px; padding:14px 16px}
-  .plate > .info p{margin:0; color:var(--muted); font-size:13.5px; max-width:62ch}
+  .plate > .info h3{margin:0; font-size:14px; font-weight:700; color:var(--ink)}
+  .plate > .info p{margin:.25rem 0 0; color:var(--muted); font-size:13.5px; max-width:62ch}
   .cta .mark-check{display:none}
   .cta.copied .mark-omarchy{display:none}
   .cta.copied .mark-check{display:block}
@@ -532,18 +533,44 @@
      the gradient, so a narrow band of ink rides a dim line. */
   .panel-cell.is-activity.is-working{
     color:transparent;
-    /* Three box-widths wide, so the box is always fully painted - a narrow ink
-       peak rides a dim field, and at the ends of the sweep the peak is off the
-       visible window and the whole message rests dim. */
-    background-image:linear-gradient(100deg,
-      var(--muted) 0%, var(--muted) 47%, var(--ink) 50%, var(--muted) 53%, var(--muted) 100%);
-    background-size:300% 100%; background-repeat:no-repeat;
+    /* The desktop panel's band, exactly (AgentsView.qml, shimmerAt): a plateau
+       three characters wide at full ink, cosine shoulders eight characters
+       either side, so 19ch in all, centred at 9.5ch. It enters from beyond
+       the left edge, crosses left to right, and leaves beyond the right, so
+       nothing is lit between sweeps. Under it, the message's own dim ink as a
+       second layer, both painted through the text. Every working row's
+       message column is the same width, so their bands cross in step, as on
+       the desktop. */
+    background-image:linear-gradient(90deg,
+      color-mix(in srgb, var(--ink) 0.0%, transparent) 0ch,
+      color-mix(in srgb, var(--ink) 3.8%, transparent) 1ch,
+      color-mix(in srgb, var(--ink) 14.6%, transparent) 2ch,
+      color-mix(in srgb, var(--ink) 30.9%, transparent) 3ch,
+      color-mix(in srgb, var(--ink) 50.0%, transparent) 4ch,
+      color-mix(in srgb, var(--ink) 69.1%, transparent) 5ch,
+      color-mix(in srgb, var(--ink) 85.4%, transparent) 6ch,
+      color-mix(in srgb, var(--ink) 96.2%, transparent) 7ch,
+      color-mix(in srgb, var(--ink) 100.0%, transparent) 8ch,
+      color-mix(in srgb, var(--ink) 100.0%, transparent) 11ch,
+      color-mix(in srgb, var(--ink) 96.2%, transparent) 12ch,
+      color-mix(in srgb, var(--ink) 85.4%, transparent) 13ch,
+      color-mix(in srgb, var(--ink) 69.1%, transparent) 14ch,
+      color-mix(in srgb, var(--ink) 50.0%, transparent) 15ch,
+      color-mix(in srgb, var(--ink) 30.9%, transparent) 16ch,
+      color-mix(in srgb, var(--ink) 14.6%, transparent) 17ch,
+      color-mix(in srgb, var(--ink) 3.8%, transparent) 18ch,
+      color-mix(in srgb, var(--ink) 0.0%, transparent) 19ch),
+      linear-gradient(var(--muted), var(--muted));
+    background-size:19ch 100%, 100% 100%;
+    background-repeat:no-repeat;
+    background-position:-19ch 0, 0 0;
     -webkit-background-clip:text; background-clip:text;
     animation:panel-shimmer 2900ms linear infinite}
+  /* 900ms to cross, then 2000ms at rest: shimmerSweep and shimmerRest. */
   @keyframes panel-shimmer{
-    0%{background-position:0% 0}
-    31%{background-position:100% 0}
-    100%{background-position:100% 0} }
+    0%{background-position:-19ch 0, 0 0}
+    31.03%{background-position:calc(100% + 19ch) 0, 0 0}
+    100%{background-position:calc(100% + 19ch) 0, 0 0} }
   /* A shimmer is motion; when motion is unwelcome the message simply rests dim,
      the same as any settled row. */
   @media (prefers-reduced-motion: reduce){
@@ -1140,12 +1167,12 @@
        Pick one and <span class="lift">Enter</span> immediately puts you in front
        of it.</p>
 
-    <div class="info"><p id="remote">Agents on other machines show up here too. SSH into a box with
-       <span class="lift">amon</span> on it and start an agent there: it joins the panel
-       like a local one, and leaves when it ends. No ports, no config - any SSH session
-       works, Tailscale included, and an Apple Silicon Mac can be the other end.
-       <span class="lift">amon setup ssh</span> makes plain <span class="lift">ssh</span>
-       do it.</p></div>
+    <div class="info">
+      <h3><a class="h-anchor" id="remote" href="#remote">running agents on another machine?</a></h3>
+      <p>SSH into a machine with <span class="lift">amon</span> installed and the agents you
+         start there show up here; <span class="lift">amon setup ssh</span> makes plain
+         <span class="lift">ssh</span> do it.</p>
+    </div>
   </section>
 
   <section class="plate">
