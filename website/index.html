@@ -236,6 +236,13 @@
               color:var(--ink)}
   .plate.note h2{font-size:14px}
   .plate.note p{margin:.25rem 0 0; color:var(--muted); font-size:13.5px; max-width:62ch}
+  /* A note belongs to the section above it, so it does not take the full gap
+     a new section gets: it sits a short step under what it annotates. */
+  .plate.note{margin-top:calc(1.5rem - clamp(3rem,7vw,5rem))}
+  /* The same ruled box inside a section: an aside to the section's own copy,
+     drawn exactly like the notes between sections. */
+  .plate > .info{border:1px solid var(--rule); border-radius:8px; padding:14px 16px}
+  .plate > .info p{margin:0; color:var(--muted); font-size:13.5px; max-width:62ch}
   .cta .mark-check{display:none}
   .cta.copied .mark-omarchy{display:none}
   .cta.copied .mark-check{display:block}
@@ -1027,8 +1034,10 @@
     rides in the sentence just before its name.
   -->
   <!-- the card was #herdr before luvus joined it; links in the wild keep landing. -->
-  <span id="herdr"></span>
   <aside class="plate note" aria-labelledby="runtimes">
+    <!-- inside the card, not beside it: an empty element between the plates
+         is a flex item of its own and doubled the gap above the card. -->
+    <span id="herdr" style="position:absolute"></span>
     <div>
       <h2><a class="h-anchor" id="runtimes" href="#runtimes">using herdr or luvus with omarchy? you'll love this!</a></h2>
       <p>Nothing to set up. <span class="lift">amon</span> finds your
@@ -1131,12 +1140,12 @@
        Pick one and <span class="lift">Enter</span> immediately puts you in front
        of it.</p>
 
-    <p id="remote">Agents on other machines show up here too. SSH into a box with
+    <div class="info"><p id="remote">Agents on other machines show up here too. SSH into a box with
        <span class="lift">amon</span> on it and start an agent there: it joins the panel
        like a local one, and leaves when it ends. No ports, no config - any SSH session
        works, Tailscale included, and an Apple Silicon Mac can be the other end.
        <span class="lift">amon setup ssh</span> makes plain <span class="lift">ssh</span>
-       do it.</p>
+       do it.</p></div>
   </section>
 
   <section class="plate">
