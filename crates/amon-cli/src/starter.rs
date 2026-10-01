@@ -84,10 +84,14 @@ const STARTER: &str = r##"# amon
 # keys colored by state (key N = the panel's Nth agent, tap to focus), the ring
 # showing whether anything needs you, the encoder scrolling (and driving
 # the agent panel while it is open), the joystick moving window focus.
-# Those roles are fixed; nothing here is needed for any of it.
+# Those roles are fixed, bar agent_keys below; nothing here is needed.
 # enabled = true
 # brightness = 1.0
 # ring = true
+# What the six lit keys stand for: "agents" - key N is the panel's Nth
+# agent, a tap focuses exactly it - or "workspaces" - key N is workspace N,
+# lit by its most urgent agent, a tap does what Super+N does.
+# agent_keys = "agents"
 
 [devices.micro2.colors]
 # Per-state key colors.
