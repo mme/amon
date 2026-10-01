@@ -1038,6 +1038,24 @@
     </div>
   </aside>
 
+  <!--
+    The same quiet card as the runtimes one: a note for the reader who runs
+    agents on another machine, not a chapter. The mechanism (escape sequences
+    in the ssh stream) is the README's to explain; here it is only what you do
+    and what you get.
+  -->
+  <aside class="plate note" aria-labelledby="remote">
+    <div>
+      <h2><a class="h-anchor" id="remote" href="#remote">agents on other machines show up too</a></h2>
+      <p>SSH into a box with <span class="lift">amon</span> on it and start an agent there:
+         it joins your bar and panel like a local one, and leaves when it ends. No ports,
+         no config - anything that carries an SSH session works, Tailscale included. An
+         Apple Silicon Mac can be the other end; the same install command sets it up.
+         <span class="lift">amon setup ssh</span> makes plain <span class="lift">ssh</span>
+         do it.</p>
+    </div>
+  </aside>
+
   <section class="plate">
     <header>
       <h2><a class="h-anchor" id="agent-panel" href="#agent-panel">Super+A to every agent in one place</a></h2>
@@ -1344,7 +1362,9 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
         <a class="cli-anchor" id="cli-setup" href="#cli-setup"><code class="cli-cmd">amon setup [target] [--all] [--no-alias] [--upgrade] [--duck | --no-duck]</code></a>
         <p>Set up integrations. Without arguments, an interactive screen;
            with a target, one agent (<span class="lift">amon setup
-           claude</span>); <span class="lift">--all</span> takes every
+           claude</span>), or <span class="lift">ssh</span>, which aliases
+           ssh so agents on the machines you reach show up here;
+           <span class="lift">--all</span> takes every
            detected agent plus the desktop integration without a screen.
            <span class="lift">--no-alias</span> skips aliasing the agent's
            name - on the non-interactive forms only, the screen always
