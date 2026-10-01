@@ -3441,6 +3441,11 @@ fn doctor_reports_a_config_file_that_does_not_parse() {
 /// One body per behaviour, one `#[test]` per runtime, so nextest names and
 /// times them apart and a runtime's own regression shows up under its own
 /// name.
+///
+/// Linux only: the daemon finds runtime sessions by reading `/proc`, which a
+/// Mac does not have, so there it adopts none and these would only time out
+/// (ADR-0025).
+#[cfg(target_os = "linux")]
 mod hosted_runtimes {
     use super::*;
     use harness::hosted::{Hosted, Kind, RUNTIME_DEADLINE, WORKS_TWICE};

@@ -34,3 +34,9 @@ attaches a second tarball from one, after the Linux release — the release
 Omarchy installs from is never blocked by a Mac build. The release-contract
 tests hold the darwin tarball's name between `publish.yml` and `install.sh`
 the same way they hold the Linux one's.
+
+herdr and luvus sessions are not adopted on a Mac: the daemon finds them by
+walking `/proc`, which macOS does not have, so an agent inside a runtime there
+is not on any amon surface. A Mac is the far end of an ssh session, where that
+limit is the remote-runtime one already out of scope; finding runtime clients
+through `libproc` would lift it if it ever matters.
