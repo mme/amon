@@ -95,6 +95,14 @@ impl Tee {
         }
     }
 
+    /// The row is going: tell the listener, so its mirror reverts now rather
+    /// than after the silence runs out. Silent until armed, like every frame.
+    fn bye(&self) {
+        if let Some(outbox) = self.outbox.as_ref().filter(|outbox| outbox.armed()) {
+            outbox.enqueue(whisper::encode(&whisper::WhisperFrame::Bye));
+        }
+    }
+
     /// A quiet wake: the whispered heartbeat, mirroring the link's own
     /// re-register-as-heartbeat. Wakes are at most 30 seconds apart, inside
     /// the far side's revert window.
@@ -229,6 +237,7 @@ fn run(rx: mpsc::Receiver<Message>, version: String, tee: Tee) {
             Ok(Message::Withdraw) => {
                 entry = None;
                 connection = None;
+                tee.bye();
             }
             Err(RecvTimeoutError::Timeout) => {
                 tee.heartbeat(entry.as_ref());
@@ -423,5 +432,21 @@ mod tests {
         assert!(!clone.armed());
         outbox.arm();
         assert!(clone.armed());
+    }
+
+    #[test]
+    fn withdrawing_says_goodbye_upstream() {
+        // A middle hop whose row goes must tell the hop before it, or that
+        // hop keeps a stale row until the 90-second silence runs out.
+        let outbox = whisper::Outbox::default();
+        let tee = Tee {
+            outbox: Some(outbox.clone()),
+        };
+        tee.armed(None);
+        tee.bye();
+        assert_eq!(
+            outbox.drain(),
+            vec![whisper::encode(&whisper::WhisperFrame::Bye)]
+        );
     }
 }

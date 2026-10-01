@@ -70,6 +70,15 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     if !tty::attached_to_terminal() {
         return Err(exec_bare(program, args));
     }
+    // ssh is a data pipe as often as a session: `ssh host 'cat x' > x` typed
+    // at a terminal has a terminal for stdin and a file for stdout, and a
+    // pseudo-terminal in between would rewrite every LF as CRLF on the way
+    // into that file. Only an interactive session - a terminal on both sides
+    // - can carry a remote agent anyway (ADR-0023), so anything less runs
+    // bare, byte for byte.
+    if agent_label(program) == "ssh" && !(tty::stdin_is_terminal() && tty::stdout_is_terminal()) {
+        return Err(exec_bare(program, args));
+    }
 
     let agent_id = new_agent_id();
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));

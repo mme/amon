@@ -3668,7 +3668,17 @@ fn a_wrapped_ssh_shows_nothing_until_a_remote_agent_claims_it() {
         path_str(remote.runtime_dir()),
         harness::AMON,
     );
-    let mut child = local.spawn_agent(&[&path_str(&ssh), &script]);
+    // A terminal on both sides, as an interactive session has: a wrapped ssh
+    // with anything less runs bare (the redirect test below).
+    let (stdin, _stdin_controller) = harness::open_terminal_stdin();
+    let (stdout, _stdout_controller) = harness::open_terminal_stdin();
+    let mut child = local
+        .command(&[&path_str(&ssh), &script])
+        .stdin(stdin)
+        .stdout(stdout)
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("amon runs");
 
     std::thread::sleep(Duration::from_millis(700));
     assert!(
@@ -3690,4 +3700,15 @@ fn a_wrapped_ssh_shows_nothing_until_a_remote_agent_claims_it() {
 
     let _ = child.kill();
     let _ = child.wait();
+}
+
+#[test]
+fn a_wrapped_ssh_whose_output_is_redirected_passes_bytes_through_untouched() {
+    // `ssh host 'cat archive' > archive` from a terminal: with ssh aliased,
+    // a pseudo-terminal in between would turn every LF into CRLF and corrupt
+    // the copy. A wrapped ssh without a terminal on both sides runs bare.
+    let sandbox = Sandbox::new();
+    let ssh = sandbox.fake_agent("ssh", "#!/bin/sh\nprintf 'a\\nb\\n'\n");
+    let output = harness::run_with_terminal_stdin(&sandbox, &[&path_str(&ssh)]);
+    assert_eq!(output.stdout, b"a\nb\n", "not one byte changed");
 }
