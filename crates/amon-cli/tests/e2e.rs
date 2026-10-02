@@ -2677,6 +2677,7 @@ fn focus_without_cycle_lands_on_the_neediest_however_often_pressed() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn focus_switches_the_workspace_when_no_agent_wants_you() {
     // The behaviour the Super+N binding replaced, and what every failure here
