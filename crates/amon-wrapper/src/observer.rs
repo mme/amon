@@ -303,6 +303,7 @@ impl Observer {
             dir: remote.cwd.clone(),
             project: remote.project.clone(),
             subpath: remote.subpath.clone(),
+            branch: remote.branch.clone(),
             host: Some(remote.hostname.clone()),
             ssh: amon_protocol::started::ssh_connection_args(&self.ssh_args),
             last_started: amon_protocol::started::datetime_from_unix(crate::now_secs()),

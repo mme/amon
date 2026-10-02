@@ -22,10 +22,11 @@ A popped-out agent panel is a normal window and may sit beside it.
 
 ## What a row is
 
-One per agent and folder, plus the host for a remote one. The agent's name;
-the location exactly as the agent panel writes it - the repository in bold
-and the path within it dim, or outside a repository the path with the home
-folder as `~`; for a remote row the host first; and when it was last started:
+One per agent and folder, plus the host for a remote one. Five columns: the
+agent; the project in bold - the repository's name, or outside one the
+folder's own name; the branch it was on when last started; the folder dim,
+with the home as `~` and a remote one led by its host, giving way from the
+front when the row is short; and when it was last started:
 "just now", "5 min ago", "2 h ago", "yesterday", then "Sep 28", or
 "Sep 28 2025" from an earlier year. At most 25 rows. A local row whose
 folder no longer exists is hidden, not forgotten. With no history the panel
@@ -41,7 +42,8 @@ luvus (amon cannot open a pane for them), not other programs run through
 amon, not launches without a terminal (ADR-0016).
 
 `~/.local/state/amon/started.toml`, one `[[agent]]` table per entry - the
-command, the folder, for a remote one the host and the ssh arguments, and
+command, the folder, its project and branch, for a remote one the host and
+the ssh connection arguments, and
 when it was last started - pruned to the 25 most recent. TOML because people
 edit it by hand, as they do the config: re-read every time the panel opens,
 so an edit applies at once. Writers take a lock, so two agents starting at

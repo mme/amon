@@ -33,7 +33,10 @@ pub struct Row {
     pub project: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subpath: Option<String>,
-    /// The folder with the home as `~`, for a row outside a repository.
+    /// The branch it was on when last started; absent outside a repository.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// The folder, with the home as `~`.
     pub path: String,
     /// "5 min ago", "yesterday", "Sep 28".
     pub when: String,
@@ -53,6 +56,7 @@ pub fn rows(entries: &[Started], now: i64, home: &str, exists: impl Fn(&str) -> 
             host: entry.host.clone(),
             project: entry.project.clone(),
             subpath: entry.subpath.clone(),
+            branch: entry.branch.clone(),
             path: started::display_dir(&entry.dir, entry.host.is_some(), home),
             when: started::when(entry.last_started_secs(), now),
         })
@@ -73,16 +77,22 @@ pub fn list(json: bool) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     for row in rows {
-        let place = match (&row.project, &row.subpath) {
-            (Some(project), Some(subpath)) => format!("{project}/{subpath}"),
-            (Some(project), None) => project.clone(),
-            (None, _) => row.path.clone(),
+        let project = row
+            .project
+            .clone()
+            .unwrap_or_else(|| row.path.rsplit('/').next().unwrap_or(&row.path).to_string());
+        let folder = match &row.host {
+            Some(host) => format!("{host}: {}", row.path),
+            None => row.path.clone(),
         };
-        let place = match &row.host {
-            Some(host) => format!("{host}: {place}"),
-            None => place,
-        };
-        println!("{:<14} {:<40} {}", row.agent, place, row.when);
+        println!(
+            "{:<14} {:<20} {:<24} {:<40} {}",
+            row.agent,
+            project,
+            row.branch.as_deref().unwrap_or(""),
+            folder,
+            row.when
+        );
     }
     Ok(())
 }
@@ -192,6 +202,7 @@ mod tests {
             dir: dir.into(),
             project: None,
             subpath: None,
+            branch: None,
             host: host.map(str::to_owned),
             ssh: Vec::new(),
             last_started: started::datetime_from_unix(secs),

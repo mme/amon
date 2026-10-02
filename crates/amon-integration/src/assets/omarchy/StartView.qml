@@ -24,7 +24,7 @@ FocusScope {
   id: view
 
   // The rows from `amon start --json`: { agent, dir, host?, project?,
-  // subpath?, path, when }.
+  // subpath?, branch?, path, when }.
   property var rows: []
 
   property color foreground: Color.menu.text
@@ -79,32 +79,36 @@ FocusScope {
 
   readonly property int columnGap: Style.space(10)
 
-  // The agent and "when" columns are as wide as their widest value, so every
-  // row agrees where the location starts and the times read down as one
-  // right-aligned column; the location takes the rest and elides into it.
-  readonly property int agentWidth: {
+  // Five columns, left to right: the agent, the project, the branch, the
+  // folder and when. Every column but the folder is as wide as its widest
+  // value (the project and branch capped), so each starts at the same place
+  // on every row; the folder takes the rest and gives way from the front,
+  // where the path matters least.
+  function widest(field, cap) {
     let widest = 0
-    for (const row of view.rows) widest = Math.max(widest, view.textWidth(row.agent))
-    return Math.min(widest, Style.space(160))
+    for (const row of view.rows) widest = Math.max(widest, view.textWidth(view.cell(row, field)))
+    return cap > 0 ? Math.min(widest, cap) : widest
   }
-  readonly property int whenWidth: {
-    let widest = 0
-    for (const row of view.rows) widest = Math.max(widest, view.textWidth(row.when))
-    return widest
-  }
+  readonly property int agentWidth: view.widest("agent", Style.space(160))
+  readonly property int projectWidth: view.widest("project", Style.space(200))
+  readonly property int branchWidth: view.widest("branch", Style.space(180))
+  readonly property int whenWidth: view.widest("when", 0)
 
-  // Where a row was, split the way the agent panel splits it: the one segment
-  // that identifies it bold, the qualification around it dim. A remote row
-  // leads with its host.
-  function locationParts(row) {
-    const lead = row.host ? row.host + ": " : ""
-    if (row.project)
-      return { prefix: lead, bold: row.project, suffix: row.subpath ? "/" + row.subpath : "" }
-    const path = row.path || row.dir || ""
-    const cut = path.lastIndexOf("/")
-    if (cut < 0 || path === "~")
-      return { prefix: lead, bold: path, suffix: "" }
-    return { prefix: lead + path.slice(0, cut + 1), bold: path.slice(cut + 1), suffix: "" }
+  // What a cell says. The project is the repository's name, or outside one
+  // the folder's own name; the folder is the path with `~` for home, a
+  // remote one led by its host.
+  function cell(row, field) {
+    if (field === "agent") return row.agent || ""
+    if (field === "when") return row.when || ""
+    if (field === "branch") return row.branch || ""
+    if (field === "project") {
+      if (row.project) return row.project
+      const path = row.path || row.dir || ""
+      const cut = path.lastIndexOf("/")
+      return cut < 0 ? path : path.slice(cut + 1)
+    }
+    if (field === "folder") return (row.host ? row.host + ": " : "") + (row.path || row.dir || "")
+    return ""
   }
 
   readonly property string summary: view.rows.length > 0 ? view.rows.length + " recent" : "none yet"
@@ -221,71 +225,63 @@ FocusScope {
 
     // The agent, in plain ink: what will run.
     Text {
+      id: agentCell
       x: Style.space(10)
       width: view.agentWidth
       anchors.verticalCenter: parent.verticalCenter
-      text: row.entry.agent
+      text: view.cell(row.entry, "agent")
       color: view.foreground
       font.family: view.fontFamily
       font.pixelSize: Style.font.body
       elide: Text.ElideRight
     }
 
-    // Where: as the agent panel writes it, starting at the column's left edge,
-    // the dim lead giving way from the front when space is short.
-    Item {
-      id: location
-      x: Style.space(10) + view.agentWidth + view.columnGap
-      width: Math.max(0, row.width - x - view.whenWidth - view.columnGap - Style.space(10))
-      height: parent.height
+    // The project, bold: what identifies the row, as on the agent panel.
+    Text {
+      id: projectCell
+      x: agentCell.x + view.agentWidth + view.columnGap
+      width: view.projectWidth
+      anchors.verticalCenter: parent.verticalCenter
+      text: view.cell(row.entry, "project")
+      color: view.foreground
+      font.family: view.fontFamily
+      font.pixelSize: Style.font.body
+      font.bold: true
+      elide: Text.ElideRight
+    }
 
-      readonly property var parts: view.locationParts(row.entry)
-      readonly property real boldWidth: Math.min(view.textWidth(parts.bold), width)
-      readonly property real prefixWidth: parts.prefix === ""
-        ? 0
-        : Math.min(view.textWidth(parts.prefix), Math.max(0, width - boldWidth))
+    // The branch, plain: which line of work, blank outside a repository.
+    Text {
+      id: branchCell
+      x: projectCell.x + view.projectWidth + view.columnGap
+      width: view.branchWidth
+      anchors.verticalCenter: parent.verticalCenter
+      text: view.cell(row.entry, "branch")
+      color: view.foreground
+      font.family: view.fontFamily
+      font.pixelSize: Style.font.body
+      elide: Text.ElideRight
+    }
 
-      Text {
-        visible: location.parts.prefix !== ""
-        width: location.prefixWidth
-        anchors.verticalCenter: parent.verticalCenter
-        text: location.parts.prefix
-        color: view.dim
-        font.family: view.fontFamily
-        font.pixelSize: Style.font.body
-        elide: Text.ElideLeft
-      }
-
-      Text {
-        x: location.prefixWidth
-        width: location.boldWidth
-        anchors.verticalCenter: parent.verticalCenter
-        text: location.parts.bold
-        color: view.foreground
-        font.family: view.fontFamily
-        font.pixelSize: Style.font.body
-        font.bold: true
-      }
-
-      Text {
-        visible: location.parts.suffix !== ""
-        x: location.prefixWidth + location.boldWidth
-        width: Math.max(0, location.width - location.prefixWidth - location.boldWidth)
-        anchors.verticalCenter: parent.verticalCenter
-        text: location.parts.suffix
-        color: view.dim
-        font.family: view.fontFamily
-        font.pixelSize: Style.font.body
-        elide: Text.ElideRight
-      }
+    // The folder, dim, giving way from the front.
+    Text {
+      x: branchCell.x + view.branchWidth + view.columnGap
+      width: Math.max(0, whenCell.x - x - view.columnGap)
+      anchors.verticalCenter: parent.verticalCenter
+      text: view.cell(row.entry, "folder")
+      color: view.dim
+      font.family: view.fontFamily
+      font.pixelSize: Style.font.body
+      elide: Text.ElideLeft
     }
 
     // When, right-aligned at the edge like the agent panel's age column.
     Text {
+      id: whenCell
       x: row.width - view.whenWidth - Style.space(10)
       width: view.whenWidth
       anchors.verticalCenter: parent.verticalCenter
-      text: row.entry.when
+      text: view.cell(row.entry, "when")
       color: view.dim
       font.family: view.fontFamily
       font.pixelSize: Style.font.body

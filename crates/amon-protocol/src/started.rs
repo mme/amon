@@ -33,6 +33,9 @@ pub struct Started {
     /// Where in the repository, when not at its root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subpath: Option<String>,
+    /// The branch the folder was on when it was last started.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
     /// For an agent on another machine: its host name, as that machine
     /// reports it. Absent for one on this machine.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -352,6 +355,7 @@ mod tests {
             dir: dir.into(),
             project: None,
             subpath: None,
+            branch: None,
             host: host.map(str::to_owned),
             ssh: Vec::new(),
             last_started: datetime_from_unix(secs),
@@ -411,11 +415,13 @@ mod tests {
             1_790_850_000,
         );
         entry.project = Some("amon".into());
+        entry.branch = Some("main".into());
         entry.ssh = vec!["mme@macbookpro".into()];
         record_at(&file, entry).unwrap();
         let text = std::fs::read_to_string(&file).unwrap();
         assert!(text.contains("[[agent]]"), "{text}");
         assert!(text.contains("agent = \"claude\""), "{text}");
+        assert!(text.contains("branch = \"main\""), "{text}");
         assert!(
             text.contains("last_started = 2026-10-01T10:20:00Z"),
             "{text}"
