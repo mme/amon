@@ -180,6 +180,11 @@ pub fn interactive() -> Result<(), Box<dyn std::error::Error>> {
     let result = apply(&actions);
     offer_udev_rule(true);
     offer_agent_layer(true);
+    if !alias::ssh_installed() {
+        println!();
+        println!("agents on machines you ssh into can show up here too, with amon on both ends:");
+        println!("    amon setup ssh    # aliases ssh to amon ssh; a session shows nothing until an agent runs in it");
+    }
     result
 }
 

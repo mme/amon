@@ -15,6 +15,11 @@
 ///
 /// `comm` is capped at 15 bytes by the kernel; every agent command name we
 /// ship fits, and a longer one is truncated rather than rejected.
+///
+/// Linux only. `comm` is a Linux kernel field and `prctl` a Linux call; a Mac
+/// (ADR-0025) has neither, and no herdr there reads them, so elsewhere this
+/// does nothing and amon stays `amon`.
+#[cfg(target_os = "linux")]
 pub fn wear_comm(name: &str) {
     let Ok(cstr) = std::ffi::CString::new(name) else {
         return;
@@ -26,6 +31,9 @@ pub fn wear_comm(name: &str) {
         libc::prctl(libc::PR_SET_NAME, cstr.as_ptr() as libc::c_ulong, 0, 0, 0);
     }
 }
+
+#[cfg(not(target_os = "linux"))]
+pub fn wear_comm(_name: &str) {}
 
 /// The command name a runtime will match, for the agent amon is wrapping.
 ///
@@ -68,6 +76,7 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn wearing_comm_takes_effect() {
         // comm is per-thread, so read it back through the kernel for the same

@@ -15,7 +15,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 use amon_detect::{detect_agent_with_osc, Agent};
-use amon_protocol::{AgentPatch, AgentState};
+use amon_protocol::{AgentEntry, AgentPatch, AgentState};
 use amon_term::{ShadowTerminal, TerminalId, TerminalState};
 
 use crate::daemon_link::DaemonLink;
@@ -23,6 +23,12 @@ use crate::daemon_link::DaemonLink;
 /// How often detection runs at most. Agents repaint far more often than this,
 /// and a spinner frame does not need to be classified twice.
 const DETECTION_INTERVAL: Duration = Duration::from_millis(150);
+
+/// How long a remote agent may go unheard before its row reverts. The remote
+/// wrapper whispers at least as often as its daemon link wakes — every 30
+/// seconds at the deepest reconnect backoff — so three missed wakes means the
+/// far side is gone, not slow.
+const WHISPER_TIMEOUT: Duration = Duration::from_secs(90);
 
 pub enum Signal {
     /// A copy of what the agent just wrote to the terminal.
@@ -77,7 +83,17 @@ pub enum Signal {
     /// Carries all of it at once, because a row showing a branch from one
     /// checkout beside a Project from another would be wrong about both.
     Location(crate::git::Location),
+    /// A whispered report from a wrapper on the far side of this session's
+    /// stream: a remote agent claiming this row.
+    Remote(RemoteReport),
     AgentExited,
+}
+
+/// Registry traffic that arrived as a whisper, plus the goodbye.
+pub enum RemoteReport {
+    Register(Box<AgentEntry>),
+    Update(Box<AgentPatch>),
+    Bye,
 }
 
 pub struct Observer {
@@ -116,6 +132,38 @@ pub struct Observer {
     /// so it cannot be scoped by `last_session_id` alone; this lets the first
     /// differing session clear a Turn that was never its own.
     hook_turn_session: Option<String>,
+    /// The wrapper's own registry entry, kept current by applying every own
+    /// patch to it — sent or suppressed — so that a revert from a remote
+    /// agent re-registers today's facts, not launch-time's.
+    own_entry: AgentEntry,
+    /// The compositor's placement, stored as well as forwarded: a remote
+    /// agent taking the row inherits the window it is being watched through.
+    window: Option<String>,
+    workspace: Option<String>,
+    position: Option<amon_protocol::Position>,
+    /// Present while a whispered remote agent holds the row.
+    remote: Option<Mirror>,
+    /// A wrapped `ssh`: the session has no row of its own. It gets one only
+    /// while a remote agent claims it, and loses it again when that agent
+    /// goes, so an ssh session with no amon at the far end is invisible.
+    quiet: bool,
+}
+
+/// What the observer tracks about the remote agent on its row.
+struct Mirror {
+    last_heard: Instant,
+    /// The mirrored state and when it began — locally stamped, so a
+    /// heartbeat repeating the same state cannot reset the clock and remote
+    /// clock skew never shows up in a duration.
+    state: AgentState,
+    state_since: u64,
+    started_at: u64,
+    /// Focus and Seen for the remote agent, kept here. Focus is a fact about
+    /// this terminal window - the far side never sees the focus reports,
+    /// which the wrapper takes out of the input - so it is this side's to
+    /// say, like the window. Its own tracker, because Seen restarts on the
+    /// remote agent's state changes, not on the local session's.
+    focus: crate::focus::Tracker,
 }
 
 /// What the observer needs to know about the agent it is watching.
@@ -129,6 +177,10 @@ pub struct Setup {
     /// observer reports activity, not state, and routes it to the runtime's
     /// adopted row by pane rather than to a row of its own (ADR-0021).
     pub runtime_pane: Option<(String, String)>,
+    /// The entry the wrapper registered, as it registered it.
+    pub entry: AgentEntry,
+    /// The wrapped program is `ssh`: no row until a remote agent claims one.
+    pub quiet: bool,
 }
 
 /// Starts the observer on its own thread.
@@ -168,6 +220,12 @@ impl Observer {
             last_activity: None,
             hook_turn_session: None,
             runtime_pane: setup.runtime_pane,
+            own_entry: setup.entry,
+            window: None,
+            workspace: None,
+            position: None,
+            remote: None,
+            quiet: setup.quiet,
         })
     }
 
@@ -193,6 +251,133 @@ impl Observer {
             if self.dirty && self.last_detection.elapsed() >= DETECTION_INTERVAL {
                 self.detect(false);
             }
+
+            // A remote agent that stopped whispering is gone — its host
+            // unreachable, its wrapper killed — and the row reverts to what
+            // this wrapper can still vouch for itself.
+            self.check_remote_liveness();
+        }
+    }
+
+    fn check_remote_liveness(&mut self) {
+        if let Some(mirror) = &self.remote {
+            if mirror.last_heard.elapsed() > WHISPER_TIMEOUT {
+                self.revert();
+            }
+        }
+    }
+
+    /// Sends a patch about the wrapper's own agent — or, while a remote agent
+    /// holds the row, only remembers it, so a revert re-registers current
+    /// facts rather than stale ones.
+    fn own_update(&mut self, patch: AgentPatch) {
+        patch.apply(&mut self.own_entry);
+        if self.remote.is_none() && !self.quiet {
+            self.link.update(patch);
+        }
+    }
+
+    /// Whether the row exists: always, unless this is a quiet ssh session
+    /// that no remote agent holds right now.
+    fn has_row(&self) -> bool {
+        self.remote.is_some() || !self.quiet
+    }
+
+    fn handle_remote(&mut self, report: RemoteReport) {
+        match report {
+            RemoteReport::Register(remote) => {
+                let now = crate::now_millis();
+                // Locally stamped clocks: fresh only when the state actually
+                // changed, so a heartbeat repeating the same state keeps its
+                // duration and remote clock skew never reaches a consumer.
+                let (state_since, started_at) = match &self.remote {
+                    Some(mirror) if mirror.state == remote.state => {
+                        (mirror.state_since, mirror.started_at)
+                    }
+                    Some(mirror) => (now, mirror.started_at),
+                    None => (now, now),
+                };
+                // Focus and Seen carry over from the mirror already on the row,
+                // restart with a new state, and start from this window's focus
+                // when an agent first claims the session.
+                let mut focus = match self.remote.take() {
+                    Some(mirror) => mirror.focus,
+                    None => {
+                        let mut tracker = crate::focus::Tracker::default();
+                        if let Some(focused) = self.focus.focused() {
+                            tracker.focus_changed(focused);
+                        }
+                        tracker
+                    }
+                };
+                if state_since == now {
+                    focus.state_began();
+                }
+                // Placement and focus are this side's facts, whoever owns the
+                // row; the far side's word on them is dropped.
+                let merged = AgentEntry {
+                    id: self.own_entry.id.clone(),
+                    window: self.window.clone(),
+                    workspace: self.workspace.clone(),
+                    position: self.position,
+                    focused: focus.focused(),
+                    seen: focus.seen(),
+                    state_since,
+                    started_at,
+                    ..(*remote)
+                };
+                self.remote = Some(Mirror {
+                    last_heard: Instant::now(),
+                    state: merged.state,
+                    state_since,
+                    started_at,
+                    focus,
+                });
+                self.link.register(merged);
+            }
+            RemoteReport::Update(patch) => {
+                // An update can only follow a register; one without is a
+                // stream this build cannot anchor, and costs nothing.
+                let Some(mirror) = self.remote.as_mut() else {
+                    return;
+                };
+                mirror.last_heard = Instant::now();
+                let mut patch = *patch;
+                patch.id = self.own_entry.id.clone();
+                // The compositor on this side owns placement, whoever owns
+                // the row.
+                patch.window = None;
+                patch.workspace = None;
+                patch.position = None;
+                patch.focused = None;
+                patch.seen = None;
+                match patch.state {
+                    Some(state) if state != mirror.state => {
+                        mirror.state = state;
+                        mirror.state_since = crate::now_millis();
+                        patch.state_since = Some(mirror.state_since);
+                        // Seen is per state, so a new one restarts it - from
+                        // this window's focus, which the far side cannot know.
+                        mirror.focus.state_began();
+                        patch.seen = Some(mirror.focus.seen());
+                    }
+                    _ => patch.state_since = None,
+                }
+                self.link.update(patch);
+            }
+            RemoteReport::Bye => self.revert(),
+        }
+    }
+
+    /// The remote agent is gone; the row is the wrapper's own again.
+    fn revert(&mut self) {
+        if self.remote.take().is_some() {
+            if self.quiet {
+                // An ssh session's row existed only for the remote agent.
+                self.link.withdraw();
+            } else {
+                self.link.register(self.own_entry.clone());
+            }
         }
     }
 
@@ -207,7 +392,17 @@ impl Observer {
                     let mut patch = AgentPatch::new(&self.agent_id);
                     patch.focused = Some(self.focus.focused());
                     patch.seen = Some(self.focus.seen());
-                    self.link.update(patch);
+                    self.own_update(patch);
+                }
+                // While a remote agent holds the row, this window's focus is
+                // its focus too: the far side never hears these reports.
+                if let Some(mirror) = self.remote.as_mut() {
+                    if mirror.focus.focus_changed(focused) {
+                        let mut patch = AgentPatch::new(&self.agent_id);
+                        patch.focused = Some(mirror.focus.focused());
+                        patch.seen = Some(mirror.focus.seen());
+                        self.link.update(patch);
+                    }
                 }
             }
             Signal::Window {
@@ -215,11 +410,20 @@ impl Observer {
                 workspace,
                 position,
             } => {
+                self.window.clone_from(&window);
+                self.workspace.clone_from(&workspace);
+                self.position = position;
                 let mut patch = AgentPatch::new(&self.agent_id);
                 patch.window = Some(window);
                 patch.workspace = Some(workspace);
                 patch.position = Some(position);
-                self.link.update(patch);
+                patch.apply(&mut self.own_entry);
+                // Placement is this compositor's fact and holds for whoever
+                // owns the row, so it is never suppressed - unless there is
+                // no row to place.
+                if self.has_row() {
+                    self.link.update(patch);
+                }
             }
             Signal::Location(location) => {
                 let mut patch = AgentPatch::new(&self.agent_id);
@@ -227,7 +431,9 @@ impl Observer {
                 patch.project = Some(location.project);
                 patch.subpath = Some(location.subpath);
                 patch.branch = Some(location.branch);
-                self.link.update(patch);
+                // Where the session was opened from — not the remote agent's
+                // place, which it reports itself.
+                self.own_update(patch);
             }
             Signal::Resize { cols, rows } => {
                 let _ = self.shadow.resize(cols, rows);
@@ -250,7 +456,7 @@ impl Observer {
                         self.last_session_id = Some(session_id.clone());
                         let mut patch = AgentPatch::new(&self.agent_id);
                         patch.agent_session_id = Some(session_id);
-                        self.link.update(patch);
+                        self.own_update(patch);
                     }
                 }
 
@@ -313,7 +519,7 @@ impl Observer {
                     patch.agent = Some(agent.clone());
                     patch.agent_session_id = Some(session_id.clone());
                     patch.agent_session_path = session_path.clone();
-                    self.link.update(patch);
+                    self.own_update(patch);
                 }
 
                 // The state machine is reanchored to the new session, as herdr
@@ -368,6 +574,7 @@ impl Observer {
                     self.publish();
                 }
             }
+            Signal::Remote(report) => self.handle_remote(report),
             Signal::AgentExited => {
                 self.dirty = true;
             }
@@ -471,7 +678,7 @@ impl Observer {
             self.last_activity = activity.clone();
             patch.activity = Some(activity);
         }
-        self.link.update(patch);
+        self.own_update(patch);
     }
 }
 
@@ -503,5 +710,363 @@ fn from_detect_state(state: amon_detect::AgentState) -> AgentState {
         amon_detect::AgentState::Working => AgentState::Working,
         amon_detect::AgentState::Blocked => AgentState::Blocked,
         amon_detect::AgentState::Unknown => AgentState::Unknown,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::daemon_link::Message;
+    use std::sync::mpsc::Receiver;
+
+    fn entry(id: &str, agent: &str, hostname: &str) -> AgentEntry {
+        AgentEntry {
+            id: id.into(),
+            agent: agent.into(),
+            state: AgentState::Working,
+            state_since: 7,
+            cwd: "/remote/project".into(),
+            pid: 42,
+            args: vec![agent.into()],
+            hostname: hostname.into(),
+            started_at: 7,
+            agent_session_id: None,
+            agent_session_path: None,
+            activity: None,
+            window: None,
+            position: None,
+            workspace: None,
+            project: None,
+            subpath: None,
+            branch: None,
+            focused: None,
+            seen: None,
+            runtime: None,
+        }
+    }
+
+    fn observer() -> (Observer, Receiver<Message>) {
+        observer_quiet(false)
+    }
+
+    fn observer_quiet(quiet: bool) -> (Observer, Receiver<Message>) {
+        let (link, rx) = DaemonLink::test();
+        let observer = Observer::new(
+            Setup {
+                agent_id: "own".into(),
+                agent: None,
+                cwd: PathBuf::from("/"),
+                cols: 80,
+                rows: 24,
+                entry: entry("own", "ssh", "here"),
+                runtime_pane: None,
+                quiet,
+            },
+            link,
+        )
+        .expect("shadow terminal");
+        (observer, rx)
+    }
+
+    fn sent(rx: &Receiver<Message>) -> Vec<Message> {
+        rx.try_iter().collect()
+    }
+
+    fn register(remote: AgentEntry) -> Signal {
+        Signal::Remote(RemoteReport::Register(Box::new(remote)))
+    }
+
+    #[test]
+    fn a_remote_register_takes_over_the_row() {
+        let (mut observer, rx) = observer();
+        observer.handle(Signal::Window {
+            window: Some("w1".into()),
+            workspace: Some("3".into()),
+            position: None,
+        });
+        let _ = sent(&rx);
+
+        observer.handle(register(entry("r1", "claude", "far")));
+
+        match sent(&rx).as_slice() {
+            [Message::Register(merged)] => {
+                assert_eq!(merged.id, "own", "the row keeps its id");
+                assert_eq!(merged.agent, "claude");
+                assert_eq!(merged.hostname, "far");
+                assert_eq!(merged.cwd, "/remote/project");
+                assert_eq!(merged.window.as_deref(), Some("w1"), "grafted");
+                assert_eq!(merged.workspace.as_deref(), Some("3"));
+            }
+            other => panic!("expected one register, got {} messages", other.len()),
+        }
+    }
+
+    #[test]
+    fn a_heartbeat_register_does_not_reset_the_state_clock() {
+        let (mut observer, rx) = observer();
+        observer.handle(register(entry("r1", "claude", "far")));
+        std::thread::sleep(Duration::from_millis(3));
+        observer.handle(register(entry("r1", "claude", "far")));
+
+        let clocks: Vec<u64> = sent(&rx)
+            .into_iter()
+            .map(|message| match message {
+                Message::Register(merged) => merged.state_since,
+                _ => panic!("registers only"),
+            })
+            .collect();
+        assert_eq!(clocks.len(), 2);
+        assert_eq!(clocks[0], clocks[1], "same state, same clock");
+    }
+
+    #[test]
+    fn remote_updates_are_re_addressed_and_re_stamped() {
+        let (mut observer, rx) = observer();
+        observer.handle(register(entry("r1", "claude", "far")));
+        let _ = sent(&rx);
+
+        let mut patch = AgentPatch::new("r1");
+        patch.state = Some(AgentState::Blocked);
+        patch.window = Some(Some("their-window".into()));
+        observer.handle(Signal::Remote(RemoteReport::Update(Box::new(patch))));
+
+        match sent(&rx).as_slice() {
+            [Message::Update(patch)] => {
+                assert_eq!(patch.id, "own");
+                assert_eq!(patch.state, Some(AgentState::Blocked));
+                assert!(patch.state_since.is_some(), "a state change is re-stamped");
+                assert!(patch.window.is_none(), "placement stays local");
+            }
+            other => panic!("expected one update, got {} messages", other.len()),
+        }
+
+        // A patch that repeats the state carries no clock at all.
+        let mut repeat = AgentPatch::new("r1");
+        repeat.state = Some(AgentState::Blocked);
+        repeat.state_since = Some(999);
+        observer.handle(Signal::Remote(RemoteReport::Update(Box::new(repeat))));
+        match sent(&rx).as_slice() {
+            [Message::Update(patch)] => assert!(patch.state_since.is_none()),
+            other => panic!("expected one update, got {} messages", other.len()),
+        }
+    }
+
+    #[test]
+    fn local_detection_stays_quiet_while_a_remote_agent_owns_the_row() {
+        let (mut observer, rx) = observer();
+        observer.handle(register(entry("r1", "claude", "far")));
+        let _ = sent(&rx);
+
+        // Focus is not here: it belongs to the row whoever owns it, and is
+        // tested as such below. What stays quiet is this side's own account
+        // of where the session is.
+        observer.handle(Signal::Location(crate::git::Location {
+            cwd: PathBuf::from("/here"),
+            project: Some("here".into()),
+            subpath: None,
+            branch: Some("main".into()),
+        }));
+
+        assert!(sent(&rx).is_empty(), "own patches are suppressed");
+        assert_eq!(
+            observer.own_entry.branch.as_deref(),
+            Some("main"),
+            "but still remembered for the revert"
+        );
+    }
+
+    #[test]
+    fn window_moves_still_reach_the_daemon_while_remote() {
+        let (mut observer, rx) = observer();
+        observer.handle(register(entry("r1", "claude", "far")));
+        let _ = sent(&rx);
+
+        observer.handle(Signal::Window {
+            window: Some("w2".into()),
+            workspace: Some("5".into()),
+            position: None,
+        });
+
+        match sent(&rx).as_slice() {
+            [Message::Update(patch)] => {
+                assert_eq!(patch.id, "own");
+                assert_eq!(patch.window, Some(Some("w2".into())));
+            }
+            other => panic!("expected one update, got {} messages", other.len()),
+        }
+    }
+
+    #[test]
+    fn bye_reverts_to_the_wrappers_own_entry() {
+        let (mut observer, rx) = observer();
+        observer.handle(register(entry("r1", "claude", "far")));
+        let _ = sent(&rx);
+
+        observer.handle(Signal::Remote(RemoteReport::Bye));
+
+        match sent(&rx).as_slice() {
+            [Message::Register(own)] => {
+                assert_eq!(own.id, "own");
+                assert_eq!(own.agent, "ssh");
+            }
+            other => panic!("expected one register, got {} messages", other.len()),
+        }
+    }
+
+    #[test]
+    fn silence_reverts_the_row() {
+        let (mut observer, rx) = observer();
+        observer.handle(register(entry("r1", "claude", "far")));
+        let _ = sent(&rx);
+
+        observer.check_remote_liveness();
+        assert!(sent(&rx).is_empty(), "a fresh whisper keeps the row");
+
+        observer.remote.as_mut().expect("mirrored").last_heard = Instant::now()
+            .checked_sub(WHISPER_TIMEOUT + Duration::from_secs(1))
+            .expect("uptime");
+        observer.check_remote_liveness();
+
+        match sent(&rx).as_slice() {
+            [Message::Register(own)] => assert_eq!(own.agent, "ssh"),
+            other => panic!("expected one register, got {} messages", other.len()),
+        }
+    }
+
+    fn placed(observer: &mut Observer, focused: bool) {
+        observer.handle(Signal::Window {
+            window: Some("w1".into()),
+            workspace: Some("3".into()),
+            position: Some(amon_protocol::Position { x: 12, y: 38 }),
+        });
+        observer.handle(Signal::Focus(focused));
+    }
+
+    fn update(patch: AgentPatch) -> Signal {
+        Signal::Remote(RemoteReport::Update(Box::new(patch)))
+    }
+
+    #[test]
+    fn the_row_keeps_this_windows_position_whoever_owns_it() {
+        let (mut observer, rx) = observer();
+        placed(&mut observer, false);
+        let _ = sent(&rx);
+
+        observer.handle(register(entry("r1", "claude", "far")));
+        let mut far = AgentPatch::new("r1");
+        far.position = Some(Some(amon_protocol::Position { x: 999, y: 999 }));
+        observer.handle(update(far));
+
+        match sent(&rx).as_slice() {
+            [Message::Register(merged), Message::Update(patch)] => {
+                assert_eq!(
+                    merged.position,
+                    Some(amon_protocol::Position { x: 12, y: 38 })
+                );
+                assert_eq!(patch.position, None, "the far side's placement is dropped");
+            }
+            other => panic!("expected a register and an update, got {}", other.len()),
+        }
+    }
+
+    #[test]
+    fn focus_and_seen_come_from_this_window() {
+        let (mut observer, rx) = observer();
+        placed(&mut observer, true);
+        let _ = sent(&rx);
+
+        // The far side claims to be unfocused and unseen; it cannot know.
+        let mut remote = entry("r1", "claude", "far");
+        remote.focused = Some(false);
+        remote.seen = Some(false);
+        observer.handle(register(remote));
+        match sent(&rx).as_slice() {
+            [Message::Register(merged)] => {
+                assert_eq!(merged.focused, Some(true));
+                assert_eq!(merged.seen, Some(true), "watched as it began");
+            }
+            other => panic!("expected one register, got {}", other.len()),
+        }
+
+        // Looking away, then the agent finishes: unseen, from this side.
+        observer.handle(Signal::Focus(false));
+        let mut done = AgentPatch::new("r1");
+        done.state = Some(AgentState::Idle);
+        done.seen = Some(Some(true));
+        observer.handle(update(done));
+        let messages = sent(&rx);
+        let last = match messages.last() {
+            Some(Message::Update(patch)) => patch.clone(),
+            _ => panic!("expected updates"),
+        };
+        assert_eq!(last.seen, Some(Some(false)), "finished while nobody looked");
+
+        // Looking back marks it seen on the row.
+        observer.handle(Signal::Focus(true));
+        let seen_now = sent(&rx).into_iter().any(|message| {
+            matches!(message, Message::Update(patch)
+                if patch.focused == Some(Some(true)) && patch.seen == Some(Some(true)))
+        });
+        assert!(seen_now, "a look while remote reaches the row");
+    }
+
+    #[test]
+    fn a_remote_agents_activity_reaches_the_row() {
+        let (mut observer, rx) = observer();
+        observer.handle(register(entry("r1", "claude", "far")));
+        let _ = sent(&rx);
+
+        let mut narrating = AgentPatch::new("r1");
+        narrating.activity = Some(Some(amon_protocol::Activity {
+            text: "Bash(cargo nextest run)".into(),
+            kind: amon_protocol::ActivityKind::Narration,
+        }));
+        observer.handle(update(narrating));
+
+        match sent(&rx).as_slice() {
+            [Message::Update(patch)] => {
+                assert_eq!(patch.id, "own");
+                assert_eq!(
+                    patch
+                        .activity
+                        .as_ref()
+                        .and_then(|a| a.as_ref())
+                        .map(|a| a.text.as_str()),
+                    Some("Bash(cargo nextest run)")
+                );
+            }
+            other => panic!("expected one update, got {}", other.len()),
+        }
+    }
+
+    #[test]
+    fn an_ssh_session_has_no_row_until_a_remote_agent_claims_it() {
+        let (mut observer, rx) = observer_quiet(true);
+        placed(&mut observer, true);
+        observer.handle(Signal::Location(crate::git::Location {
+            cwd: PathBuf::from("/here"),
+            project: Some("here".into()),
+            subpath: None,
+            branch: Some("main".into()),
+        }));
+        assert!(
+            sent(&rx).is_empty(),
+            "nothing about a bare ssh session reaches the daemon"
+        );
+
+        observer.handle(register(entry("r1", "claude", "far")));
+        match sent(&rx).as_slice() {
+            [Message::Register(merged)] => {
+                assert_eq!(merged.agent, "claude");
+                assert_eq!(merged.window.as_deref(), Some("w1"));
+            }
+            other => panic!("expected one register, got {}", other.len()),
+        }
+
+        observer.handle(Signal::Remote(RemoteReport::Bye));
+        assert!(
+            matches!(sent(&rx).as_slice(), [Message::Withdraw]),
+            "the row goes with the agent instead of reverting to ssh"
+        );
     }
 }
