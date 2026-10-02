@@ -2614,7 +2614,7 @@ fn register_agent(
 }
 
 #[test]
-fn focus_pressed_again_on_an_agent_goes_to_the_next_one_there() {
+fn focus_with_cycle_pressed_again_on_an_agent_goes_to_the_next_one_there() {
     // Already standing on one agent of workspace 2 (window aaa): the press
     // moves on to the other one, not back to the neediest.
     let sandbox = Sandbox::new();
@@ -2624,13 +2624,34 @@ fn focus_pressed_again_on_an_agent_goes_to_the_next_one_there() {
     let _second = register_agent(&sandbox, "second", "2", "bbb", "idle", true);
     sandbox.wait_for_status("both agents", |agents| agents.len() == 2);
 
-    let output = sandbox.run(&["focus", "2"]);
+    let output = sandbox.run(&["focus", "2", "--cycle"]);
 
     assert!(output.status.success(), "{output:?}");
     let dispatched = std::fs::read_to_string(&record).expect("hyprctl was called");
     assert!(
         dispatched.contains("address:0xbbb"),
         "on to the next agent, at rest or not: {dispatched}"
+    );
+}
+
+#[test]
+fn focus_without_cycle_lands_on_the_neediest_however_often_pressed() {
+    // Super+N: standing on the idle agent, a press still goes to the one that
+    // wants you, not on to the next.
+    let sandbox = Sandbox::new();
+    let record = sandbox.runtime_path("dispatches");
+    fake_hyprctl_focused(&sandbox, &record, "echo ok", "bbb");
+    let _first = register_agent(&sandbox, "first", "2", "aaa", "blocked", false);
+    let _second = register_agent(&sandbox, "second", "2", "bbb", "idle", true);
+    sandbox.wait_for_status("both agents", |agents| agents.len() == 2);
+
+    let output = sandbox.run(&["focus", "2"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let dispatched = std::fs::read_to_string(&record).expect("hyprctl was called");
+    assert!(
+        dispatched.contains("address:0xaaa"),
+        "the blocked one: {dispatched}"
     );
 }
 

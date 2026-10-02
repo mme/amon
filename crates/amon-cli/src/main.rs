@@ -97,6 +97,11 @@ enum Command {
         /// what the agent panel calls when you pick a row
         #[arg(long, conflicts_with = "workspace")]
         agent: Option<String>,
+        /// Run again while one of the workspace's agents is focused, go to
+        /// the next agent there instead. Off for Super+N; the Micro 2's
+        /// workspace keys use it
+        #[arg(long, conflicts_with = "agent")]
+        cycle: bool,
     },
     /// Integration, daemon, widget, audio, and alias health in one report
     Doctor,
@@ -214,10 +219,14 @@ fn main() -> ExitCode {
             }
         }
         Command::Remove { target, all } => run_remove(target.as_deref(), all),
-        Command::Focus { workspace, agent } => match (agent, workspace) {
+        Command::Focus {
+            workspace,
+            agent,
+            cycle,
+        } => match (agent, workspace) {
             (Some(id), _) => focus::agent(&id),
             // clap's `required_unless_present` guarantees one of the two.
-            (None, Some(workspace)) => focus::run(workspace),
+            (None, Some(workspace)) => focus::run(workspace, cycle),
             (None, None) => Ok(()),
         },
         Command::Doctor => doctor::run(VERSION),

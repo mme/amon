@@ -1017,7 +1017,7 @@
 
     <p>Start your agents in the terminal as usual. <span class="lift">amon</span> shows their
        live state in the top bar. <span class="lift">Super+number</span> now lands you on the
-       right agent when switching workspaces; press it again to move to the next one there.</p>
+       right agent when switching workspaces.</p>
   </section>
 
   <!--
@@ -1366,9 +1366,9 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
         <a class="cli-anchor" id="cli-focus" href="#cli-focus"><code class="cli-cmd">amon focus &lt;workspace&gt;</code></a>
         <p>Go to a workspace by number, landing on the agent that needs your
            attention rather than on whatever was focused there last. A plain
-           workspace switch when no agent wants anything. Run again while one
-           of that workspace's agents is focused, it goes to the next one
-           there.</p>
+           workspace switch when no agent wants anything. With
+           <span class="lift">--cycle</span>, run again while one of that
+           workspace's agents is focused, it goes to the next one there.</p>
       </div>
       <div>
         <a class="cli-anchor" id="cli-doctor" href="#cli-doctor"><code class="cli-cmd">amon doctor</code></a>
@@ -1525,7 +1525,8 @@ Set up amon <span class="t-o">- space toggles, enter applies</span>
            key N is the panel's Nth agent, and a tap focuses exactly that
            agent. <span class="lift">"workspaces"</span>: key N is workspace N,
            lit by its most urgent agent, and a tap does what
-           <span class="lift">Super+N</span> does.</p>
+           <span class="lift">Super+N</span> does; tap again to move on to the
+           next agent there.</p>
       </div>
       <div>
         <a class="cli-anchor" id="set-micro2-colors" href="#set-micro2-colors"><code class="cli-cmd">[devices.micro2.colors]</code></a>

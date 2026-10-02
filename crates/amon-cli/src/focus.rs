@@ -42,18 +42,24 @@ const RESOLVE_TIMEOUT: Duration = Duration::from_millis(150);
 /// fall back to the workspace.
 const DISPATCHED: &str = "ok";
 
-pub fn run(workspace: u32) -> Result<(), Box<dyn std::error::Error>> {
+/// `cycle`: when one of the workspace's agents is already focused, go to the
+/// next agent there instead of back to the neediest. The Micro 2's workspace
+/// keys ask for it; Super+N does not, so a repeat press there lands where the
+/// first one did.
+pub fn run(workspace: u32, cycle: bool) -> Result<(), Box<dyn std::error::Error>> {
     let agents = agents().unwrap_or_default();
 
     // Pressed again while already on one of this workspace's agents: go to the
     // next one there instead of landing on the same agent forever. The first
     // press - from anywhere else - still takes the neediest; the cycle only
     // starts once you are standing on one of them.
-    if let Some(next) =
-        active_window().and_then(|focused| next_in_cycle(&agents, workspace, &focused))
-    {
-        if go_to(next)? {
-            return Ok(());
+    if cycle {
+        if let Some(next) =
+            active_window().and_then(|focused| next_in_cycle(&agents, workspace, &focused))
+        {
+            if go_to(next)? {
+                return Ok(());
+            }
         }
     }
 

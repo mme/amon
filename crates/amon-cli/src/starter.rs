@@ -90,7 +90,8 @@ const STARTER: &str = r##"# amon
 # ring = true
 # What the six lit keys stand for: "agents" - key N is the panel's Nth
 # agent, a tap focuses exactly it - or "workspaces" - key N is workspace N,
-# lit by its most urgent agent, a tap does what Super+N does.
+# lit by its most urgent agent, a tap does what Super+N does, and tapping
+# again moves on to the next agent on that workspace.
 # agent_keys = "agents"
 
 [devices.micro2.colors]

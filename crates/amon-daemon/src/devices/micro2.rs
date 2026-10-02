@@ -498,7 +498,11 @@ pub fn act(
     match input {
         DeviceInput::AgentKey(slot) => match tap_target(*slot, agents, config.agent_keys) {
             Tap::Agent(agent) => focus_agent(&agent),
-            Tap::Workspace(workspace) => actions::amon(&["focus", &workspace.to_string()]),
+            // Super+N's landing, plus a repeat tap moving on to the next agent
+            // on that workspace - which Super+N itself does not do.
+            Tap::Workspace(workspace) => {
+                actions::amon(&["focus", &workspace.to_string(), "--cycle"])
+            }
             Tap::Nothing => {}
         },
         DeviceInput::Control(key) => {
