@@ -185,6 +185,21 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     if runtime_pane.is_none() && !quiet {
         link.register(entry.clone());
     }
+    // The start agent panel's history (ADR-0026): a recognised agent, started
+    // in a terminal on this machine and outside a runtime pane - the ones a
+    // new terminal can start again. Inside herdr or luvus the runtime owns the
+    // pane, and an ssh session's agent is recorded when it claims the row.
+    if runtime_pane.is_none() && !quiet && agent.is_some() {
+        record_start(amon_protocol::started::Started {
+            agent: entry.agent.clone(),
+            dir: entry.cwd.clone(),
+            project: location.project.clone(),
+            subpath: location.subpath.clone(),
+            host: None,
+            ssh: Vec::new(),
+            last_started: amon_protocol::started::datetime_from_unix(now_secs()),
+        });
+    }
 
     let focus_shared = focus::Shared::default();
     // The stdin thread arms the whisper through the link when an answer
@@ -200,6 +215,16 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
             runtime_pane: runtime_pane.map(|(kind, pane)| (kind.to_string(), pane)),
             entry,
             quiet,
+            ssh_args: if quiet {
+                launch
+                    .argv
+                    .iter()
+                    .skip(1)
+                    .map(|arg| arg.to_string_lossy().into_owned())
+                    .collect()
+            } else {
+                Vec::new()
+            },
         },
         link,
         inbox,
@@ -682,4 +707,19 @@ fn hostname() -> String {
         .map(|byte| *byte as u8)
         .collect();
     String::from_utf8_lossy(&bytes).into_owned()
+}
+
+/// Writes a start to the history off the launch path: the file takes a lock,
+/// and an agent must never wait on another agent's write to begin.
+pub(crate) fn record_start(started: amon_protocol::started::Started) {
+    std::thread::spawn(move || {
+        let _ = amon_protocol::started::record(started);
+    });
+}
+
+pub(crate) fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs() as i64)
+        .unwrap_or(0)
 }

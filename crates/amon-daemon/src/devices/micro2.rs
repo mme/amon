@@ -471,11 +471,10 @@ pub fn action_for(control: &str, config: &Micro2Config) -> Action {
     }
     let default = match name {
         "macro_1" => "panel",
-        // Beside the panel key, the key that starts a new agent: Omarchy's own
-        // launcher for the default coding agent, the same thing Super+Shift+
-        // Ctrl+A runs. Through the launcher and not the chord, so it holds if
-        // the bind moves and needs no synthesized keys landing anywhere.
-        "macro_2" => "exec:omarchy-agent --pick",
+        // Beside the panel key, the key that starts an agent: the start agent
+        // panel, the agents you started, to start one again (ADR-0026). A
+        // second press closes it, as Super+Alt+A does.
+        "macro_2" => "start",
         "macro_3" => "key:Up",
         "macro_4" => "key:Escape",
         "macro_5" => "dictate",
@@ -588,6 +587,7 @@ fn run_action(action: &Action, scroll_direction: Option<i32>, synth: &mut Option
     match action {
         Action::None => {}
         Action::Panel => actions::toggle_panel(),
+        Action::Start => actions::toggle_start(),
         Action::Scroll => {
             reopen_synth(synth);
             if let (Some(direction), Some(device)) = (scroll_direction, synth.as_mut()) {
@@ -1170,10 +1170,7 @@ mod tests {
     fn defaults_place_the_requested_layout() {
         let config = Micro2Config::default();
         assert_eq!(action_for("ACT06", &config), Action::Panel);
-        assert_eq!(
-            action_for("ACT07", &config),
-            Action::Exec("omarchy-agent --pick".into())
-        );
+        assert_eq!(action_for("ACT07", &config), Action::Start);
         assert_eq!(action_for("ACT08", &config), Action::Key(vec![103]));
         assert_eq!(action_for("ACT09", &config), Action::Key(vec![1]));
         // Dictation graduated from an exec to its own word so the button

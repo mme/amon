@@ -16,6 +16,8 @@ pub enum Action {
     None,
     /// Toggle the Super+A agent panel.
     Panel,
+    /// Toggle the Super+Alt+A start agent panel (ADR-0026).
+    Start,
     /// One wheel tick. Not in the config vocabulary — it is the encoder's
     /// fixed job, and a scroll without a direction means nothing on a key.
     Scroll,
@@ -37,6 +39,7 @@ impl Action {
         match text {
             "none" | "" => Action::None,
             "panel" => Action::Panel,
+            "start" => Action::Start,
             "dictate" => Action::Dictate,
             _ => {
                 if let Some(rest) = text.strip_prefix("workspace:") {
@@ -407,6 +410,19 @@ pub fn toggle_panel() {
     );
 }
 
+/// Toggles the start agent panel the way Super+Alt+A does: a `call` into the
+/// panel plugin, which closes it when it is already open.
+pub fn toggle_start() {
+    reap(
+        Command::new("omarchy-shell")
+            .args(["-q", "shell", "call", "sh.amon.panel", "toggleStart", "x"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn(),
+    );
+}
+
 /// Offers an encoder event to the agent panel through the shell's `call`
 /// IPC — the same seam the Super+W bind uses. True only when the panel
 /// answered "handled" (the modal is up and took the event); a closed panel,
@@ -430,6 +446,7 @@ mod tests {
     fn the_vocabulary_parses() {
         assert_eq!(Action::parse("none"), Action::None);
         assert_eq!(Action::parse("panel"), Action::Panel);
+        assert_eq!(Action::parse("start"), Action::Start);
         assert_eq!(Action::parse("workspace:3"), Action::Workspace(3));
         // Retired words: the fixed controls' jobs are no longer spellable.
         assert_eq!(Action::parse("agent"), Action::None);

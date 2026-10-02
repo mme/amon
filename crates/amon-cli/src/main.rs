@@ -21,6 +21,7 @@ mod doctor;
 #[cfg(target_os = "linux")]
 mod focus;
 mod setup;
+mod start;
 mod starter;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -106,6 +107,22 @@ enum Command {
         /// workspace keys use it
         #[arg(long, conflicts_with = "agent")]
         cycle: bool,
+    },
+    /// The agents you started, most recent first; with an agent and a folder,
+    /// start it there again in a new terminal (what Super+Alt+A offers)
+    Start {
+        /// The agent to start again, e.g. `claude`; omit to list
+        #[arg(requires = "dir")]
+        agent: Option<String>,
+        /// The folder to start it in
+        #[arg(long)]
+        dir: Option<String>,
+        /// The host of an agent on another machine, as listed
+        #[arg(long, requires = "agent")]
+        host: Option<String>,
+        /// Machine-readable list (what the start agent panel reads)
+        #[arg(long, conflicts_with = "agent")]
+        json: bool,
     },
     /// Integration, daemon, widget, audio, and alias health in one report
     Doctor,
@@ -238,6 +255,15 @@ fn main() -> ExitCode {
         Command::Focus { .. } => {
             Err("amon focus needs a compositor to jump through; there is none here".into())
         }
+        Command::Start {
+            agent,
+            dir,
+            host,
+            json,
+        } => match (agent, dir) {
+            (Some(agent), Some(dir)) => start::launch(&agent, &dir, host.as_deref()),
+            _ => start::list(json),
+        },
         Command::Doctor => doctor::run(VERSION),
         Command::Daemon => run_daemon(),
         Command::Hook(report) => run_hook(report),

@@ -22,6 +22,7 @@ mod frame;
 mod method;
 pub mod paths;
 mod schema;
+pub mod started;
 
 pub use agent::{Activity, ActivityKind, AgentEntry, AgentPatch, AgentState, Position, Runtime};
 pub use config::{

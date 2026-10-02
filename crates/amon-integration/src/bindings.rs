@@ -155,6 +155,13 @@ end
 hl.unbind("SUPER + A")
 o.bind("SUPER + A", "Agents", "omarchy-shell shell toggle sh.amon.panel")
 
+-- Super+Alt+A opens the start agent panel: the agents you started, to start
+-- one again (ADR-0026). It lives in the same plugin as the agent panel and is
+-- reached through the shell's `call` IPC, so pressing it again closes it. Alt
+-- because it is the A chord Omarchy leaves free; its own default-agent key,
+-- Super+Shift+Ctrl+A, is left as it is.
+o.bind("SUPER + ALT + A", "Start agent", "omarchy-shell shell call sh.amon.panel toggleStart x")
+
 -- Super+W closes what you are looking at. Stock Hyprland closes the focused
 -- *toplevel*, and the panel is an overlay — so with the pane open, the stock
 -- bind reached straight through it and closed the window underneath (#39).
@@ -182,6 +189,7 @@ o.bind("SUPER + W", "Close active window",
 -- together, because a rule naming a surface that does not exist fails silently
 -- by simply not applying.
 hl.layer_rule({{ match = {{ namespace = "^amon-panel$" }}, no_anim = true, animation = "none" }})
+hl.layer_rule({{ match = {{ namespace = "^amon-start$" }}, no_anim = true, animation = "none" }})
 
 -- The pane, popped out into a window of its own. Every Quickshell window shares
 -- the class `org.quickshell`, so the title is the only thing that can single
