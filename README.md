@@ -44,6 +44,14 @@ long it has been at it. Pick one and Enter puts you in front of it.
 `Super+W` closes the panel while it is open - amon rebinds Omarchy's
 close-window key to ask the panel first, so the window underneath survives.
 
+`Super+Alt+A` opens the start agent panel: the agents you started, one row per
+agent and folder, most recent first: the agent, the project, the branch it
+was on, the folder, and when you last started it. Pick one and a new terminal opens there running that
+agent again - bare, without the arguments it had. Agents you started on
+another machine over SSH are on the list too and start there again. The list
+is `~/.local/state/amon/started.toml`, which you can edit; it keeps the last
+25 (ADR-0026).
+
 Have a Work Louder Creator Micro 2 on the desk? Connect it (USB or
 Bluetooth) and it becomes a hardware agent panel: six keys, one per agent in
 the panel's order, each colored by its agent's state, the ring glowing when
@@ -280,6 +288,13 @@ leading a line here where the panel makes it a heading. A column no agent can
 fill is not printed at all. `--json` prints the entries machine-readable instead
 of as a table.
 
+**`amon start [--json]`, `amon start <agent> --dir <folder> [--host <host>]`**
+
+The agents you started, most recent first - what the start agent panel
+lists. With an agent and a folder, opens a new terminal there running that
+agent again; with `--host`, one from the list that ran on another machine,
+reached again over the same SSH arguments.
+
 **`amon focus <workspace>`**
 
 Go to a workspace by number, landing on the agent that needs your attention
@@ -407,10 +422,10 @@ root step grants access; `amon setup` offers it.
 
 The seven macro keys, any action. Controls: `macro_1`..`macro_7` in
 reading order - `macro_1`-`macro_4` across the upper row, `macro_5`-
-`macro_7` across the lower. Actions: `none`, `panel`, `workspace:N`,
-`key:<chord>` (e.g. `key:super+shift+f`), `exec:<command>`. The defaults:
-the agent panel, a new default agent (`omarchy-agent --pick`, what
-Super+Shift+Ctrl+A runs), Up, Escape on the upper row; dictation
+`macro_7` across the lower. Actions: `none`, `panel`, `start`,
+`workspace:N`, `key:<chord>` (e.g. `key:super+shift+f`), `exec:<command>`.
+The defaults: the agent panel, the start agent panel (as Super+Alt+A; press
+again to close), Up, Escape on the upper row; dictation
 (`voxtype record toggle`), Down, Enter on the lower. Everything else is
 fixed: agent key N lights and focuses the panel's Nth agent (grouped by
 workspace, left to right as their windows sit; workspace N instead with

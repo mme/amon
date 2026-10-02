@@ -147,6 +147,10 @@ pub struct Observer {
     /// while a remote agent claims it, and loses it again when that agent
     /// goes, so an ssh session with no amon at the far end is invisible.
     quiet: bool,
+    ssh_args: Vec<String>,
+    /// The remote agent last written to the start history, so a heartbeat
+    /// re-register is not a new start.
+    recorded: Option<(String, String)>,
 }
 
 /// What the observer tracks about the remote agent on its row.
@@ -181,6 +185,9 @@ pub struct Setup {
     pub entry: AgentEntry,
     /// The wrapped program is `ssh`: no row until a remote agent claims one.
     pub quiet: bool,
+    /// For a wrapped `ssh`, the arguments it was given: how the start agent
+    /// panel reaches a remote agent again (ADR-0026).
+    pub ssh_args: Vec<String>,
 }
 
 /// Starts the observer on its own thread.
@@ -226,6 +233,8 @@ impl Observer {
             position: None,
             remote: None,
             quiet: setup.quiet,
+            ssh_args: setup.ssh_args,
+            recorded: None,
         })
     }
 
@@ -277,6 +286,30 @@ impl Observer {
         }
     }
 
+    /// Writes a remote agent to the start history the first time it claims
+    /// this session (ADR-0026): a recognised agent, reached through a wrapped
+    /// ssh, with the arguments that reach it again.
+    fn record_remote_start(&mut self, remote: &AgentEntry) {
+        if !self.quiet || amon_detect::parse_agent_label(&remote.agent).is_none() {
+            return;
+        }
+        let key = (remote.agent.clone(), remote.cwd.clone());
+        if self.recorded.as_ref() == Some(&key) {
+            return;
+        }
+        self.recorded = Some(key);
+        crate::record_start(amon_protocol::started::Started {
+            agent: remote.agent.clone(),
+            dir: remote.cwd.clone(),
+            project: remote.project.clone(),
+            subpath: remote.subpath.clone(),
+            branch: remote.branch.clone(),
+            host: Some(remote.hostname.clone()),
+            ssh: amon_protocol::started::ssh_connection_args(&self.ssh_args),
+            last_started: amon_protocol::started::datetime_from_unix(crate::now_secs()),
+        });
+    }
+
     /// Whether the row exists: always, unless this is a quiet ssh session
     /// that no remote agent holds right now.
     fn has_row(&self) -> bool {
@@ -286,6 +319,7 @@ impl Observer {
     fn handle_remote(&mut self, report: RemoteReport) {
         match report {
             RemoteReport::Register(remote) => {
+                self.record_remote_start(&remote);
                 let now = crate::now_millis();
                 // Locally stamped clocks: fresh only when the state actually
                 // changed, so a heartbeat repeating the same state keeps its
@@ -761,6 +795,7 @@ mod tests {
                 entry: entry("own", "ssh", "here"),
                 runtime_pane: None,
                 quiet,
+                ssh_args: Vec::new(),
             },
             link,
         )

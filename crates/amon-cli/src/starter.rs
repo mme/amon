@@ -103,10 +103,10 @@ const STARTER: &str = r##"# amon
 
 [devices.micro2.keys]
 # The seven macro keys in reading order (macro_1-4 upper row, macro_5-7
-# lower), any action: "none", "panel", "workspace:N", "key:<chord>"
+# lower), any action: "none", "panel", "start", "workspace:N", "key:<chord>"
 # (e.g. "key:super+shift+f"), "exec:<command>", or "dictate". The defaults:
 # macro_1 = "panel"
-# macro_2 = "exec:omarchy-agent --pick"
+# macro_2 = "start"
 # macro_3 = "key:Up"
 # macro_4 = "key:Escape"
 # macro_5 = "dictate"

@@ -31,6 +31,14 @@ Item {
 
   property bool opened: false
 
+  // The start agent panel (ADR-0026): a second modal in this same plugin, so
+  // "one amon overlay at a time" is a property of one object rather than a
+  // conversation between two. The shell knows nothing of it - Super+Alt+A and
+  // the Micro 2 reach it through `shell call ... toggleStart` - so it never
+  // has to be told when it closes.
+  property bool startOpened: false
+  property var startRows: []
+
   // The [menu] surface tokens, so a theme that styles Omarchy's own menus
   // styles this too. Nothing here invents a colour.
   readonly property color surface: Color.menu.background
@@ -163,6 +171,7 @@ Item {
       focusWindow.running = true
       return
     }
+    root.startOpened = false
     root.opened = true
     // Re-picked on every open, because every open is a fresh "what needs me
     // now" — the answer from ten minutes ago is the one thing this must not
@@ -193,9 +202,64 @@ Item {
   // the key always meant. The popped-out window is a real toplevel, `opened`
   // is false while it stands, so it keeps the stock close.
   function dismissIfOpen() {
+    if (root.startOpened) {
+      root.startOpened = false
+      return "dismissed"
+    }
     if (!root.opened) return "closed"
     root.dismiss()
     return "dismissed"
+  }
+
+  // Super+Alt+A, and the Micro 2's `start` key, through the shell's `call`
+  // IPC: open the start panel, or close it when it is already up. Opening it
+  // closes the agent panel - one overlay at a time - and re-reads the history,
+  // so an edit to started.toml shows the next time it opens.
+  function toggleStart() {
+    if (root.startOpened) {
+      root.startOpened = false
+      return "closed"
+    }
+    if (root.opened) root.dismiss()
+    loadStart.running = true
+    root.startOpened = true
+    startView.resetSelection()
+    Qt.callLater(function(){ startView.forceActiveFocus() })
+    return "opened"
+  }
+
+  // Starting a row's agent again: `amon start` opens the terminal, so a
+  // relaunch from here is the same thing as one from the command line.
+  function startAgent(entry) {
+    if (!entry || !entry.agent || !entry.dir) return
+    const command = ["amon", "start", String(entry.agent), "--dir", String(entry.dir)]
+    if (entry.host) command.push("--host", String(entry.host))
+    startOne.command = command
+    startOne.running = true
+    root.startOpened = false
+  }
+
+  Process {
+    id: loadStart
+    running: false
+    command: ["amon", "start", "--json"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try {
+          const rows = JSON.parse(text)
+          root.startRows = Array.isArray(rows) ? rows : []
+        } catch (error) {
+          root.startRows = []
+        }
+      }
+    }
+  }
+
+  Process {
+    id: startOne
+    running: false
+    command: []
   }
 
   // The Creator Micro 2's encoder, arriving through the same shell `call` IPC
@@ -206,12 +270,20 @@ Item {
   // modal's claim on input, and a knob that reached into an unfocused window
   // would be acting somewhere the desktop does not say it is.
   function encoderMove(delta) {
+    if (root.startOpened) {
+      startView.moveSelection(parseInt(delta, 10) || 0)
+      return "handled"
+    }
     if (!root.opened) return "closed"
     modalView.moveSelection(parseInt(delta, 10) || 0)
     return "handled"
   }
 
   function encoderSelect() {
+    if (root.startOpened) {
+      startView.activateSelection()
+      return "handled"
+    }
     if (!root.opened) return "closed"
     modalView.activateSelection()
     return "handled"
@@ -333,6 +405,67 @@ Item {
         onPopOutRequested: root.popOut()
         onActivated: function(entry) { root.goTo(entry) }
         onCloseRequested: root.dismiss()
+      }
+    }
+  }
+
+  // The start agent panel's modal: the agent panel's surface exactly - layer,
+  // scrim, click-away, card - with the start view inside. Modal only; it has
+  // no window to pop out into (ADR-0026).
+  PanelWindow {
+    id: startPanel
+
+    visible: root.startOpened
+    anchors { top: true; bottom: true; left: true; right: true }
+    color: "transparent"
+
+    WlrLayershell.namespace: "amon-start"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    exclusionMode: ExclusionMode.Normal
+
+    Rectangle {
+      anchors.fill: parent
+      color: root.scrim
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      onClicked: root.startOpened = false
+    }
+
+    BorderSurface {
+      id: startCard
+
+      width: Math.min(root.paneWidth, startPanel.width - Style.gapsOut * 2)
+      height: Math.min(root.paneHeight, startPanel.height - Style.gapsOut * 2)
+      anchors.centerIn: parent
+      radius: Style.cornerRadius
+      color: root.surface
+      borderSpec: root.borderSpec
+      padding: root.contentMargin
+
+      MouseArea {
+        anchors.fill: parent
+        onClicked: {}
+      }
+
+      StartView {
+        id: startView
+
+        anchors.fill: parent
+        anchors.topMargin: startCard.contentTopInset
+        anchors.rightMargin: startCard.contentRightInset
+        anchors.bottomMargin: startCard.contentBottomInset
+        anchors.leftMargin: startCard.contentLeftInset
+
+        rows: root.startRows
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        contentSpacing: root.contentSpacing
+        focus: true
+        onActivated: function(entry) { root.startAgent(entry) }
+        onCloseRequested: root.startOpened = false
       }
     }
   }

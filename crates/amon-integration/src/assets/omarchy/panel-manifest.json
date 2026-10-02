@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "sh.amon.panel",
   "name": "Agents (amon)",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "author": "amon",
-  "description": "A centred pane listing every agent amon can see, on Super+A",
+  "description": "A centred pane listing every agent amon can see, on Super+A, and the agents you started, on Super+Alt+A",
   "kinds": [
     "overlay"
   ],

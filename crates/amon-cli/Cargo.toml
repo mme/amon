@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dev-dependencies]
 libc = { workspace = true }
 portable-pty = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 
@@ -24,4 +25,5 @@ amon-protocol = { workspace = true }
 amon-wrapper = { workspace = true }
 clap = { workspace = true }
 libc = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }

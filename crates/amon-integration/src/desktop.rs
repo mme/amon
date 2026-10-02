@@ -79,6 +79,7 @@ const PANEL_MANIFEST: &str = include_str!("assets/omarchy/panel-manifest.json");
 const PANEL_QML: &str = include_str!("assets/omarchy/AgentPanel.qml");
 const AMON_MARK_QML: &str = include_str!("assets/omarchy/AmonMark.qml");
 const AGENTS_VIEW_QML: &str = include_str!("assets/omarchy/AgentsView.qml");
+const START_VIEW_QML: &str = include_str!("assets/omarchy/StartView.qml");
 
 const MANIFEST_NAME: &str = "manifest.json";
 
@@ -91,9 +92,11 @@ const WORKSPACES_ASSETS: [(&str, &str); 2] = [
     ("AgentStates.qml", AGENT_STATES_QML),
 ];
 
-const PANEL_ASSETS: [(&str, &str); 4] = [
+const PANEL_ASSETS: [(&str, &str); 5] = [
     ("AgentPanel.qml", PANEL_QML),
     ("AgentsView.qml", AGENTS_VIEW_QML),
+    // The start agent panel, a second modal in the same plugin (ADR-0026).
+    ("StartView.qml", START_VIEW_QML),
     ("AmonMark.qml", AMON_MARK_QML),
     // The bar widget's model, shared verbatim. Two copies of the socket
     // protocol is how the header and the bar would come to disagree.
