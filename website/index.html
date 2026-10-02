@@ -717,7 +717,22 @@
   .desk{margin:0; display:flex; flex-direction:column}
   /* No card: the board supplies its own ground and edge, so a box around it
      would only frame a frame. It sits at the left margin like the copy. */
-  .desk-card{padding:6px 0 2px; display:flex; justify-content:flex-start; overflow:visible}
+  .desk-card{padding:6px 0 2px; display:flex; justify-content:flex-start; overflow:visible;
+             position:relative}
+  /* Hover targets over the drawing: invisible until pointed at, then a thin
+     ruled outline around the control, in the page's own rule colour. */
+  .desk .hot{fill:transparent; stroke:transparent; stroke-width:1.5; outline:none; cursor:default}
+  .desk .hot:not(.board):hover, .desk .hot:not(.board):focus-visible{stroke:var(--muted)}
+  .desk .hot.board:focus-visible{stroke:var(--muted)}
+  /* What the control under the pointer does: the note card's box, small,
+     beside the board, never over the copy. */
+  .desk-tip{position:absolute; left:min(420px, calc(100% - 260px)); top:24px; width:240px;
+            border:1px solid var(--rule); border-radius:8px; background:var(--ground);
+            padding:10px 12px; font-size:12.5px; line-height:1.5; color:var(--muted);
+            pointer-events:none}
+  .desk-tip b{display:block; color:var(--ink); font-size:13px; margin-bottom:2px}
+  /* Narrow screens: under the board instead of beside it. */
+  @media (max-width:700px){ .desk-tip{position:static; width:auto; margin-top:12px} }
   .desk svg{width:100%; max-width:400px; height:auto; display:block; overflow:visible}
   .desk .body{fill:var(--sunk); stroke:var(--rule)}
   /* The underglow: the body's own outline, wide, soft and behind it. */
@@ -1230,7 +1245,29 @@
             <rect class="cap" x="230" y="230" width="50" height="50" rx="9"/>
             <text class="legend" x="255.0" y="255.0">run</text>
           </g>
+          <!-- Hover targets, one per control, over the drawing: what each does,
+               shown in the label below. Every macro key is remappable; these are
+               the defaults. -->
+          <g class="hots">
+            <rect class="hot board" x="20" y="20" width="284" height="284" rx="26" tabindex="0" role="button" aria-label="The ring: glows with the most urgent state anywhere" data-title="The ring" data-tip="Glows with the most urgent state anywhere: solid while an agent waits for you, breathing when one finished unseen, a running light while any works."/>
+            <circle class="hot" cx="69.0" cy="69.0" r="27" tabindex="0" role="button" aria-label="Dial: Scrolls. While the agent panel or the start agent panel is open, it walks the rows, and a click picks one." data-title="Dial" data-tip="Scrolls. While the agent panel or the start agent panel is open, it walks the rows, and a click picks one."/>
+            <rect class="hot" x="104" y="42" width="54" height="54" rx="11" tabindex="0" role="button" aria-label="Agent key 1: The panel&#x27;s agent number 1, lit by its state: breathing while it works, solid while it waits for you, lit when it finished unseen. Tap to go to it. With agent_keys = &quot;workspaces&quot;, workspace 1 instead." data-title="Agent key 1" data-tip="The panel&#x27;s agent number 1, lit by its state: breathing while it works, solid while it waits for you, lit when it finished unseen. Tap to go to it. With agent_keys = &quot;workspaces&quot;, workspace 1 instead."/>
+            <rect class="hot" x="166" y="42" width="54" height="54" rx="11" tabindex="0" role="button" aria-label="Agent key 2: The panel&#x27;s agent number 2, lit by its state: breathing while it works, solid while it waits for you, lit when it finished unseen. Tap to go to it. With agent_keys = &quot;workspaces&quot;, workspace 2 instead." data-title="Agent key 2" data-tip="The panel&#x27;s agent number 2, lit by its state: breathing while it works, solid while it waits for you, lit when it finished unseen. Tap to go to it. With agent_keys = &quot;workspaces&quot;, workspace 2 instead."/>
+            <circle class="hot" cx="255.0" cy="69.0" r="27" tabindex="0" role="button" aria-label="Joystick: Moves window focus, like Super+arrows." data-title="Joystick" data-tip="Moves window focus, like Super+arrows."/>
+            <rect class="hot" x="42" y="104" width="54" height="54" rx="11" tabindex="0" role="button" aria-label="Agent key 3: The panel&#x27;s agent number 3, lit by its state: breathing while it works, solid while it waits for you, lit when it finished unseen. Tap to go to it. With agent_keys = &quot;workspaces&quot;, workspace 3 instead." data-title="Agent key 3" data-tip="The panel&#x27;s agent number 3, lit by its state: breathing while it works, solid while it waits for you, lit when it finished unseen. Tap to go to it. With agent_keys = &quot;workspaces&quot;, workspace 3 instead."/>
+            <rect class="hot" x="104" y="104" width="54" height="54" rx="11" tabindex="0" role="button" aria-label="Agent key 4: The panel&#x27;s agent number 4, lit by its state: breathing while it works, solid while it waits for you, lit when it finished unseen. Tap to go to it. With agent_keys = &quot;workspaces&quot;, workspace 4 instead." data-title="Agent key 4" data-tip="The panel&#x27;s agent number 4, lit by its state: breathing while it works, solid while it waits for you, lit when it finished unseen. Tap to go to it. With agent_keys = &quot;workspaces&quot;, workspace 4 instead."/>
+            <rect class="hot" x="166" y="104" width="54" height="54" rx="11" tabindex="0" role="button" aria-label="Agent key 5: The panel&#x27;s agent number 5, lit by its state: breathing while it works, solid while it waits for you, lit when it finished unseen. Tap to go to it. With agent_keys = &quot;workspaces&quot;, workspace 5 instead." data-title="Agent key 5" data-tip="The panel&#x27;s agent number 5, lit by its state: breathing while it works, solid while it waits for you, lit when it finished unseen. Tap to go to it. With agent_keys = &quot;workspaces&quot;, workspace 5 instead."/>
+            <rect class="hot" x="228" y="104" width="54" height="54" rx="11" tabindex="0" role="button" aria-label="Agent key 6: The panel&#x27;s agent number 6, lit by its state: breathing while it works, solid while it waits for you, lit when it finished unseen. Tap to go to it. With agent_keys = &quot;workspaces&quot;, workspace 6 instead." data-title="Agent key 6" data-tip="The panel&#x27;s agent number 6, lit by its state: breathing while it works, solid while it waits for you, lit when it finished unseen. Tap to go to it. With agent_keys = &quot;workspaces&quot;, workspace 6 instead."/>
+            <rect class="hot" x="42" y="166" width="54" height="54" rx="11" tabindex="0" role="button" aria-label="macro_1: Opens the agent panel, like Super+A. Press again to close it." data-title="macro_1" data-tip="Opens the agent panel, like Super+A. Press again to close it."/>
+            <rect class="hot" x="104" y="166" width="54" height="54" rx="11" tabindex="0" role="button" aria-label="macro_2: Opens the start agent panel, like Super+Alt+A: the agents you started, to start one again. Press again to close it." data-title="macro_2" data-tip="Opens the start agent panel, like Super+Alt+A: the agents you started, to start one again. Press again to close it."/>
+            <rect class="hot" x="166" y="166" width="54" height="54" rx="11" tabindex="0" role="button" aria-label="macro_3: Sends Up." data-title="macro_3" data-tip="Sends Up."/>
+            <rect class="hot" x="228" y="166" width="54" height="54" rx="11" tabindex="0" role="button" aria-label="macro_4: Sends Escape." data-title="macro_4" data-tip="Sends Escape."/>
+            <rect class="hot" x="104" y="228" width="54" height="54" rx="11" tabindex="0" role="button" aria-label="macro_5: Dictation through voxtype: tap to start and stop, or hold to talk and release to send." data-title="macro_5" data-tip="Dictation through voxtype: tap to start and stop, or hold to talk and release to send."/>
+            <rect class="hot" x="166" y="228" width="54" height="54" rx="11" tabindex="0" role="button" aria-label="macro_6: Sends Down." data-title="macro_6" data-tip="Sends Down."/>
+            <rect class="hot" x="228" y="228" width="54" height="54" rx="11" tabindex="0" role="button" aria-label="macro_7: Sends Enter." data-title="macro_7" data-tip="Sends Enter."/>
+          </g>
         </svg>
+        <div class="desk-tip" role="status" aria-live="polite" hidden><b></b><span></span></div>
       </div>
     </figure>
 
@@ -2531,6 +2568,26 @@ working = "#7D74F0"</span></code></pre>
     dialog.addEventListener('close', function(){ image.removeAttribute('src'); });
   })();
 
+</script>
+<script>
+  // The drawn Micro 2: each control says what it does when pointed at or
+  // tabbed to, in the label beside the board. Nothing else changes - it is a
+  // picture with captions, not a control.
+  (function(){
+    const card = document.querySelector('.desk-card');
+    if (!card) return;
+    const tip = card.querySelector('.desk-tip');
+    const title = tip.querySelector('b'), text = tip.querySelector('span');
+    const show = function(el){ title.textContent = el.dataset.title; text.textContent = el.dataset.tip; tip.hidden = false; };
+    const hide = function(){ tip.hidden = true; };
+    card.querySelectorAll('.hot').forEach(function(el){
+      el.addEventListener('mouseenter', function(){ show(el); });
+      el.addEventListener('focus', function(){ show(el); });
+      el.addEventListener('click', function(){ show(el); });
+      el.addEventListener('blur', hide);
+    });
+    card.querySelector('svg').addEventListener('mouseleave', hide);
+  })();
 </script>
 <script data-goatcounter="https://mme.goatcounter.com/count"
         async src="//gc.zgo.at/count.js"></script>
