@@ -29,6 +29,8 @@ Start agents in the terminal as usual. The bar shows each workspace's most
 urgent agent state on that workspace's own indicator, and `Super+number` lands
 on the agent that needs you rather than on whatever was focused there last -
 blocked first, then finished-but-unseen, then working, never an agent at rest.
+Press it again while on one of that workspace's agents and it moves to the
+next one there, left to right, at rest included.
 
 Agents you run in [herdr](https://github.com/herdrdev/herdr) or
 [luvus](https://github.com/RizRiyz/luvus) count too. amon watches for their
@@ -247,7 +249,8 @@ of as a table.
 
 Go to a workspace by number, landing on the agent that needs your attention
 rather than on whatever was focused there last. A plain workspace switch when
-no agent wants anything.
+no agent wants anything. Run again while one of that workspace's agents is
+focused, it goes to the next agent there instead, in the panel's order.
 
 **`amon doctor`**
 
