@@ -265,9 +265,10 @@ FocusScope {
 
     // The folder, dim. When it is longer than its column, every row shows its
     // end - the folder's own name - and the row under the cursor reads the
-    // rest the way a music player shows a long title: it rests on the end,
-    // glides calmly to the beginning, rests, glides back, and again. Only the
-    // cursor's row moves, so the list never has two lines moving at once.
+    // whole of it the way a music player shows a long title: from the start,
+    // gliding slowly to the end, resting there a good while, then back to the
+    // start quickly, and again. Only the cursor's row moves, so the list never
+    // has two lines moving at once.
     Item {
       id: folderCell
       x: branchCell.x + view.branchWidth + view.columnGap
@@ -280,12 +281,12 @@ FocusScope {
       readonly property bool gliding: overflow > 0 && row.hasCursor
       // A calm reading pace, and never so short a glide that it jumps.
       readonly property int glideMs: Math.max(1200, Math.round(overflow / 28 * 1000))
-      // How far along the path the view is: 1 shows its end, 0 its start.
+      // How far along the path the view is: 0 shows its start, 1 its end.
       // A fraction rather than pixels, so the position follows the column's
       // width as it settles instead of keeping one measured before it had.
-      property real along: 1
+      property real along: 0
 
-      onGlidingChanged: along = 1
+      onGlidingChanged: along = 0
 
       Text {
         x: folderCell.gliding ? -folderCell.overflow * folderCell.along : 0
@@ -301,17 +302,19 @@ FocusScope {
       SequentialAnimation {
         running: folderCell.gliding && view.visible
         loops: Animation.Infinite
-        PauseAnimation { duration: 2500 }
-        NumberAnimation {
-          target: folderCell; property: "along"; to: 0
-          duration: folderCell.glideMs; easing.type: Easing.InOutSine
-        }
-        PauseAnimation { duration: 2000 }
+        // A moment on the start, a slow read to the end, a long rest there,
+        // and a quick return.
+        PauseAnimation { duration: 1500 }
         NumberAnimation {
           target: folderCell; property: "along"; to: 1
           duration: folderCell.glideMs; easing.type: Easing.InOutSine
         }
-        onRunningChanged: if (!running) folderCell.along = 1
+        PauseAnimation { duration: 4000 }
+        NumberAnimation {
+          target: folderCell; property: "along"; to: 0
+          duration: 450; easing.type: Easing.InOutCubic
+        }
+        onRunningChanged: if (!running) folderCell.along = 0
       }
     }
 
