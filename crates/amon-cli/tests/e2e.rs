@@ -2585,17 +2585,25 @@ fn a_symlinked_shell_config_is_not_followed() {
 }
 
 /// A `hyprctl` that records the expression it was told to dispatch and answers
-/// the way the real one does — `ok` on stdout, and exit 0 either way.
+/// the way the real one does — `ok` on stdout, and exit 0 either way. Queries
+/// (`activewindow -j`, asked to tell a repeat press from a first one) answer
+/// with no window and are not recorded: the record is what was dispatched.
 ///
 /// This helper and the focus tests below are Linux only, like `amon focus`
 /// itself: off Linux the subcommand answers with an error and never
 /// dispatches anything (ADR-0025).
 #[cfg(target_os = "linux")]
 fn fake_hyprctl(sandbox: &Sandbox, record: &std::path::Path, reply: &str) {
+    fake_hyprctl_focused(sandbox, record, reply, "");
+}
+
+/// [`fake_hyprctl`], with `active` as the focused window's address.
+#[cfg(target_os = "linux")]
+fn fake_hyprctl_focused(sandbox: &Sandbox, record: &std::path::Path, reply: &str, active: &str) {
     sandbox.fake_agent(
         "hyprctl",
         &format!(
-            "#!/bin/sh\nshift\necho \"$*\" >> {}\n{reply}\n",
+            "#!/bin/sh\nif [ \"$1\" = activewindow ]; then echo '{{\"address\":\"0x{active}\"}}'; exit 0; fi\nshift\necho \"$*\" >> {}\n{reply}\n",
             path_str(record)
         ),
     );
@@ -2623,6 +2631,50 @@ fn register_agent(
         r#"{{"id":"r","method":"agent.register","params":{{"id":"{id}","agent":"claude","state":"{state}","state_since":1,"cwd":"/","pid":1,"args":[],"hostname":"h","started_at":1,"window":"{window}","workspace":"{workspace}","seen":{seen}}}}}"#
     ));
     client
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn focus_with_cycle_pressed_again_on_an_agent_goes_to_the_next_one_there() {
+    // Already standing on one agent of workspace 2 (window aaa): the press
+    // moves on to the other one, not back to the neediest.
+    let sandbox = Sandbox::new();
+    let record = sandbox.runtime_path("dispatches");
+    fake_hyprctl_focused(&sandbox, &record, "echo ok", "aaa");
+    let _first = register_agent(&sandbox, "first", "2", "aaa", "blocked", false);
+    let _second = register_agent(&sandbox, "second", "2", "bbb", "idle", true);
+    sandbox.wait_for_status("both agents", |agents| agents.len() == 2);
+
+    let output = sandbox.run(&["focus", "2", "--cycle"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let dispatched = std::fs::read_to_string(&record).expect("hyprctl was called");
+    assert!(
+        dispatched.contains("address:0xbbb"),
+        "on to the next agent, at rest or not: {dispatched}"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn focus_without_cycle_lands_on_the_neediest_however_often_pressed() {
+    // Super+N: standing on the idle agent, a press still goes to the one that
+    // wants you, not on to the next.
+    let sandbox = Sandbox::new();
+    let record = sandbox.runtime_path("dispatches");
+    fake_hyprctl_focused(&sandbox, &record, "echo ok", "bbb");
+    let _first = register_agent(&sandbox, "first", "2", "aaa", "blocked", false);
+    let _second = register_agent(&sandbox, "second", "2", "bbb", "idle", true);
+    sandbox.wait_for_status("both agents", |agents| agents.len() == 2);
+
+    let output = sandbox.run(&["focus", "2"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let dispatched = std::fs::read_to_string(&record).expect("hyprctl was called");
+    assert!(
+        dispatched.contains("address:0xaaa"),
+        "the blocked one: {dispatched}"
+    );
 }
 
 #[cfg(target_os = "linux")]

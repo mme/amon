@@ -16,7 +16,7 @@ use std::io::{Read, Write};
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::{Duration, Instant};
 
-use amon_protocol::{AgentEntry, AgentState, Micro2Config};
+use amon_protocol::{AgentEntry, AgentKeys, AgentState, Micro2Config};
 
 use super::actions::{self, Action, VirtualInput};
 
@@ -161,12 +161,16 @@ pub fn lighting(agents: &[AgentEntry], config: &Micro2Config) -> Lighting {
     let brightness = brightness_pm(config);
     let mut keys = [KeyLight::default(); 6];
 
-    // Key N is the panel's row N: one agent per key, the first six in the
-    // order the pane lists them, lit by that agent's own state. Not
-    // configurable: the keys mean the same thing on every desk, and the same
-    // thing as the pane. Past the sixth agent the keys stay dark and the knob,
-    // which walks the whole list, takes over.
-    for (slot, agent) in panel_order(agents).into_iter().take(6).enumerate() {
+    // What a key stands for is the one choice the user gets about these six
+    // (ADR-0022). Either way the light and the tap agree about which agent a
+    // key means, so a tap never lands somewhere the light did not speak for.
+    for (slot, agent) in key_agents(agents, config.agent_keys)
+        .into_iter()
+        .enumerate()
+    {
+        let Some(agent) = agent else {
+            continue; // dark key
+        };
         let (color, breathes) = state_color(agent.state, agent.seen, config);
         keys[slot] = KeyLight {
             color,
@@ -224,11 +228,57 @@ fn fleet_ring(agents: &[AgentEntry], config: &Micro2Config, brightness: u16) -> 
     RingLight::default()
 }
 
-/// Which agent a key tap goes to: exactly the one its light spoke for. A dark
-/// key has no agent and a tap on it does nothing — the key means an agent, not
-/// a place, so there is no workspace to fall back to.
-pub fn tap_target(slot: usize, agents: &[AgentEntry]) -> Option<AgentEntry> {
-    panel_order(agents).get(slot).map(|agent| (*agent).clone())
+/// The agent each of the six keys speaks for, in key order; `None` is a dark
+/// key.
+///
+/// In agent mode key N is the panel's row N, the first six in the order the
+/// pane lists them; past the sixth the keys stay dark and the knob, which
+/// walks the whole list, takes over. In workspace mode key N is workspace N,
+/// lit by its most urgent agent by the ranking every other surface uses
+/// ([`AgentEntry::attention`]), the way the bar lights its numbers.
+fn key_agents(agents: &[AgentEntry], mode: AgentKeys) -> [Option<&AgentEntry>; 6] {
+    let mut keys = [None; 6];
+    match mode {
+        AgentKeys::Agents => {
+            for (slot, agent) in panel_order(agents).into_iter().take(6).enumerate() {
+                keys[slot] = Some(agent);
+            }
+        }
+        AgentKeys::Workspaces => {
+            for (slot, key) in keys.iter_mut().enumerate() {
+                let workspace = (slot + 1).to_string();
+                *key = agents
+                    .iter()
+                    .filter(|agent| agent.workspace.as_deref() == Some(workspace.as_str()))
+                    .min_by_key(|agent| (agent.attention(), agent.state_since));
+            }
+        }
+    }
+    keys
+}
+
+/// What a tap on a lit key does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Tap {
+    /// Focus exactly this agent: the one the key's light spoke for.
+    Agent(Box<AgentEntry>),
+    /// Do what `Super+N` does for this workspace: `amon focus N`, which lands
+    /// on the agent there that most wants a human, or on the workspace itself
+    /// when none does.
+    Workspace(u32),
+    /// A dark key in agent mode: it means no agent, so it does nothing.
+    Nothing,
+}
+
+pub fn tap_target(slot: usize, agents: &[AgentEntry], mode: AgentKeys) -> Tap {
+    match mode {
+        AgentKeys::Agents => panel_order(agents)
+            .get(slot)
+            .map(|agent| Tap::Agent(Box::new((*agent).clone())))
+            .unwrap_or(Tap::Nothing),
+        // Every workspace key goes somewhere, lit or not, like the number row.
+        AgentKeys::Workspaces => Tap::Workspace(slot as u32 + 1),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -446,11 +496,15 @@ pub fn act(
     dictate: &mut crate::dictation::HoldToTalk,
 ) {
     match input {
-        DeviceInput::AgentKey(slot) => {
-            if let Some(agent) = tap_target(*slot, agents) {
-                focus_agent(&agent);
+        DeviceInput::AgentKey(slot) => match tap_target(*slot, agents, config.agent_keys) {
+            Tap::Agent(agent) => focus_agent(&agent),
+            // Super+N's landing, plus a repeat tap moving on to the next agent
+            // on that workspace - which Super+N itself does not do.
+            Tap::Workspace(workspace) => {
+                actions::amon(&["focus", &workspace.to_string(), "--cycle"])
             }
-        }
+            Tap::Nothing => {}
+        },
         DeviceInput::Control(key) => {
             // The encoder's click is not remappable: while the panel is up
             // it activates the row the knob walked to; otherwise it does
@@ -803,6 +857,62 @@ fn write_all(file: &mut std::fs::File, json: &str) -> std::io::Result<()> {
 mod tests {
     use super::*;
 
+    /// The agent a tap lands on in agent mode, by id.
+    fn agent_at(slot: usize, agents: &[AgentEntry]) -> Option<String> {
+        match tap_target(slot, agents, AgentKeys::Agents) {
+            Tap::Agent(agent) => Some(agent.id.clone()),
+            _ => None,
+        }
+    }
+
+    fn workspaces() -> Micro2Config {
+        Micro2Config {
+            agent_keys: AgentKeys::Workspaces,
+            ..Micro2Config::default()
+        }
+    }
+
+    #[test]
+    fn in_workspace_mode_key_n_is_workspace_n_lit_by_its_most_urgent_agent() {
+        // Same rule as the bar: blocked outranks working outranks idle, and
+        // an empty workspace is a dark key.
+        let agents = vec![
+            agent("calm", "2", AgentState::Idle, Some(true)),
+            agent("loud", "2", AgentState::Blocked, Some(false)),
+            agent("busy", "1", AgentState::Working, Some(true)),
+        ];
+
+        let lit = lighting(&agents, &workspaces());
+
+        assert_eq!(lit.keys[0].color, COLOR_WORKING);
+        assert_eq!(
+            lit.keys[1].color, COLOR_BLOCKED,
+            "the loudest speaks for workspace 2"
+        );
+        assert_eq!(lit.keys[2].effect, EFFECT_OFF, "nothing on workspace 3");
+    }
+
+    #[test]
+    fn in_workspace_mode_every_key_goes_to_its_workspace_like_super_number() {
+        let agents = vec![agent("busy", "1", AgentState::Working, Some(true))];
+        assert_eq!(
+            tap_target(0, &agents, AgentKeys::Workspaces),
+            Tap::Workspace(1)
+        );
+        // A dark key still goes to its workspace, as the number row does.
+        assert_eq!(
+            tap_target(4, &agents, AgentKeys::Workspaces),
+            Tap::Workspace(5)
+        );
+    }
+
+    #[test]
+    fn agent_mode_is_the_default() {
+        assert_eq!(Micro2Config::default().agent_keys, AgentKeys::Agents);
+        let parsed: Micro2Config = toml::from_str("agent_keys = \"workspaces\"").unwrap();
+        assert_eq!(parsed.agent_keys, AgentKeys::Workspaces);
+    }
+
     fn agent(id: &str, workspace: &str, state: AgentState, seen: Option<bool>) -> AgentEntry {
         started(id, workspace, state, seen, 1)
     }
@@ -856,9 +966,13 @@ mod tests {
         assert_eq!(lit.keys[1].color, COLOR_BLOCKED);
         assert_eq!(lit.keys[1].effect, EFFECT_SOLID);
         assert_eq!(lit.keys[2].effect, EFFECT_OFF, "no third agent, dark key");
-        assert_eq!(tap_target(0, &agents).map(|a| a.id), Some("a".into()));
-        assert_eq!(tap_target(1, &agents).map(|a| a.id), Some("b".into()));
-        assert_eq!(tap_target(2, &agents), None, "a dark key goes nowhere");
+        assert_eq!(agent_at(0, &agents), Some("a".into()));
+        assert_eq!(agent_at(1, &agents), Some("b".into()));
+        assert_eq!(
+            tap_target(2, &agents, AgentKeys::Agents),
+            Tap::Nothing,
+            "a dark key goes nowhere"
+        );
     }
 
     fn placed(mut entry: AgentEntry, x: i32, y: i32) -> AgentEntry {
@@ -888,9 +1002,7 @@ mod tests {
             started("nowhere", "1", AgentState::Idle, Some(true), 5),
         ];
 
-        let order: Vec<String> = (0..4)
-            .filter_map(|slot| tap_target(slot, &agents).map(|a| a.id))
-            .collect();
+        let order: Vec<String> = (0..4).filter_map(|slot| agent_at(slot, &agents)).collect();
 
         assert_eq!(order, ["left", "right-top", "right-low", "nowhere"]);
     }
@@ -906,7 +1018,7 @@ mod tests {
 
         let lit = lighting(&agents, &Micro2Config::default());
 
-        assert_eq!(tap_target(0, &agents).map(|a| a.id), Some("calm".into()));
+        assert_eq!(agent_at(0, &agents), Some("calm".into()));
         assert_eq!(lit.keys[0].color, COLOR_IDLE);
         assert_eq!(lit.keys[1].color, COLOR_BLOCKED);
     }
@@ -926,9 +1038,9 @@ mod tests {
 
         let lit = lighting(&agents, &Micro2Config::default());
 
-        assert_eq!(tap_target(0, &agents).map(|a| a.id), Some("two0".into()));
-        assert_eq!(tap_target(5, &agents).map(|a| a.id), Some("two5".into()));
-        assert_eq!(tap_target(6, &agents).map(|a| a.id), Some("ten".into()));
+        assert_eq!(agent_at(0, &agents), Some("two0".into()));
+        assert_eq!(agent_at(5, &agents), Some("two5".into()));
+        assert_eq!(agent_at(6, &agents), Some("ten".into()));
         assert!(
             lit.keys.iter().all(|key| key.effect != EFFECT_OFF),
             "six agents, six lit keys"

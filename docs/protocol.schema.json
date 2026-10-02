@@ -185,6 +185,21 @@
       ],
       "type": "object"
     },
+    "AgentKeys": {
+      "description": "What the Micro 2's six lit keys stand for.",
+      "oneOf": [
+        {
+          "const": "agents",
+          "description": "Key N is the panel's row N: one agent per key, lit by that agent's\nstate; a tap focuses exactly that agent.",
+          "type": "string"
+        },
+        {
+          "const": "workspaces",
+          "description": "Key N is workspace N, lit by its most urgent agent; a tap does what\n`Super+N` does - lands on the agent there that most wants you, or on\nthe workspace when none does.",
+          "type": "string"
+        }
+      ]
+    },
     "AgentPatch": {
       "description": "A partial update to an entry. Absent fields are left alone, which is what\nlets an old wrapper omit fields a newer daemon knows about.",
       "properties": {
@@ -382,6 +397,7 @@
           "$ref": "#/$defs/DevicesConfig",
           "default": {
             "micro2": {
+              "agent_keys": "agents",
               "colors": {},
               "dictation": {},
               "enabled": true
@@ -440,6 +456,7 @@
         "micro2": {
           "$ref": "#/$defs/Micro2Config",
           "default": {
+            "agent_keys": "agents",
             "colors": {},
             "dictation": {},
             "enabled": true
@@ -681,6 +698,11 @@
     "Micro2Config": {
       "description": "The Creator Micro 2: six agent keys lit by agent state, a ring showing\nthe fleet's most urgent state, and every other control mapped to an\naction. Everything here is optional; absent means the tuned default.",
       "properties": {
+        "agent_keys": {
+          "$ref": "#/$defs/AgentKeys",
+          "default": "agents",
+          "description": "What the six lit keys stand for: each one agent in the panel's order\n(the default), or each one workspace, lit and focused like the bar's\n`Super+number`."
+        },
         "brightness": {
           "description": "0.0–1.0, applied to keys and ring alike.",
           "format": "float",

@@ -19,6 +19,14 @@ the finger landed; a key that stands for one agent sends you to the agent
 whose light you read. Past the sixth agent the keys are dark and the knob,
 which walks the whole list, takes over.
 
+That is the default, not the only reading. `agent_keys = "workspaces"` puts
+back the first one: key N is workspace N, lit by its most urgent agent, and a
+tap runs `amon focus N` - exactly `Super+N`, which lands on whichever agent
+there wants a human by the time the finger lands. For a desk organised as one
+project per workspace, that drift is the point rather than the problem, so
+it is the user's choice which they want; it is the one thing about the agent
+keys that is.
+
 ## The agent layer is a setup step amon owns
 
 The keys report to amon only on a layer whose keycodes are the firmware's

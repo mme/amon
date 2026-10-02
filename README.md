@@ -284,7 +284,9 @@ of as a table.
 
 Go to a workspace by number, landing on the agent that needs your attention
 rather than on whatever was focused there last. A plain workspace switch when
-no agent wants anything.
+no agent wants anything. With `--cycle`, run again while one of that
+workspace's agents is focused, it goes to the next agent there instead, in
+the panel's order - what the Micro 2's workspace keys do; Super+N does not.
 
 **`amon doctor`**
 
@@ -389,6 +391,12 @@ root step grants access; `amon setup` offers it.
 - `ring = true` - the ambient ring shows the fleet's most urgent state:
   solid orange when anything needs input, snaking blue while anything
   works, breathing green when something finished unseen.
+- `agent_keys = "agents"` - what the six lit keys stand for. `"agents"`: key
+  N is the panel's Nth agent and a tap focuses exactly that agent.
+  `"workspaces"`: key N is workspace N, lit by its most urgent agent, and a
+  tap does what `Super+N` does - lands on the agent there that most wants
+  you, or on the workspace when none does. Tap it again and it moves on to
+  the next agent on that workspace, left to right.
 
 **`[devices.micro2.colors]`**
 
@@ -405,7 +413,8 @@ the agent panel, a new default agent (`omarchy-agent --pick`, what
 Super+Shift+Ctrl+A runs), Up, Escape on the upper row; dictation
 (`voxtype record toggle`), Down, Enter on the lower. Everything else is
 fixed: agent key N lights and focuses the panel's Nth agent (grouped by
-workspace, left to right as their windows sit), the encoder scrolls
+workspace, left to right as their windows sit; workspace N instead with
+`agent_keys = "workspaces"`), the encoder scrolls
 (and walks the agent panel while it is open, its click selecting), the
 joystick moves window focus like Super+arrows.
 

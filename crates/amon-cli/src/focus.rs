@@ -42,10 +42,30 @@ const RESOLVE_TIMEOUT: Duration = Duration::from_millis(150);
 /// fall back to the workspace.
 const DISPATCHED: &str = "ok";
 
-pub fn run(workspace: u32) -> Result<(), Box<dyn std::error::Error>> {
+/// `cycle`: when one of the workspace's agents is already focused, go to the
+/// next agent there instead of back to the neediest. The Micro 2's workspace
+/// keys ask for it; Super+N does not, so a repeat press there lands where the
+/// first one did.
+pub fn run(workspace: u32, cycle: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let agents = agents().unwrap_or_default();
+
+    // Pressed again while already on one of this workspace's agents: go to the
+    // next one there instead of landing on the same agent forever. The first
+    // press - from anywhere else - still takes the neediest; the cycle only
+    // starts once you are standing on one of them.
+    if cycle {
+        if let Some(next) =
+            active_window().and_then(|focused| next_in_cycle(&agents, workspace, &focused))
+        {
+            if go_to(next)? {
+                return Ok(());
+            }
+        }
+    }
+
     // Resolved before anything is dispatched — see the module note on why the
     // order is the whole point.
-    if let Some(agent) = agent_on(workspace) {
+    if let Some(agent) = neediest_on(&agents, workspace) {
         if go_to(&agent)? {
             return Ok(());
         }
@@ -101,21 +121,25 @@ fn go_to(agent: &AgentEntry) -> Result<bool, Box<dyn std::error::Error>> {
     Ok(true)
 }
 
+/// Every connected agent, or `None` when the daemon is absent or slow - which
+/// the caller treats as "no agents", degrading to the plain workspace switch.
+fn agents() -> Option<Vec<AgentEntry>> {
+    let mut client = Client::connect_running(RESOLVE_TIMEOUT).ok()?;
+    let result = client.request(Method::Status).ok()??;
+    let status: StatusResult = serde_json::from_value(result).ok()?;
+    Some(status.agents)
+}
+
 /// The agent on `workspace` that most wants a human, window and all.
 ///
 /// `None` for every reason that is not "there is one to jump to": no daemon,
 /// a slow one, no agent there, none that wants anything, or one the compositor
 /// never gave a window (over ssh, inside a multiplexer). All of them mean the
 /// same thing to the caller — go to the workspace and let Hyprland choose.
-fn agent_on(workspace: u32) -> Option<AgentEntry> {
-    let mut client = Client::connect_running(RESOLVE_TIMEOUT).ok()?;
-    let result = client.request(Method::Status).ok()??;
-    let status: StatusResult = serde_json::from_value(result).ok()?;
+fn neediest_on(agents: &[AgentEntry], workspace: u32) -> Option<AgentEntry> {
     let workspace = workspace.to_string();
-
-    status
-        .agents
-        .into_iter()
+    agents
+        .iter()
         .filter(|agent| agent.workspace.as_deref() == Some(workspace.as_str()))
         .filter(|agent| agent.wants_attention())
         .filter(|agent| agent.window.as_deref().is_some_and(is_address))
@@ -123,6 +147,61 @@ fn agent_on(workspace: u32) -> Option<AgentEntry> {
         // same rank: of two agents equally blocked, the one that has been
         // waiting longer is the one to land on.
         .min_by_key(|agent| (agent.attention(), agent.state_since))
+        .cloned()
+}
+
+/// The agent after the focused one on `workspace`, when the focused window is
+/// one of that workspace's agents; `None` otherwise, which makes it a first
+/// press.
+///
+/// The cycle runs in the panel's order - where the windows sit, left to right
+/// then down, start time for the unplaced - and through every agent there, at
+/// rest included, wrapping at the end. Not in urgency order: looking at a
+/// finished agent marks it seen and drops its rank, and a cycle that re-ranked
+/// under each press would skip agents or bounce between two.
+fn next_in_cycle<'a>(
+    agents: &'a [AgentEntry],
+    workspace: u32,
+    focused: &str,
+) -> Option<&'a AgentEntry> {
+    let workspace = workspace.to_string();
+    let mut here: Vec<&AgentEntry> = agents
+        .iter()
+        .filter(|agent| agent.workspace.as_deref() == Some(workspace.as_str()))
+        .filter(|agent| agent.window.as_deref().is_some_and(is_address))
+        .collect();
+    here.sort_by(|left, right| {
+        let place = |agent: &AgentEntry| match agent.position {
+            Some(position) => (0, Some(position)),
+            None => (1, None),
+        };
+        place(left)
+            .cmp(&place(right))
+            .then_with(|| left.started_at.cmp(&right.started_at))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    let current = here
+        .iter()
+        .position(|agent| agent.window.as_deref() == Some(focused))?;
+    Some(here[(current + 1) % here.len()])
+}
+
+/// The focused window's address, normalized the way agents carry theirs.
+fn active_window() -> Option<String> {
+    let output = Command::new("hyprctl")
+        .args(["activewindow", "-j"])
+        .output()
+        .ok()?;
+    window_address(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// The address out of `hyprctl activewindow -j`: `0x` stripped and lowercase,
+/// as the wrapper stores an agent's window.
+fn window_address(json: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    let address = value.get("address")?.as_str()?;
+    let normalized = address.trim_start_matches("0x").to_ascii_lowercase();
+    is_address(&normalized).then_some(normalized)
 }
 
 /// One agent by its registry id, if it is still connected.
@@ -286,5 +365,67 @@ mod tests {
             session: None,
             pane: "7".into(),
         });
+    }
+
+    fn agent(id: &str, workspace: &str, window: &str, x: i32) -> AgentEntry {
+        let mut entry: AgentEntry = serde_json::from_value(serde_json::json!({
+            "id": id, "agent": "claude", "state": "idle", "state_since": 1,
+            "cwd": "/", "pid": 1, "args": [], "hostname": "h", "started_at": 1,
+        }))
+        .unwrap();
+        entry.workspace = Some(workspace.into());
+        entry.window = Some(window.into());
+        entry.position = Some(amon_protocol::Position { x, y: 0 });
+        entry
+    }
+
+    fn ids(next: Option<&AgentEntry>) -> Option<&str> {
+        next.map(|agent| agent.id.as_str())
+    }
+
+    #[test]
+    fn pressing_again_on_an_agent_goes_to_the_next_one_there_and_wraps() {
+        // Listed out of order on purpose: the cycle follows where the windows
+        // sit, left to right, like the panel - not the daemon's order.
+        let agents = vec![
+            agent("right", "2", "ccc", 900),
+            agent("left", "2", "aaa", 10),
+            agent("middle", "2", "bbb", 400),
+            agent("elsewhere", "3", "ddd", 10),
+        ];
+        assert_eq!(ids(next_in_cycle(&agents, 2, "aaa")), Some("middle"));
+        assert_eq!(ids(next_in_cycle(&agents, 2, "bbb")), Some("right"));
+        assert_eq!(
+            ids(next_in_cycle(&agents, 2, "ccc")),
+            Some("left"),
+            "wraps around"
+        );
+    }
+
+    #[test]
+    fn a_first_press_is_not_a_cycle() {
+        let agents = vec![
+            agent("left", "2", "aaa", 10),
+            agent("right", "2", "ccc", 900),
+        ];
+        // Focus on another workspace's agent, or on a window that is no agent.
+        assert!(next_in_cycle(&agents, 3, "aaa").is_none());
+        assert!(next_in_cycle(&agents, 2, "browser").is_none());
+    }
+
+    #[test]
+    fn a_lone_agent_cycles_to_itself() {
+        let agents = vec![agent("only", "2", "aaa", 10)];
+        assert_eq!(ids(next_in_cycle(&agents, 2, "aaa")), Some("only"));
+    }
+
+    #[test]
+    fn the_active_window_address_is_read_the_way_agents_store_it() {
+        assert_eq!(
+            window_address(r#"{"address":"0x5643B0CB1810","class":"foot"}"#).as_deref(),
+            Some("5643b0cb1810")
+        );
+        assert_eq!(window_address("{}"), None);
+        assert_eq!(window_address("not json"), None);
     }
 }

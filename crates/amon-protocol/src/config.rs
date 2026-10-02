@@ -144,6 +144,10 @@ pub struct Micro2Config {
     /// Whether the ambient ring shows the fleet's most urgent state.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ring: Option<bool>,
+    /// What the six lit keys stand for: each one agent in the panel's order
+    /// (the default), or each one workspace, lit and focused like the bar's
+    /// `Super+number`.
+    pub agent_keys: AgentKeys,
     /// Per-state key colors, `#RRGGBB`. Defaults are the Codex palette.
     pub colors: DeviceColors,
     /// How the `dictate` action reads the button.
@@ -163,11 +167,26 @@ impl Default for Micro2Config {
             enabled: true,
             brightness: None,
             ring: None,
+            agent_keys: AgentKeys::default(),
             colors: DeviceColors::default(),
             dictation: DictationConfig::default(),
             keys: Default::default(),
         }
     }
+}
+
+/// What the Micro 2's six lit keys stand for.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentKeys {
+    /// Key N is the panel's row N: one agent per key, lit by that agent's
+    /// state; a tap focuses exactly that agent.
+    #[default]
+    Agents,
+    /// Key N is workspace N, lit by its most urgent agent; a tap does what
+    /// `Super+N` does - lands on the agent there that most wants you, or on
+    /// the workspace when none does.
+    Workspaces,
 }
 
 /// How the `dictate` action reads its button. Recording always starts on
