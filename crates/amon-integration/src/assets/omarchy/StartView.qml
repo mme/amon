@@ -263,16 +263,56 @@ FocusScope {
       elide: Text.ElideRight
     }
 
-    // The folder, dim, giving way from the front.
-    Text {
+    // The folder, dim. When it is longer than its column, every row shows its
+    // end - the folder's own name - and the row under the cursor reads the
+    // rest the way a music player shows a long title: it rests on the end,
+    // glides calmly to the beginning, rests, glides back, and again. Only the
+    // cursor's row moves, so the list never has two lines moving at once.
+    Item {
+      id: folderCell
       x: branchCell.x + view.branchWidth + view.columnGap
       width: Math.max(0, whenCell.x - x - view.columnGap)
-      anchors.verticalCenter: parent.verticalCenter
-      text: view.cell(row.entry, "folder")
-      color: view.dim
-      font.family: view.fontFamily
-      font.pixelSize: Style.font.body
-      elide: Text.ElideLeft
+      height: parent.height
+      clip: true
+
+      readonly property string full: view.cell(row.entry, "folder")
+      readonly property real overflow: Math.max(0, view.textWidth(full) - width)
+      readonly property bool gliding: overflow > 0 && row.hasCursor
+      // A calm reading pace, and never so short a glide that it jumps.
+      readonly property int glideMs: Math.max(1200, Math.round(overflow / 28 * 1000))
+      // How far along the path the view is: 1 shows its end, 0 its start.
+      // A fraction rather than pixels, so the position follows the column's
+      // width as it settles instead of keeping one measured before it had.
+      property real along: 1
+
+      onGlidingChanged: along = 1
+
+      Text {
+        x: folderCell.gliding ? -folderCell.overflow * folderCell.along : 0
+        width: folderCell.gliding ? implicitWidth : folderCell.width
+        anchors.verticalCenter: parent.verticalCenter
+        text: folderCell.full
+        color: view.dim
+        font.family: view.fontFamily
+        font.pixelSize: Style.font.body
+        elide: folderCell.gliding ? Text.ElideNone : Text.ElideLeft
+      }
+
+      SequentialAnimation {
+        running: folderCell.gliding && view.visible
+        loops: Animation.Infinite
+        PauseAnimation { duration: 2500 }
+        NumberAnimation {
+          target: folderCell; property: "along"; to: 0
+          duration: folderCell.glideMs; easing.type: Easing.InOutSine
+        }
+        PauseAnimation { duration: 2000 }
+        NumberAnimation {
+          target: folderCell; property: "along"; to: 1
+          duration: folderCell.glideMs; easing.type: Easing.InOutSine
+        }
+        onRunningChanged: if (!running) folderCell.along = 1
+      }
     }
 
     // When, right-aligned at the edge like the agent panel's age column.
