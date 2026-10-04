@@ -110,6 +110,8 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
     // What lets the agent's hooks find their way back to this wrapper.
     command.env(protocol_env::AMON_ENV, protocol_env::AMON_ENV_VALUE);
     command.env(protocol_env::AGENT_ID, &agent_id);
+    // Which amon the hooks hand their JSON to: this one (issue #77).
+    command.env(protocol_env::BIN_PATH, amon_protocol::paths::own_binary());
     // Which of this agent's descendants is the one amon actually spawned. The
     // lookup below can land on a shim, and only the shim amon itself called
     // may step aside; one reached from deeper in the tree has an agent of its

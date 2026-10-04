@@ -52,6 +52,10 @@ pub mod env {
     pub const SOCKET_PATH: &str = "AMON_SOCKET_PATH";
     /// The registry id of the agent the hook is reporting about.
     pub const AGENT_ID: &str = "AMON_AGENT_ID";
+    /// The amon binary that wrapped the agent, so its hook scripts run the
+    /// same build (`amon hook input`) whatever is first on `PATH`. herdr's
+    /// name for the same thing, which its vendored PowerShell hooks read.
+    pub const BIN_PATH: &str = "AMON_BIN_PATH";
     /// Value of [`AMON_ENV`] when amon is wrapping the process.
     pub const AMON_ENV_VALUE: &str = "1";
     /// The pid of the wrapper that spawned this process.

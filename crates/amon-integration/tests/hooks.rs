@@ -1,19 +1,12 @@
-//! Conformance between the installed hook scripts and the protocol.
+//! Installing and removing the hook integrations.
 //!
-//! The hooks are shell and Python, so nothing at compile time connects them to
-//! the Rust wire types. These tests install a hook the way `amon setup` does,
-//! run it the way the agent would, and parse what comes out of the socket with
-//! the very types the daemon and wrapper use — which is a stronger check than
-//! validating against the generated schema, because it is the same code path
-//! that would reject the frame in production.
+//! What an installed hook sends when it runs is checked in amon-cli's
+//! `tests/hooks.rs`: the scripts hand their JSON to `amon hook input`, so they
+//! need the amon binary, which only that crate's tests can name.
 
-use std::io::{BufRead, BufReader};
-use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
-
-use amon_protocol::{Method, Request};
 
 /// Somewhere short enough for a unix socket path, unique per test.
 fn scratch(name: &str) -> PathBuf {
@@ -38,117 +31,6 @@ fn install_into(
     // SAFETY: single-threaded test process; nextest gives each test its own.
     unsafe { std::env::set_var(config_env, dir) };
     amon_integration::install(target).expect("install succeeds")
-}
-
-/// Runs a hook with the environment amon gives an agent, and returns whatever
-/// it sent to the socket.
-fn capture_hook_frames(hook: &Path, args: &[&str], stdin_json: &str, socket: &Path) -> Vec<String> {
-    let listener = UnixListener::bind(socket).expect("bind hook socket");
-    listener.set_nonblocking(true).expect("nonblocking accept");
-
-    let collector = std::thread::spawn(move || {
-        // A hook that legitimately reports nothing never connects; a bounded
-        // accept keeps that from hanging the suite.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        let mut frames = Vec::new();
-        let stream = loop {
-            match listener.accept() {
-                Ok((stream, _)) => break Some(stream),
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    if std::time::Instant::now() >= deadline {
-                        break None;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(25));
-                }
-                Err(_) => break None,
-            }
-        };
-        if let Some(stream) = stream {
-            let _ = stream.set_nonblocking(false);
-            for line in BufReader::new(stream).lines().map_while(Result::ok) {
-                if !line.trim().is_empty() {
-                    frames.push(line);
-                }
-            }
-        }
-        frames
-    });
-
-    let mut child = Command::new("sh")
-        .arg(hook)
-        .args(args)
-        .env(amon_protocol::env::AMON_ENV, "1")
-        .env(amon_protocol::env::SOCKET_PATH, socket)
-        .env(amon_protocol::env::AGENT_ID, "agent-under-test")
-        // The developer's own environment must not leak into the hook under
-        // test: with an ambient CODEX_THREAD_ID, the codex hook rightly
-        // suppresses its report and the test would starve.
-        .env_remove("CODEX_THREAD_ID")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("hook runs");
-
-    use std::io::Write;
-    child
-        .stdin
-        .take()
-        .expect("stdin")
-        .write_all(stdin_json.as_bytes())
-        .expect("write hook input");
-    let output = child.wait_with_output().expect("hook exits");
-    assert!(
-        output.status.success(),
-        "hook failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    collector.join().expect("collector")
-}
-
-#[test]
-fn the_claude_hook_reports_a_session_the_daemon_can_parse() {
-    let config = scratch("claude");
-    let messages = install_into(
-        amon_integration::IntegrationTarget::Claude,
-        "CLAUDE_CONFIG_DIR",
-        &config,
-    );
-    assert!(
-        messages.iter().any(|message| message.contains("hook")),
-        "install reports what it wrote: {messages:?}"
-    );
-
-    let hook = config.join("hooks/amon-agent-state.sh");
-    assert!(hook.exists(), "hook installed at {}", hook.display());
-
-    let socket = config.join("hook.sock");
-    let frames = capture_hook_frames(
-        &hook,
-        &["session"],
-        // What Claude Code actually passes a SessionStart hook.
-        r#"{"hook_event_name":"SessionStart","session_id":"sess-42","transcript_path":"/tmp/t.jsonl","source":"startup"}"#,
-        &socket,
-    );
-
-    assert_eq!(
-        frames.len(),
-        1,
-        "one report per hook invocation: {frames:?}"
-    );
-    let request = Request::parse(&frames[0]).expect("the daemon can parse this frame");
-    let Method::AgentReportSession(report) = request.method else {
-        panic!("expected a session report, got {}", request.method.name());
-    };
-
-    assert_eq!(report.agent_id, "agent-under-test");
-    assert_eq!(report.agent, "claude");
-    assert_eq!(report.agent_session_id, "sess-42");
-    assert_eq!(report.agent_session_path.as_deref(), Some("/tmp/t.jsonl"));
-    assert_eq!(report.source, "amon:claude", "the herdr rename applied");
-
-    let _ = std::fs::remove_dir_all(&config);
 }
 
 #[test]
@@ -223,43 +105,6 @@ fn uninstall_removes_what_install_added() {
         !settings.contains("amon-agent-state"),
         "and its registration: {settings}"
     );
-
-    let _ = std::fs::remove_dir_all(&config);
-}
-
-#[test]
-fn the_codex_hook_reports_a_session_the_daemon_can_parse() {
-    let config = scratch("codex");
-    install_into(
-        amon_integration::IntegrationTarget::Codex,
-        "CODEX_HOME",
-        &config,
-    );
-
-    // codex keeps its hook beside its config rather than in a hooks/ dir.
-    let hook = config.join("amon-agent-state.sh");
-    assert!(hook.exists(), "hook installed at {}", hook.display());
-    assert!(config.join("hooks.json").exists(), "and registered");
-    assert!(config.join("config.toml").exists());
-
-    let socket = config.join("hook.sock");
-    let frames = capture_hook_frames(
-        &hook,
-        &["session"],
-        // codex only reports when it knows the transcript path, so a test
-        // input without one proves nothing.
-        r#"{"hook_event_name":"SessionStart","session_id":"codex-7","transcript_path":"/tmp/c.jsonl","source":"startup"}"#,
-        &socket,
-    );
-
-    assert_eq!(frames.len(), 1, "{frames:?}");
-    let request = Request::parse(&frames[0]).expect("the daemon can parse this frame");
-    let Method::AgentReportSession(report) = request.method else {
-        panic!("expected a session report, got {}", request.method.name());
-    };
-    assert_eq!(report.agent, "codex");
-    assert_eq!(report.agent_session_id, "codex-7");
-    assert_eq!(report.source, "amon:codex");
 
     let _ = std::fs::remove_dir_all(&config);
 }
