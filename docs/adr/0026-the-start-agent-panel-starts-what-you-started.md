@@ -22,9 +22,9 @@ A popped-out agent panel is a normal window and may sit beside it.
 
 ## What a row is
 
-One per agent and folder, plus the host for a remote one. Five columns: the
+One per agent and folder, plus the host for a remote one. Four columns: the
 agent; the project in bold - the repository's name, or outside one the
-folder's own name; the branch it was on when last started; the folder dim,
+folder's own name; the folder dim,
 with the home as `~` and a remote one led by its host, giving way from the
 front when the row is short; and when it was last started:
 "just now", "5 min ago", "2 h ago", "yesterday", then "Sep 28", or
@@ -42,7 +42,7 @@ luvus (amon cannot open a pane for them), not other programs run through
 amon, not launches without a terminal (ADR-0016).
 
 `~/.local/state/amon/started.toml`, one `[[agent]]` table per entry - the
-command, the folder, its project and branch, for a remote one the host and
+command, the folder, its project, for a remote one the host and
 the ssh connection arguments, and
 when it was last started - pruned to the 25 most recent. TOML because people
 edit it by hand, as they do the config: re-read every time the panel opens,
@@ -57,3 +57,10 @@ replay. Locally: a terminal with Omarchy's agent class in the folder, running
 `amon <agent>`. Remotely: a terminal running `amon ssh -t <the same
 arguments>` that changes to the folder there and starts the agent through the
 remote login shell, so the remote side's own aliases and setup apply.
+
+No branch. A row was briefly drawn with the branch its folder was on at
+launch, and it said little: for a worktree the folder already names it, and
+for a main checkout it was whatever happened to be checked out that day.
+Recording happens at launch with the launch folder, so the worktrees agents
+make for themselves never become rows - only a folder someone started an
+agent in does.
