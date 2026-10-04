@@ -15,6 +15,14 @@ use crate::integration;
 /// anything else in the agent's config alone.
 pub fn install(target: IntegrationTarget) -> io::Result<Vec<String>> {
     let mut notes = integration::install_target(target)?;
+    // herdr's script read its JSON with python3; amon's own reads it in Rust
+    // (issue #77). Over the file just written, so the config herdr wired
+    // points at it unchanged.
+    if let Err(error) = crate::superseded_hooks::write_over(target) {
+        notes.push(format!(
+            "hook left as herdr wrote it ({error}); it needs python3"
+        ));
+    }
     // amon's own additions run after herdr's install, which for Claude
     // removes the very event the prompt hook needs (ADR-0020). Idempotent, so
     // safe on every setup and upgrade.
@@ -107,16 +115,33 @@ pub fn statuses() -> Vec<Status> {
         .map(|status| Status {
             target: status.target,
             label: integration::integration_target_label(status.target),
+            state: state_of(status.target, &status.path, status.state),
             path: status.path,
-            state: match status.state {
-                integration::IntegrationStatusKind::NotInstalled => InstallState::NotInstalled,
-                integration::IntegrationStatusKind::Current => InstallState::Current,
-                integration::IntegrationStatusKind::Outdated => InstallState::Outdated,
-            },
             installed_version: status.installed_version,
             expected_version: status.expected_version,
         })
         .collect()
+}
+
+/// herdr's verdict on an installed hook, except that a hook still running
+/// herdr's python3 script is outdated whatever its version says: its markers
+/// are current, and only reinstalling puts amon's own script in its place
+/// (issue #77).
+fn state_of(
+    target: IntegrationTarget,
+    path: &std::path::Path,
+    state: integration::IntegrationStatusKind,
+) -> InstallState {
+    match state {
+        integration::IntegrationStatusKind::NotInstalled => InstallState::NotInstalled,
+        integration::IntegrationStatusKind::Outdated => InstallState::Outdated,
+        integration::IntegrationStatusKind::Current
+            if crate::superseded_hooks::still_python(target, path) =>
+        {
+            InstallState::Outdated
+        }
+        integration::IntegrationStatusKind::Current => InstallState::Current,
+    }
 }
 
 pub fn target_label(target: IntegrationTarget) -> &'static str {
@@ -192,11 +217,11 @@ pub fn candidates() -> Vec<Candidate> {
             target: recommendation.target,
             label: recommendation.label,
             detected: agent_root_exists(&recommendation.path),
-            state: match recommendation.state {
-                integration::IntegrationStatusKind::NotInstalled => InstallState::NotInstalled,
-                integration::IntegrationStatusKind::Current => InstallState::Current,
-                integration::IntegrationStatusKind::Outdated => InstallState::Outdated,
-            },
+            state: state_of(
+                recommendation.target,
+                &recommendation.path,
+                recommendation.state,
+            ),
         })
         .collect()
 }
@@ -240,6 +265,11 @@ pub fn outdated_notice(agent: &str) -> Option<String> {
         .into_iter()
         .find(|status| status.target == target)?;
     (status.state == InstallState::Outdated).then(|| {
+        if status.installed_version == Some(status.expected_version) {
+            return format!(
+                "amon: {agent} integration still uses python3; run `amon setup {agent}`"
+            );
+        }
         format!(
             "amon: {agent} integration is outdated (v{} < v{}); run `amon setup {agent}`",
             status

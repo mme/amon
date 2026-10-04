@@ -139,6 +139,15 @@ enum Command {
 
 #[derive(Subcommand)]
 enum HookReport {
+    /// Read a hook's JSON on stdin and report what it says (the installed
+    /// hook scripts call this; issue #77)
+    Input {
+        /// Which hook is calling: the agent, or `<agent>-prompt`
+        #[arg(value_parser = clap::builder::PossibleValuesParser::new(amon_integration::hook_input::HOOKS))]
+        hook: String,
+        /// The hook's own argument: `session`, `working`, `blocked`, `idle`
+        action: Option<String>,
+    },
     /// Report which session the agent is in
     #[command(name = "report-agent-session")]
     Session {
@@ -594,6 +603,10 @@ fn known_targets() -> String {
 /// coding session, so a missing socket or a dead wrapper must cost nothing.
 fn run_hook(report: HookReport) -> Result<(), Box<dyn std::error::Error>> {
     let method = match report {
+        HookReport::Input { hook, action } => {
+            hook_input(&hook, action.as_deref());
+            return Ok(());
+        }
         HookReport::Session {
             agent_id,
             source,
@@ -646,12 +659,82 @@ fn run_hook(report: HookReport) -> Result<(), Box<dyn std::error::Error>> {
             agent_session_id,
         }),
     };
+    send_report(method);
+    Ok(())
+}
 
+/// `amon hook input`: what the hook scripts' Python did, without Python. Only
+/// inside an amon-wrapped agent, and quietly whatever happens - a hook runs
+/// inside someone's coding session.
+fn hook_input(hook: &str, action: Option<&str>) {
+    let mut input = String::new();
+    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
+    let inside = std::env::var("AMON_ENV").as_deref() == Ok("1")
+        && std::env::var_os(amon_protocol::env::SOCKET_PATH).is_some_and(|path| !path.is_empty());
+    let agent_id = std::env::var("AMON_AGENT_ID").unwrap_or_default();
+    if inside && !agent_id.is_empty() {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let env = |key: &str| std::env::var(key).ok();
+        let context = amon_integration::hook_input::Context {
+            agent_id,
+            seq: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos() as u64)
+                .unwrap_or(0),
+            env: &env,
+            cwd: &cwd,
+            devin_list: &devin_list,
+        };
+        for method in amon_integration::hook_input::reports(hook, action, &input, &context) {
+            send_report(method);
+        }
+    }
+    // Antigravity reads a JSON object from its hook's stdout, always.
+    if hook == "antigravity_cli" {
+        println!("{{}}");
+    }
+}
+
+/// `devin list --format json` in the project folder, given two seconds.
+fn devin_list(dir: &std::path::Path) -> Option<String> {
+    let mut child = std::process::Command::new("devin")
+        .args(["list", "--format", "json"])
+        .current_dir(dir)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    let mut stdout = child.stdout.take()?;
+    let reader = std::thread::spawn(move || {
+        let mut out = String::new();
+        let _ = std::io::Read::read_to_string(&mut stdout, &mut out);
+        out
+    });
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => return reader.join().ok(),
+            Ok(Some(_)) => return None,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+}
+
+/// One report to the wrapper over `AMON_SOCKET_PATH`; any failure is silent.
+fn send_report(method: Method) {
     let Some(socket) = std::env::var_os(amon_protocol::env::SOCKET_PATH) else {
-        return Ok(());
+        return;
     };
     let Ok(stream) = UnixStream::connect(socket) else {
-        return Ok(());
+        return;
     };
     let timeout = Some(std::time::Duration::from_secs(2));
     let _ = stream.set_read_timeout(timeout);
@@ -663,7 +746,6 @@ fn run_hook(report: HookReport) -> Result<(), Box<dyn std::error::Error>> {
         let mut line = String::new();
         let _ = BufReader::new(stream).read_line(&mut line);
     }
-    Ok(())
 }
 
 /// A short-lived connection for one-shot commands.

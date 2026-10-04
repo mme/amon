@@ -21,7 +21,7 @@ const SCRIPT_NAME: &str = "amon-prompt-state.sh";
 const CONFIG_NAME: &str = "amon-activity.json";
 const ASSET: &str = include_str!("../assets/grok-prompt-hook.sh");
 /// Mirrors the `AMON_GROK_PROMPT_HOOK_VERSION` stamp in the script.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 fn hooks_dir() -> io::Result<PathBuf> {
     Ok(grok_dir()?.join("hooks"))
@@ -99,13 +99,9 @@ mod tests {
     }
 
     #[test]
-    fn the_script_reports_a_prompt_and_only_on_the_prompt_event() {
-        assert!(ASSET.contains("agent.report_activity"));
-        assert!(ASSET.contains("\"kind\": \"prompt\""));
-        assert!(
-            ASSET.contains("user_prompt_submit"),
-            "must gate on the prompt event"
-        );
-        assert!(!ASSET.contains("agent.report_state"), "state stays herdr's");
+    fn the_script_hands_its_json_to_amon() {
+        // What it reports, and on which event, is hook_input.rs's to test.
+        assert!(ASSET.contains("hook input grok-prompt"));
+        assert!(!ASSET.contains("python"), "no interpreter (issue #77)");
     }
 }

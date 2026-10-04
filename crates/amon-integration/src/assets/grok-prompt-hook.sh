@@ -8,83 +8,11 @@
 #
 # installed by amon
 # managed by amon; `amon remove grok` deletes it and its config.
-# AMON_GROK_PROMPT_HOOK_VERSION=1
+# AMON_GROK_PROMPT_HOOK_VERSION=2
 
-set -eu
-
-hook_input_file="$(mktemp "${TMPDIR:-/tmp}/amon-grok-prompt.XXXXXX")" || exit 0
-trap 'rm -f "$hook_input_file"' EXIT HUP INT TERM
-cat >"$hook_input_file" 2>/dev/null || true
-
-[ "${AMON_ENV:-}" = "1" ] || exit 0
-[ -n "${AMON_SOCKET_PATH:-}" ] || exit 0
-[ -n "${AMON_AGENT_ID:-}" ] || exit 0
-command -v python3 >/dev/null 2>&1 || exit 0
-
-AMON_HOOK_INPUT_FILE="$hook_input_file" python3 - <<'PY'
-import json
-import os
-import socket
-import time
-
-agent_id = os.environ.get("AMON_AGENT_ID")
-socket_path = os.environ.get("AMON_SOCKET_PATH")
-hook_input_file = os.environ.get("AMON_HOOK_INPUT_FILE")
-if not agent_id or not socket_path:
-    raise SystemExit(0)
-
-hook_input = {}
-if hook_input_file:
-    try:
-        with open(hook_input_file, encoding="utf-8") as handle:
-            content = handle.read()
-        if content.strip():
-            hook_input = json.loads(content)
-    except Exception:
-        hook_input = {}
-
-
-def first_text(*keys):
-    for key in keys:
-        value = hook_input.get(key)
-        if isinstance(value, str) and value.strip():
-            return value
-    return None
-
-
-# grok emits event and field names in several casings; accept them all, the
-# way herdr's vendored grok hook does.
-event = first_text("hook_event_name", "hookEventName") or ""
-if event not in ("user_prompt_submit", "userPromptSubmit", "UserPromptSubmit"):
-    raise SystemExit(0)
-prompt = first_text("prompt", "userPrompt", "user_prompt", "message", "text")
-if not prompt:
-    raise SystemExit(0)
-session_id = os.environ.get("GROK_SESSION_ID") or first_text("session_id", "sessionId")
-agent_session_id = session_id if isinstance(session_id, str) and session_id else None
-
-params = {
-    "agent_id": agent_id,
-    "source": "amon:grok",
-    "agent": "grok",
-    "seq": time.time_ns(),
-    "text": prompt,
-    "kind": "prompt",
-}
-if agent_session_id:
-    params["agent_session_id"] = agent_session_id
-request = {"id": "amon-prompt:1", "method": "agent.report_activity", "params": params}
-
-try:
-    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    client.settimeout(0.5)
-    client.connect(socket_path)
-    client.sendall((json.dumps(request) + "\n").encode())
-    try:
-        client.recv(4096)
-    except Exception:
-        pass
-    client.close()
-except Exception:
-    pass
-PY
+if [ "${AMON_ENV:-}" = "1" ] && [ -n "${AMON_AGENT_ID:-}" ] && [ -n "${AMON_SOCKET_PATH:-}" ]; then
+  # The JSON on stdin is read by amon itself, in Rust (issue #77).
+  "${AMON_BIN_PATH:-amon}" hook input grok-prompt 2>/dev/null && exit 0
+fi
+cat >/dev/null 2>&1
+exit 0

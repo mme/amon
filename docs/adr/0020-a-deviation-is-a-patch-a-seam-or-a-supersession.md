@@ -62,7 +62,13 @@ semantic patch should be turned away toward supersession; a fork of the config
 editor should be turned away toward a seam. If either happens anyway, this
 ADR, not taste, is what the review points at.
 
-`SUPERSEDED` is empty today. The first candidate is known — the python-spawning
-hook assets, replaced by scripts that call `amon hook` — but that replacement
-is its own change, made when its feature needs it, not as a side effect of
-writing the rule down.
+The first supersession is the python-spawning hook assets (issue #77). herdr's
+installer still runs whole — it is what edits each agent's config — and amon
+then writes its own script over the one it installed: a few lines of shell
+that hand the agent's JSON to `amon hook input`, where
+`crates/amon-integration/src/hook_input.rs` applies the rules herdr's Python
+did. The script keeps herdr's `AMON_INTEGRATION_ID`/`VERSION` markers, so the
+vendored status check reads it unchanged, and adds `AMON_HOOK_INPUT=1`, so an
+install from before reads as outdated and `amon setup --upgrade` replaces it.
+The twelve vendored scripts are listed in `SUPERSEDED`: their rule changes
+upstream are the ones to port.

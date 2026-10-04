@@ -18,13 +18,22 @@ pub fn run(version: &str) -> Result<(), Box<dyn std::error::Error>> {
             .installed_version
             .map(|version| version.to_string())
             .unwrap_or_else(|| "?".into());
-        print_line(
-            status.label,
-            &describe_state(
+        // Outdated at the current version: herdr's python3 script from before
+        // amon read hooks itself (issue #77).
+        let state = if status.state == InstallState::Outdated
+            && status.installed_version == Some(status.expected_version)
+        {
+            "outdated (still uses python3)".to_string()
+        } else {
+            describe_state(
                 status.state,
                 &installed,
                 &status.expected_version.to_string(),
-            ),
+            )
+        };
+        print_line(
+            status.label,
+            &state,
             &where_it_is(status.state, &status.path),
         );
     }

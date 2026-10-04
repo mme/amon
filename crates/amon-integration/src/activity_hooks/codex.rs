@@ -28,7 +28,7 @@ const INSTALL_NAME: &str = "amon-prompt-state.sh";
 const ASSET: &str = include_str!("../assets/codex-prompt-hook.sh");
 const EVENT: &str = "UserPromptSubmit";
 /// Mirrors the `AMON_CODEX_PROMPT_HOOK_VERSION` stamp in the script.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 fn hook_path() -> io::Result<PathBuf> {
     Ok(codex_dir()?.join(INSTALL_NAME))

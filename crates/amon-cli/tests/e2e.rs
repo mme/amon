@@ -787,6 +787,36 @@ sleep 5
 }
 
 #[test]
+fn a_hooks_json_read_by_amon_reaches_the_registry() {
+    // The whole chain an installed hook runs (issue #77): the wrapper names
+    // its own binary in AMON_BIN_PATH, the hook pipes the agent's JSON into
+    // `amon hook input`, and amon - not python3 - turns it into the report.
+    let sandbox = Sandbox::new();
+    let agent = sandbox.fake_agent(
+        "claude",
+        r#"#!/bin/sh
+printf '{"hook_event_name":"SessionStart","session_id":"session-rust","transcript_path":"/tmp/r.jsonl","source":"startup"}' \
+  | "$AMON_BIN_PATH" hook input claude session
+sleep 5
+"#,
+    );
+    let mut child = sandbox.spawn_agent(&[&path_str(&agent)]);
+
+    let agents = sandbox.wait_for_status("the session amon read from the hook's JSON", |agents| {
+        agent_named(agents, "claude")
+            .is_some_and(|agent| agent["agent_session_id"] == serde_json::json!("session-rust"))
+    });
+    let entry = agent_named(&agents, "claude").expect("registered");
+    assert_eq!(
+        entry["agent_session_path"],
+        serde_json::json!("/tmp/r.jsonl")
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
 fn a_prompt_hook_report_becomes_the_turns_activity() {
     // The amon-only prompt hook (ADR-0020): a UserPromptSubmit report over the
     // wrapper socket opens a turn, and its exact text — not the screen's

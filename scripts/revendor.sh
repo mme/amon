@@ -130,6 +130,22 @@ vendor_file() {
 # diff review that watches the code we run. Reported separately instead:
 # a diffstat inline, the full diff under target/ for reading.
 SUPERSEDED=(
+    # The python3 state hooks: amon writes its own script over each at install
+    # and reads the JSON in Rust (crates/amon-integration/src/hook_input.rs,
+    # superseded_hooks.rs; issue #77). Upstream changes to their rules must be
+    # ported there.
+    "crates/amon-integration/src/vendor/integration/assets/antigravity_cli/amon-agent-state.sh"
+    "crates/amon-integration/src/vendor/integration/assets/claude/amon-agent-state.sh"
+    "crates/amon-integration/src/vendor/integration/assets/codex/amon-agent-state.sh"
+    "crates/amon-integration/src/vendor/integration/assets/copilot/amon-agent-state.sh"
+    "crates/amon-integration/src/vendor/integration/assets/cursor/amon-agent-state.sh"
+    "crates/amon-integration/src/vendor/integration/assets/devin/amon-agent-state.sh"
+    "crates/amon-integration/src/vendor/integration/assets/droid/amon-agent-state.sh"
+    "crates/amon-integration/src/vendor/integration/assets/grok/amon-agent-state.sh"
+    "crates/amon-integration/src/vendor/integration/assets/kimi/amon-agent-state.sh"
+    "crates/amon-integration/src/vendor/integration/assets/mastracode/amon-agent-state.sh"
+    "crates/amon-integration/src/vendor/integration/assets/qodercli/amon-agent-state.sh"
+    "crates/amon-integration/src/vendor/integration/assets/qwen/amon-agent-session.sh"
 )
 
 report_superseded_drift() {
