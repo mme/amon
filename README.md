@@ -45,8 +45,8 @@ long it has been at it. Pick one and Enter puts you in front of it.
 close-window key to ask the panel first, so the window underneath survives.
 
 `Super+Alt+A` opens the start agent panel: the agents you started, one row per
-agent and folder, most recent first: the agent, the project, the branch it
-was on, the folder, and when you last started it. Pick one and a new terminal opens there running that
+agent and folder, most recent first: the agent, the project, the folder, and
+when you last started it. Pick one and a new terminal opens there running that
 agent again - bare, without the arguments it had. Agents you started on
 another machine over SSH are on the list too and start there again. The list
 is `~/.local/state/amon/started.toml`, which you can edit; it keeps the last

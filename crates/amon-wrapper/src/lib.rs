@@ -195,7 +195,6 @@ pub fn run(launch: Launch) -> std::io::Result<AgentExit> {
             dir: entry.cwd.clone(),
             project: location.project.clone(),
             subpath: location.subpath.clone(),
-            branch: location.branch.clone(),
             host: None,
             ssh: Vec::new(),
             last_started: amon_protocol::started::datetime_from_unix(now_secs()),

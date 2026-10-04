@@ -33,9 +33,6 @@ pub struct Row {
     pub project: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subpath: Option<String>,
-    /// The branch it was on when last started; absent outside a repository.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub branch: Option<String>,
     /// The folder, with the home as `~`.
     pub path: String,
     /// "5 min ago", "yesterday", "Sep 28".
@@ -56,7 +53,6 @@ pub fn rows(entries: &[Started], now: i64, home: &str, exists: impl Fn(&str) -> 
             host: entry.host.clone(),
             project: entry.project.clone(),
             subpath: entry.subpath.clone(),
-            branch: entry.branch.clone(),
             path: started::display_dir(&entry.dir, entry.host.is_some(), home),
             when: started::when(entry.last_started_secs(), now),
         })
@@ -86,12 +82,8 @@ pub fn list(json: bool) -> Result<(), Box<dyn std::error::Error>> {
             None => row.path.clone(),
         };
         println!(
-            "{:<14} {:<20} {:<24} {:<40} {}",
-            row.agent,
-            project,
-            row.branch.as_deref().unwrap_or(""),
-            folder,
-            row.when
+            "{:<14} {:<20} {:<48} {}",
+            row.agent, project, folder, row.when
         );
     }
     Ok(())
@@ -202,7 +194,6 @@ mod tests {
             dir: dir.into(),
             project: None,
             subpath: None,
-            branch: None,
             host: host.map(str::to_owned),
             ssh: Vec::new(),
             last_started: started::datetime_from_unix(secs),

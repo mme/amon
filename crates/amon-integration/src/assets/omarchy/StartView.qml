@@ -24,7 +24,7 @@ FocusScope {
   id: view
 
   // The rows from `amon start --json`: { agent, dir, host?, project?,
-  // subpath?, branch?, path, when }.
+  // subpath?, path, when }.
   property var rows: []
 
   property color foreground: Color.menu.text
@@ -79,9 +79,9 @@ FocusScope {
 
   readonly property int columnGap: Style.space(10)
 
-  // Five columns, left to right: the agent, the project, the branch, the
-  // folder and when. Every column but the folder is as wide as its widest
-  // value (the project and branch capped), so each starts at the same place
+  // Four columns, left to right: the agent, the project, the folder and
+  // when. Every column but the folder is as wide as its widest value (the
+  // project capped), so each starts at the same place
   // on every row; the folder takes the rest and gives way from the front,
   // where the path matters least.
   function widest(field, cap) {
@@ -91,7 +91,6 @@ FocusScope {
   }
   readonly property int agentWidth: view.widest("agent", Style.space(160))
   readonly property int projectWidth: view.widest("project", Style.space(200))
-  readonly property int branchWidth: view.widest("branch", Style.space(180))
   readonly property int whenWidth: view.widest("when", 0)
 
   // What a cell says. The project is the repository's name, or outside one
@@ -100,14 +99,20 @@ FocusScope {
   function cell(row, field) {
     if (field === "agent") return row.agent || ""
     if (field === "when") return row.when || ""
-    if (field === "branch") return row.branch || ""
     if (field === "project") {
       if (row.project) return row.project
       const path = row.path || row.dir || ""
       const cut = path.lastIndexOf("/")
       return cut < 0 ? path : path.slice(cut + 1)
     }
-    if (field === "folder") return (row.host ? row.host + ": " : "") + (row.path || row.dir || "")
+    if (field === "folder") {
+      // Blank when it would only repeat the project - an agent started in
+      // the home folder is `~` and `~` otherwise. A remote one keeps its
+      // host, which the project column does not say.
+      const path = row.path || row.dir || ""
+      if (!row.host && path === view.cell(row, "project")) return ""
+      return (row.host ? row.host + ": " : "") + path
+    }
     return ""
   }
 
@@ -250,19 +255,6 @@ FocusScope {
       elide: Text.ElideRight
     }
 
-    // The branch, plain: which line of work, blank outside a repository.
-    Text {
-      id: branchCell
-      x: projectCell.x + view.projectWidth + view.columnGap
-      width: view.branchWidth
-      anchors.verticalCenter: parent.verticalCenter
-      text: view.cell(row.entry, "branch")
-      color: view.foreground
-      font.family: view.fontFamily
-      font.pixelSize: Style.font.body
-      elide: Text.ElideRight
-    }
-
     // The folder, dim. When it is longer than its column, every row shows its
     // end - the folder's own name - and the row under the cursor reads the
     // whole of it the way a music player shows a long title: from the start,
@@ -271,7 +263,7 @@ FocusScope {
     // has two lines moving at once.
     Item {
       id: folderCell
-      x: branchCell.x + view.branchWidth + view.columnGap
+      x: projectCell.x + view.projectWidth + view.columnGap
       width: Math.max(0, whenCell.x - x - view.columnGap)
       height: parent.height
       clip: true
