@@ -105,7 +105,14 @@ FocusScope {
       const cut = path.lastIndexOf("/")
       return cut < 0 ? path : path.slice(cut + 1)
     }
-    if (field === "folder") return (row.host ? row.host + ": " : "") + (row.path || row.dir || "")
+    if (field === "folder") {
+      // Blank when it would only repeat the project - an agent started in
+      // the home folder is `~` and `~` otherwise. A remote one keeps its
+      // host, which the project column does not say.
+      const path = row.path || row.dir || ""
+      if (!row.host && path === view.cell(row, "project")) return ""
+      return (row.host ? row.host + ": " : "") + path
+    }
     return ""
   }
 
