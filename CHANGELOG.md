@@ -8,6 +8,39 @@ the machinery, not decoration.
 
 <!-- next -->
 
+## v0.6.0
+
+- **Remote agents over ssh**: ssh into another machine running amon and
+  start an agent there, and it joins the bar and panel here just like a
+  local one - and leaves when it ends. `amon setup ssh` makes plain `ssh`
+  carry it, the same opt-in alias the other agents get. The far end can be
+  an Apple Silicon Mac, headless - the desktop panel stays Omarchy's, but
+  the CLI and remote agents work there.
+- **A start panel for picking up where you left off**: `Super+Alt+A`, or
+  the Micro 2's new *start* action, opens a panel of agents you've started
+  before, local or over ssh, with their project, folder and when - pick one
+  to start it again in a new terminal, or reach the host again the same
+  way. A folder name too long for its column glides to show the rest, on
+  the row under the cursor. `amon start` on the command line lists the same
+  history, and `amon start <agent> --dir <folder> [--host <host>]` replays
+  an entry.
+- **The Micro 2's lit keys can mean workspaces again**: set
+  `[devices.micro2] agent_keys = "workspaces"` to return to the behavior
+  before v0.5.0 - key N stands for workspace N, lit by its most urgent
+  agent, and a tap is `Super+N`. `"agents"`, where the six keys are the
+  panel's first six agents, stays the default.
+- **Super+N cycles on repeat**: pressing it again while already on a
+  workspace's neediest agent now moves to the next agent there instead of
+  sitting still; the Micro 2's workspace keys do the same.
+- **Hooks work without python3**: amon's own prompt hooks and herdr's state
+  hooks now hand their JSON straight to `amon` instead of shelling out to
+  python3, so a machine without Python still gets session tracking and
+  prompts. `amon doctor` flags a hook still calling python3 as outdated,
+  and `amon setup --upgrade` replaces it.
+- **Directory rows line up with project rows**: outside a git repository,
+  the panel's directory cell now starts at the same left edge a project row
+  does, instead of being pinned to the column's right.
+
 ## v0.5.1
 
 - **No more ghost rows from other homes**: fixes a bug where the daemon
