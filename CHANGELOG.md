@@ -10,11 +10,13 @@ the machinery, not decoration.
 
 ## v0.6.1
 
-- **Fixed underlined mnemonics on Omarchy 4.0.4**: on the latest Omarchy, the
-  bar's idle workspace numbers and the panel's Float button were showing
-  literal markup (`<u>1</u>`, `<u>F</u>loat`) instead of an underlined
-  letter, because that release draws those labels as plain text. Both now
-  render the underline correctly again.
+- **Underlines show again on Omarchy 4.0.4**: that release draws the bar's
+  and the panel's button labels as plain text, so the markup amon gave them
+  showed up as tags: a workspace whose agent was at rest read `<u>1</u>`,
+  crowding its neighbours, and the panel's pop-out button read
+  `<u>F</u>loat`. The number is underlined again, and so is the F.
+- **Upgrading**: run the installer, or `just install`, then `amon setup
+  --upgrade` to put the fixed bar widget and panel in place.
 
 ## v0.6.0
 
