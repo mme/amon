@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "amon-cli"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "amon-daemon",
  "amon-integration",
@@ -29,7 +29,7 @@ dependencies = [
 
 [[package]]
 name = "amon-daemon"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "amon-detect",
  "amon-hypr",
@@ -45,7 +45,7 @@ dependencies = [
 
 [[package]]
 name = "amon-detect"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "libc",
  "portable-pty",
@@ -59,14 +59,14 @@ dependencies = [
 
 [[package]]
 name = "amon-hypr"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "amon-integration"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "amon-protocol",
  "jsonc-parser",
@@ -80,7 +80,7 @@ dependencies = [
 
 [[package]]
 name = "amon-protocol"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "libc",
  "schemars",
@@ -92,7 +92,7 @@ dependencies = [
 
 [[package]]
 name = "amon-term"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "amon-detect",
  "libghostty-vt",
@@ -105,7 +105,7 @@ dependencies = [
 
 [[package]]
 name = "amon-wrapper"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "amon-detect",
  "amon-hypr",

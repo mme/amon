@@ -8,6 +8,16 @@ the machinery, not decoration.
 
 <!-- next -->
 
+## v0.6.1
+
+- **Underlines show again on Omarchy 4.0.4**: that release draws the bar's
+  and the panel's button labels as plain text, so the markup amon gave them
+  showed up as tags: a workspace whose agent was at rest read `<u>1</u>`,
+  crowding its neighbours, and the panel's pop-out button read
+  `<u>F</u>loat`. The number is underlined again, and so is the F.
+- **Upgrading**: run the installer, or `just install`, then `amon setup
+  --upgrade` to put the fixed bar widget and panel in place.
+
 ## v0.6.0
 
 - **Remote agents over SSH**: an agent started under amon on another
