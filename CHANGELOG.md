@@ -8,6 +8,56 @@ the machinery, not decoration.
 
 <!-- next -->
 
+## v0.6.0
+
+- **Remote agents over SSH**: an agent started under amon on another
+  machine joins the bar and panel here like a local one, with its host
+  leading the row: sounds, `amon status`, `Super+number` and the Micro 2's
+  keys all reach it, and its row leaves when the agent ends. The local
+  side has to run `ssh` through amon: `amon ssh <host>`, or `amon setup
+  ssh` for an opt-in `alias ssh='amon ssh'`. Anything that carries terminal
+  bytes works (plain OpenSSH, Tailscale SSH, jump hosts) with no port
+  forwarding and no config. An SSH session with no amon at the far end gets
+  no row, and `ssh host cat x > x` stays byte-exact. Not yet: agents inside
+  herdr or luvus on the remote host, tmux without `allow-passthrough`, mosh.
+- **amon runs on Apple Silicon Macs, headless**: the installer picks the
+  macOS build. The wrapper, daemon and CLI all work there, so a Mac can be
+  the far end of a remote agent. The bar, panel and Micro 2 stay on the
+  Omarchy desktop.
+- **The start agent panel**: `Super+Alt+A` opens the agents you started,
+  most recent first, one row per agent and folder: the agent, its project
+  and folder, and when you last started it. Remote rows lead with their
+  host. Pick one, and a new terminal opens in that folder running the
+  agent fresh (never `--resume`). A remote row reaches the host over the
+  same SSH options. The history starts with this version, holds the last
+  25, and lives in `~/.local/state/amon/started.toml`, which you can edit by
+  hand. `amon start` lists it, and `amon start <agent> --dir <folder>
+  [--host <host>]` starts one from the command line.
+- **The Micro 2's second macro key opens the start agent panel**: the new
+  `start` action is `macro_2`'s default, and a second press closes the
+  panel. The dial walks the panel's rows and the click starts one. To keep
+  the old key, set `macro_2 = "exec:omarchy-agent --pick"` under
+  `[devices.micro2.keys]`.
+- **The Micro 2's lit keys can stand for workspaces again**: set `agent_keys
+  = "workspaces"` under `[devices.micro2]` for the behavior from before
+  v0.5.0. Key N is workspace N, lit by its most urgent agent, and a tap
+  lands where `Super+N` would. Tapping the same key again moves to the next
+  agent on that workspace, in the panel's order. `Super+N` itself does not
+  cycle. `"agents"`, where the keys are the panel's first six agents, stays
+  the default.
+- **Hooks no longer need python3**: every hook amon installs, including the
+  ones that replace herdr's state hooks, hands its JSON to `amon hook input`.
+  A machine without Python now gets sessions and prompts on its rows.
+- **A directory row lines up with a project row**: outside a repository,
+  the panel's location now starts at the column's left edge, like a
+  project's does.
+- **Config**: `[devices.micro2]` gains `agent_keys`. `amon focus` gains
+  `--cycle`. `docs/protocol.schema.json` is updated.
+- **Upgrading**: run the installer, or `just install`, then `amon setup
+  --upgrade` once. That replaces the hooks (until then `amon doctor` reports
+  them as outdated and the wrapper nudges at launch), refreshes the panel,
+  and adds the `Super+Alt+A` binding.
+
 ## v0.5.1
 
 - **No more ghost rows from other homes**: fixes a bug where the daemon
