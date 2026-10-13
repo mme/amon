@@ -8,6 +8,14 @@ the machinery, not decoration.
 
 <!-- next -->
 
+## v0.6.1
+
+- **Fixed underlined mnemonics on Omarchy 4.0.4**: on the latest Omarchy, the
+  bar's idle workspace numbers and the panel's Float button were showing
+  literal markup (`<u>1</u>`, `<u>F</u>loat`) instead of an underlined
+  letter, because that release draws those labels as plain text. Both now
+  render the underline correctly again.
+
 ## v0.6.0
 
 - **Remote agents over SSH**: an agent started under amon on another
