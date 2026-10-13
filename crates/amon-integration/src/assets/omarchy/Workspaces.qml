@@ -16,7 +16,8 @@
 //
 //   1. `moduleName` names this plugin rather than Omarchy's
 //   2. the `AgentStates` object
-//   3. the `agentState` property and the `text` expression that reads it
+//   3. the `agentState` property, the `text` expression that reads it, and
+//      the stand-in label that underlines an idle agent's number
 //   4. `focusWorkspace` goes through `amon focus`
 //
 // Anything else differing from upstream is drift, and the tests in fork.rs and
@@ -122,32 +123,55 @@ BarWidget {
             : agentState === "working" ? agents.spinner                  // braille spinner
             : agentState === "blocked" ? agents.blockedGlyph            // help circle
             : agentState === "done" ? agents.doneGlyph                   // check circle
-            // An agent that has come to rest asks for nothing, so the workspace
-            // keeps its number and is underlined: an agent is here and wants
-            // nothing.
-            //
-            // Bold was tried first and could not be seen. A real bold face is
-            // there — the family resolves through fontconfig to one that has
-            // one, so nothing was being synthesized — but weight is a property
-            // of a glyph you already know the shape of, and a lone digit on a
-            // bar has nothing beside it to be heavier *than*. An underline adds
-            // a mark instead of thickening one, which reads with no comparison
-            // available, and it is drawn in descender space so the digit does
-            // not move.
-            //
-            // Not opacity, which upstream already owns: it dims a workspace
-            // holding no windows, so a fainter number would place an idle agent
-            // between empty and occupied — quieter exactly where more presence
-            // is wanted. Markup rather than a font property because the label
-            // exposes only family and size.
-            : agentState === "idle" ? "<u>" + label + "</u>"
             : label
+        // An agent that has come to rest asks for nothing, so the workspace
+        // keeps its number and underlines it: an agent is here and wants
+        // nothing.
+        //
+        // Bold was tried first and could not be seen. A real bold face is
+        // there — the family resolves through fontconfig to one that has one,
+        // so nothing was being synthesized — but weight is a property of a
+        // glyph you already know the shape of, and a lone digit on a bar has
+        // nothing beside it to be heavier *than*. An underline adds a mark
+        // instead of thickening one, which reads with no comparison available,
+        // and it is drawn in descender space so the digit does not move.
+        //
+        // Not opacity, which upstream already owns: it dims a workspace holding
+        // no windows, so a fainter number would place an idle agent between
+        // empty and occupied — quieter exactly where more presence is wanted.
+        //
+        // The underlined number is a stand-in label of the fork's own, because
+        // upstream's cannot carry one: it exposes only family and size, and
+        // since Omarchy 4.0.4 it is plain text, so the `<u>` markup this once
+        // passed it reached the bar as itself. Not U+0332 either: the bar's
+        // font has no combining low line, and Qt draws a fallback font's as a
+        // glyph of its own beside the digit. `labelVisible` is upstream's own
+        // switch for a button that draws its content itself.
+        readonly property bool underlined: agentState === "idle" && text === label
+        labelVisible: !underlined
         opacity: occupied || focused ? 1 : 0.5
         horizontalMargin: 6
         verticalPadding: 6
         fixedWidth: root.vertical ? root.barSize : Style.space(20)
         fixedHeight: root.barSize
         onPressed: function() { root.focusWorkspace(modelData) }
+        // The stand-in for upstream's label while `underlined` holds, drawn the
+        // way WidgetButton draws its own so the digit neither moves nor
+        // changes, with the one font property upstream does not expose.
+        Text {
+          visible: parent.underlined
+          anchors.centerIn: parent
+          textFormat: Text.PlainText
+          text: parent.text
+          color: parent.active && parent.useActiveColor ? parent.activeColor : parent.foreground
+          font.family: parent.fontFamily
+          font.pixelSize: parent.fontSize
+          font.underline: true
+          renderType: Text.NativeRendering
+          rotation: parent.textRotation
+          horizontalAlignment: Text.AlignHCenter
+          verticalAlignment: Text.AlignVCenter
+        }
       }
     }
   }

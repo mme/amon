@@ -655,6 +655,57 @@ fn every_way_to_an_agent_goes_through_amon_focus() {
     }
 }
 
+/// Omarchy's kit draws its labels as plain text since 4.0.4, so markup handed
+/// to a `WidgetButton` or a `Button` reaches the screen as its own tags: the
+/// bar once read `<u>1</u>` for a workspace whose agent was at rest.
+///
+/// The bar's underline is a label of the fork's own, set with a font property,
+/// so it carries no markup at all. The Float button's one tag is handed over
+/// only after the label it lands in has been switched to styled text.
+#[test]
+fn no_markup_reaches_a_plain_text_label() {
+    const PANEL: &str = include_str!("../src/assets/omarchy/AgentPanel.qml");
+    const START: &str = include_str!("../src/assets/omarchy/StartView.qml");
+    const WORKSPACES: &str = include_str!("../src/assets/omarchy/Workspaces.qml");
+
+    let markup = |source: &'static str| -> Vec<&'static str> {
+        source
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with("//"))
+            .filter(|line| ["<u>", "<b>", "<i>"].iter().any(|tag| line.contains(tag)))
+            .collect()
+    };
+    for (name, source) in [
+        ("AgentPanel.qml", PANEL),
+        ("AgentStates.qml", AGENT_STATES),
+        ("StartView.qml", START),
+        ("Workspaces.qml", WORKSPACES),
+    ] {
+        assert!(markup(source).is_empty(), "{name} hands markup to a label");
+    }
+    assert!(
+        WORKSPACES.contains("labelVisible: !underlined")
+            && WORKSPACES.contains("font.underline: true"),
+        "an idle workspace's number is underlined by the fork's own label"
+    );
+    assert_eq!(
+        markup(AGENTS_VIEW),
+        [r#"floatButton.text = "<u>F</u>loat""#],
+        "the Float button's tag is the view's only markup"
+    );
+    let switched = AGENTS_VIEW
+        .find("label.textFormat = Text.StyledText")
+        .expect("the Float label is switched to styled text");
+    let handed = AGENTS_VIEW
+        .find(r#"floatButton.text = "<u>F</u>loat""#)
+        .expect("the Float label gets its tag");
+    assert!(
+        switched < handed,
+        "the label is switched before it gets the tag"
+    );
+}
+
 /// The pane and `amon status` round ages the same way.
 ///
 /// The rule now exists twice — once in Rust for the CLI, once in QML because

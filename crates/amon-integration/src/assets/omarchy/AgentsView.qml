@@ -470,6 +470,7 @@ FocusScope {
     // icon and a label together — so the whole rectangle is the target, not
     // just the glyph in it.
     Button {
+      id: floatButton
       // Material Design's picture-in-picture, in the family every other icon in
       // this shell comes from. It promises a small pane that stays put over
       // everything else, and the window rule amon installs makes that true: the
@@ -484,10 +485,8 @@ FocusScope {
       // is why nobody knows the Tailscale panel copies an IP on `c`. Showing
       // the key at all is the departure; how it is shown is just taste.
       //
-      // Markup, because underlining part of a string is not something a font
-      // property can do. Button's label sets no `textFormat`, so it is AutoText
-      // and renders this.
-      text: "<u>F</u>loat"
+      // Plain until the label is ready for markup; see onCompleted.
+      text: "Float"
       tooltipText: "Open in a floating window that stays on screen"
       // Muted, at the same weight as `[Super+Drag to move]` — the two are the
       // same kind of thing in the same corner: an aside about the window, not
@@ -496,6 +495,31 @@ FocusScope {
       foreground: view.dim
       fontFamily: view.fontFamily
       onClicked: view.popOutRequested()
+
+      // Underlining one letter takes markup, which no font property can stand
+      // in for, and since Omarchy 4.0.4 Button draws its label as plain text,
+      // so `<u>F</u>loat` reached the screen as itself. Button has no property
+      // to say otherwise, so the label it drew is found and switched back to
+      // styled text, and only then handed the markup: should a later Button
+      // draw its label some other way, the word stays plain and unmarked
+      // rather than showing its tags. Not U+0332 instead: the font has no
+      // combining low line, and Qt draws a fallback font's beside the letter
+      // rather than under it.
+      Component.onCompleted: {
+        const find = item => {
+          for (const child of item.children) {
+            if (child.textFormat !== undefined && child.text === floatButton.text) return child
+            const found = find(child)
+            if (found) return found
+          }
+          return null
+        }
+        const label = find(floatButton)
+        if (label) {
+          label.textFormat = Text.StyledText
+          floatButton.text = "<u>F</u>loat"
+        }
+      }
     }
   }
 
