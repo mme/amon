@@ -23,7 +23,7 @@ pub enum DesktopTarget {
     /// The Omarchy shell's bar (Quickshell), 4.5 and later: the widget is a
     /// fork of that release's, and leans on kit it introduced.
     Omarchy,
-    /// The pane Super+A opens, listing every agent amon can see.
+    /// The pane Ctrl+Alt+A opens, listing every agent amon can see.
     Panel,
 }
 

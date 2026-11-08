@@ -21,8 +21,11 @@ the machinery, not decoration.
   the agent. The widget also gains everything else 4.5's has: a block of ten
   workspaces per monitor, workspaces visiting from an unplugged monitor, and
   the wheel moving along the row. The widget needs Omarchy 4.5 or later.
+- **The agent panel opens on `Ctrl+Alt+A`**, not `Super+A`. Omarchy 4.5
+  gave Super+A to Select all, and amon's binding was taking it away. The
+  start agent panel stays on Super+Alt+A.
 - **Upgrading**: run the installer, or `just install`, then `amon setup
-  --upgrade` to put the new bar widget in place.
+  --upgrade` to put the new bar widget and the new key in place.
 
 ## v0.6.1
 

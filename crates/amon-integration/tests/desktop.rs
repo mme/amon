@@ -462,7 +462,7 @@ fn the_widget_ranks_states_the_way_rust_does() {
 }
 
 /// The pane's header, which counts what the bar widget's model tallies. Shared
-/// by the Super+A modal and the popped-out window, so this is the one file that
+/// by the Ctrl+Alt+A modal and the popped-out window, so this is the one file that
 /// decides how either of them names a state.
 const AGENTS_VIEW: &str = include_str!("../src/assets/omarchy/AgentsView.qml");
 
@@ -826,7 +826,7 @@ fn qml_function<'a>(source: &'a str, name: &str) -> &'a str {
 ///
 /// The key exists twice — once in Rust for Super+N, once in QML because the
 /// pane cannot call it — and two copies of one rule drift. If they disagree,
-/// Super+A and Super+N answer "what wants me most" differently, and whichever
+/// Ctrl+Alt+A and Super+N answer "what wants me most" differently, and whichever
 /// one you trusted second taught you to trust neither.
 #[test]
 fn the_pane_opens_where_focus_would_land() {

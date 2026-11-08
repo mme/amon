@@ -504,7 +504,7 @@ pub fn remove_everything(assume_yes: bool) -> Result<(), Box<dyn std::error::Err
                     println!("  {label} — {}", owned_by(*target))
                 }
                 Action::RemoveWidget => println!("  workspace switcher widget"),
-                Action::RemovePanel => println!("  the Super+A agent panel"),
+                Action::RemovePanel => println!("  the Ctrl+Alt+A agent panel"),
                 Action::RemoveBindings => println!("  Super+0-9 agent bindings"),
                 Action::RemoveDucking => println!("  audio ducking (wireplumber drop-in)"),
                 _ => {}
@@ -783,15 +783,15 @@ fn apply(actions: &[Action]) -> Result<(), Box<dyn std::error::Error>> {
                     Ok(_) => report_panel(replacing_live_files),
                     Err(error) => {
                         failed = true;
-                        println!("✗ Super+A agent panel — {error}");
+                        println!("✗ Ctrl+Alt+A agent panel — {error}");
                     }
                 }
             }
             Action::RemovePanel => match desktop::uninstall(DesktopTarget::Panel) {
-                Ok(_) => println!("✓ Super+A agent panel — removed"),
+                Ok(_) => println!("✓ Ctrl+Alt+A agent panel — removed"),
                 Err(error) => {
                     failed = true;
-                    println!("✗ Super+A agent panel — {error}");
+                    println!("✗ Ctrl+Alt+A agent panel — {error}");
                 }
             },
             Action::SetupDucking => match ducking::install() {
@@ -918,15 +918,15 @@ fn report_widget(replaced_live_files: bool) {
 /// Says what setting the panel up actually did.
 ///
 /// The same accounting as the widget, for the same reason: a replaced file is
-/// installed but not drawn until the shell restarts, and Super+A opening the
+/// installed but not drawn until the shell restarts, and Ctrl+Alt+A opening the
 /// previous panel is exactly the kind of "it did nothing" that a tick over an
 /// unexplained restart would hide. The restart itself is reported once, after
 /// every plugin has been written.
 fn report_panel(replaced_live_files: bool) {
     if replaced_live_files {
-        println!("✓ Super+A agent panel — updated");
+        println!("✓ Ctrl+Alt+A agent panel — updated");
     } else {
-        println!("✓ Super+A agent panel — installed and enabled");
+        println!("✓ Ctrl+Alt+A agent panel — installed and enabled");
     }
 }
 

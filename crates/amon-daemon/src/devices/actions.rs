@@ -14,7 +14,7 @@ use std::process::{Command, Stdio};
 pub enum Action {
     /// Inert. Also what an unknown string parses to, loudly logged.
     None,
-    /// Toggle the Super+A agent panel.
+    /// Toggle the Ctrl+Alt+A agent panel.
     Panel,
     /// Toggle the Super+Alt+A start agent panel (ADR-0026).
     Start,
@@ -398,7 +398,7 @@ pub fn exec(command: &str) {
     );
 }
 
-/// Toggles the agent panel the way Super+A does.
+/// Toggles the agent panel the way Ctrl+Alt+A does.
 pub fn toggle_panel() {
     reap(
         Command::new("omarchy-shell")

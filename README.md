@@ -37,7 +37,7 @@ ones, with the same states, and jumping to one lands on the right pane, not
 just the right window. Wrap an agent, or host it in a runtime - either way it
 is one keystroke away.
 
-`Super+A` opens the agent panel from wherever you are, over whatever you are
+`Ctrl+Alt+A` opens the agent panel from wherever you are, over whatever you are
 doing: every agent, grouped by the workspace it is on, each row leading with the
 project it is working in and the branch it is on, then what it is doing and how
 long it has been at it. Pick one and Enter puts you in front of it.

@@ -1,7 +1,7 @@
 // amon's own — no upstream counterpart.
 //
 // What the pane shows, independent of what is showing it. The same view appears
-// inside the Super+A modal and inside the popped-out window, so the two cannot
+// inside the Ctrl+Alt+A modal and inside the popped-out window, so the two cannot
 // drift into being two different views of one thing.
 //
 // It knows nothing about layer shells, windows or dismissal. It is handed a
