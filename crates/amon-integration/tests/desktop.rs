@@ -685,8 +685,8 @@ fn no_markup_reaches_a_plain_text_label() {
         assert!(markup(source).is_empty(), "{name} hands markup to a label");
     }
     assert!(
-        WORKSPACES.contains("labelVisible: !underlined")
-            && WORKSPACES.contains("font.underline: true"),
+        WORKSPACES.contains("labelVisible: !standIn")
+            && WORKSPACES.contains("font.underline: parent.underlined"),
         "an idle workspace's number is underlined by the fork's own label"
     );
     assert_eq!(

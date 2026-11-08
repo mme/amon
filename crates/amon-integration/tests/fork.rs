@@ -6,25 +6,33 @@
 //! what the fork was derived from.
 //!
 //! Re-syncing means replacing both: the fixture with the new upstream file, and
-//! the shipped widget with upstream plus the four marked changes.
+//! the shipped widget with upstream plus the five marked changes.
 
-/// Omarchy Quattro's `shell/plugins/bar/widgets/Workspaces.qml`, taken
-/// 2026-08-02.
+/// Omarchy 4.5.0's `shell/plugins/bar/widgets/Workspaces.qml`, taken
+/// 2026-11-08.
 const UPSTREAM: &str = include_str!("fixtures/omarchy-Workspaces.qml");
 
 /// What amon ships: upstream, saying something else on the buttons.
 const FORK: &str = include_str!("../src/assets/omarchy/Workspaces.qml");
 
-/// The three upstream lines the fork is allowed to replace rather than keep.
+/// The upstream lines the fork is allowed to replace rather than keep.
 ///
 /// A plugin has to name itself and two plugins cannot share an id, so
 /// `moduleName` must change. `text` is the feature: what a workspace displays
 /// is computed in that expression from an `int`, and the widget reads no
 /// settings, so there is no other seam at which a workspace could be made to
-/// show its agent state. `root.bar.run` is the other half of the same feature:
-/// a click has to land where Super+N lands, and where a workspace click goes
-/// is decided in that one call.
-const REPLACED: [&str; 3] = ["moduleName:", "text:", "root.bar.run("];
+/// show its agent state. The two dispatches in `focusWorkspace` are the other
+/// half of the same feature: a click has to land where Super+N lands, and
+/// where a workspace click goes is decided in those two calls. And the click
+/// on the shown workspace cycles the layout only while the layout glyph is
+/// what it shows; in the state's turn it goes to the agent.
+const REPLACED: [&str; 5] = [
+    "moduleName:",
+    "text:",
+    "root.dispatch(\"o.workspaces.focus(",
+    "root.dispatch(\"hl.dsp.focus(",
+    "if (shown) root.cycleLayout()",
+];
 
 #[test]
 fn the_fork_keeps_every_upstream_line_it_does_not_replace() {

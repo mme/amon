@@ -212,6 +212,43 @@ in its title, so the bar still answers in the alphabet it listens to. What no
 longer holds is the stronger claim: codex's manifest matches those ten
 characters exactly, and the frames the bar draws are no longer among them.
 
+## Postscript: re-derived from Omarchy 4.5, and now five changes
+
+Omarchy 4.5 (2026-11) rewrote the widget this one forks and redrew the button
+it is built on, and the fork was re-derived from it — a re-application, as the
+file header prescribes, not a merge. Two things 4.5 did bear on the design
+above.
+
+**The bar now draws a lone symbol as an icon.** `WidgetButton` classifies a
+single character from the private-use planes or the arrows-and-symbols blocks
+as an icon glyph and hands it to `OpticalGlyph`, which measures the glyph's
+ink and scales it to fill the bar's icon size. That is right for the blocked
+and done glyphs, which are now centred better than before. It is wrong for the
+spinner: braille lives in those blocks, and the frames differ in ink box by
+construction — that difference *is* the motion — so each was blown up to the
+same size and the spinner breathed instead of turning. The frames are drawn by
+the fork's own stand-in label, the one the underline already needed, so they
+keep their cell. A configured `working` glyph goes the same way, whatever it
+is: animation frames must never be optically fitted one by one.
+
+**The shown workspace carries upstream's layout glyph.** 4.5 dropped the
+focus marker and shows, on the workspace a monitor is displaying, the layout
+it runs — a square tiles, a circle scrolls, a triangle floats — and a click on
+it cycles the layout as Super+L does. The body's "the focused workspace keeps
+upstream's focus marker" holds, with that glyph as the marker: amon's own
+default (which happened to be the same square) is gone, `focused` in the
+configuration only overrides, and the turn-taking with the agent's state is
+unchanged. The click follows what is shown: the layout glyph cycles the
+layout, the agent's state goes to the agent. That is the **fifth** marked
+change, and the drift tests count five.
+
+The rest of 4.5's widget came along unchanged, and so the fork now needs 4.5:
+a block of ten workspaces per monitor, each bar showing its own monitor's
+block and taking turns for the workspace *that* monitor shows; guest
+workspaces from an unplugged monitor; the wheel moving along the row; and the
+`ShellIpc` target `omarchy.workspaces`, kept under upstream's name on purpose
+so the layout toggle's refresh reaches the widget that replaced upstream's.
+
 ## Postscript: a rescan does not reload a changed widget
 
 `enable` asks the shell to rescan, and a rescan looks like it should be enough

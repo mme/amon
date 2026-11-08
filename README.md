@@ -368,7 +368,10 @@ Font is installed, which on Omarchy is everywhere.
 - `done = "󰗠"` - the glyph for an agent that finished while you were not
   looking. An agent at rest has no glyph; its workspace keeps the number,
   underlined.
-- `focused = "󱓻"` - the marker for the workspace you are on.
+- `focused = ""` - the marker for the workspace you are on. Unset, it is
+  Omarchy's own layout glyph (a square tiles, a circle scrolls, a triangle
+  floats), and clicking it cycles the layout as Super+L does; set, your
+  character takes the glyph's place and its click.
 
 **`[sound]`**
 

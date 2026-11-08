@@ -20,7 +20,8 @@ use crate::api_surface::InstallState;
 /// A desktop amon can install an Integration for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DesktopTarget {
-    /// The Omarchy shell's bar (Quickshell), Quattro and later.
+    /// The Omarchy shell's bar (Quickshell), 4.5 and later: the widget is a
+    /// fork of that release's, and leans on kit it introduced.
     Omarchy,
     /// The pane Super+A opens, listing every agent amon can see.
     Panel,
@@ -741,12 +742,24 @@ mod tests {
             ("Workspaces.qml", WORKSPACES_QML),
         ] {
             let code = code_of(qml);
-            assert!(!code.contains("Process"), "{name} must not spawn anything");
             assert!(
                 !code.contains("amon status"),
                 "{name} must not poll the CLI"
             );
+            // Since 4.5 upstream's widget runs Omarchy's own layout script,
+            // which is upstream's business; what amon's lines may run is
+            // `amon focus`, and only on a click.
+            for line in code.lines().filter(|line| line.contains("amon ")) {
+                assert!(
+                    line.contains("amon focus"),
+                    "{name} must not run amon except to focus: {line}"
+                );
+            }
         }
+        assert!(
+            !code_of(AGENT_STATES_QML).contains("Process"),
+            "AgentStates.qml must not spawn anything"
+        );
         assert!(AGENT_STATES_QML.contains("amond.sock"));
     }
 
@@ -756,9 +769,15 @@ mod tests {
         // workspace's label says, so the parts that make it Omarchy's widget
         // have to still be there and still be wired up. If this drifts, every
         // re-sync becomes a merge.
-        let wired = WORKSPACES_QML
-            .lines()
-            .any(|line| line.contains("onPressed:") && line.contains("focusWorkspace"));
+        // The press handler is a short block since 4.5; the call it makes
+        // is on one of the lines right after its opening.
+        let lines: Vec<&str> = WORKSPACES_QML.lines().collect();
+        let wired = lines.iter().enumerate().any(|(at, line)| {
+            line.contains("onPressed:")
+                && lines[at..lines.len().min(at + 4)]
+                    .iter()
+                    .any(|line| line.contains("focusWorkspace"))
+        });
         assert!(wired, "clicking still calls upstream's focusWorkspace");
         assert!(
             WORKSPACES_QML.contains("hl.dsp.focus({ workspace = "),
@@ -766,8 +785,11 @@ mod tests {
         );
         for landmark in [
             "workspaceIds()",
-            "Hyprland.focusedWorkspace",
+            "root.monitor.activeWorkspace",
             "toplevels.values.length",
+            "root.modeGlyph(root.activeMode)",
+            "root.cycleLayout()",
+            "root.scrollWorkspaces(delta)",
         ] {
             assert!(
                 WORKSPACES_QML.contains(landmark),
@@ -786,8 +808,8 @@ mod tests {
                 .lines()
                 .filter(|line| line.contains("// amon:"))
                 .count(),
-            4,
-            "exactly the four changes ADR-0008 allows, each marked"
+            5,
+            "exactly the five changes ADR-0008 allows, each marked"
         );
     }
 }
