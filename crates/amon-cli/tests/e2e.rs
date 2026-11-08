@@ -1551,7 +1551,7 @@ fn stale_panel_is_installed(sandbox: &Sandbox) {
 #[test]
 fn replacing_a_stale_panel_restarts_the_shell() {
     // The panel caches like any other plugin: replacing its QML under a
-    // running shell leaves Super+A opening the previous one, however current
+    // running shell leaves Ctrl+Alt+A opening the previous one, however current
     // the files on disk are. Without the restart, setup reports a tick over a
     // panel nobody can see — which is exactly how this was found.
     let sandbox = Sandbox::new();
@@ -1571,14 +1571,14 @@ fn replacing_a_stale_panel_restarts_the_shell() {
         .expect("the panel is still installed and enabled");
     let restart = calls
         .find("restart shell")
-        .expect("and then made the one Super+A opens");
+        .expect("and then made the one Ctrl+Alt+A opens");
     assert!(
         enable < restart,
         "restarting before the enable would reload the old registration: {calls}"
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("✓ Super+A agent panel — updated"),
+        stdout.contains("✓ Ctrl+Alt+A agent panel — updated"),
         "an update reads as one: {output:?}"
     );
     assert!(
@@ -3298,7 +3298,7 @@ fn setup_installs_the_panel_pane_beside_the_widget() {
         "and it is enabled, not just written: {calls}"
     );
     assert!(
-        String::from_utf8_lossy(&output.stdout).contains("✓ Super+A agent panel"),
+        String::from_utf8_lossy(&output.stdout).contains("✓ Ctrl+Alt+A agent panel"),
         "{output:?}"
     );
 }
@@ -3318,7 +3318,7 @@ fn removing_everything_takes_the_panel_pane() {
 }
 
 #[test]
-fn the_super_a_binding_opens_the_pane() {
+fn the_ctrl_alt_a_binding_opens_the_pane() {
     // The Lua file amon owns is what binds the key, so the plugin and its
     // shortcut are installed and removed together.
     let sandbox = Sandbox::new();
@@ -3328,18 +3328,15 @@ fn the_super_a_binding_opens_the_pane() {
     let lua =
         std::fs::read_to_string(sandbox.home_path(".config/hypr/amon.lua")).expect("amon.lua");
 
-    assert!(lua.contains("SUPER + A"), "{lua}");
+    assert!(lua.contains(r#"o.bind("CTRL + ALT + A""#), "{lua}");
     assert!(
         lua.contains("toggle sh.amon.panel"),
         "bound to the plugin's own toggle: {lua}"
     );
-    let unbind = lua
-        .find(r#"hl.unbind("SUPER + A")"#)
-        .expect("unbound first");
-    let bind = lua.find(r#"o.bind("SUPER + A""#).expect("then bound");
+    // Omarchy 4.5 made Super+A Select all, and amon no longer takes it.
     assert!(
-        unbind < bind,
-        "binding twice would leave both in place: {lua}"
+        !lua.contains(r#""SUPER + A""#),
+        "Omarchy's own Super+A must be left alone: {lua}"
     );
 }
 

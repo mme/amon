@@ -1,7 +1,7 @@
 // amon's own — no upstream counterpart.
 //
 // What the pane shows, independent of what is showing it. The same view appears
-// inside the Super+A modal and inside the popped-out window, so the two cannot
+// inside the Ctrl+Alt+A modal and inside the popped-out window, so the two cannot
 // drift into being two different views of one thing.
 //
 // It knows nothing about layer shells, windows or dismissal. It is handed a
@@ -985,6 +985,12 @@ FocusScope {
       anchors.verticalCenter: parent.verticalCenter
       width: row.activityWidth
 
+      // Read here and not in the chunks: a delegate's context carries `row`
+      // and `column` of its own (the model position, for table models), and
+      // those shadow the id of the AgentRow around it, so `row.anything`
+      // inside the Repeater is undefined rather than the row's property.
+      readonly property bool italic: row.activityIsPrompt
+
       Repeater {
         // Built from the elided string, so the chunks are exactly what the
         // plain Text would have drawn.
@@ -998,7 +1004,7 @@ FocusScope {
           color: view.shimmerColor(x + width / 2 + view.activityInset)
           font.family: view.fontFamily
           font.pixelSize: Style.font.body
-          font.italic: row.activityIsPrompt
+          font.italic: activityShimmer.italic
         }
       }
     }

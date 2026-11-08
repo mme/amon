@@ -8,6 +8,25 @@ the machinery, not decoration.
 
 <!-- next -->
 
+## v0.7.0
+
+- **The bar follows Omarchy 4.5**: that release redrew the bar's buttons and
+  rewrote its workspaces widget, and amon's copy fell behind on both. The
+  shell now treats any lone symbol as an icon and scales it to fill the icon
+  size, which blew each spinner frame up to a different blob; the spinner is
+  drawn as text again and turns as before. The workspace you are on shows
+  Omarchy's layout glyph as its marker rather than amon's own, so the square,
+  circle and triangle that 4.5 added survive the swap, and a click on it
+  cycles the layout while a click on the agent's state, in its turn, goes to
+  the agent. The widget also gains everything else 4.5's has: a block of ten
+  workspaces per monitor, workspaces visiting from an unplugged monitor, and
+  the wheel moving along the row. The widget needs Omarchy 4.5 or later.
+- **The agent panel opens on `Ctrl+Alt+A`**, not `Super+A`. Omarchy 4.5
+  gave Super+A to Select all, and amon's binding was taking it away. The
+  start agent panel stays on Super+Alt+A.
+- **Upgrading**: run the installer, or `just install`, then `amon setup
+  --upgrade` to put the new bar widget and the new key in place.
+
 ## v0.6.1
 
 - **Underlines show again on Omarchy 4.0.4**: that release draws the bar's

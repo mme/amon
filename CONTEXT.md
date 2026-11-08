@@ -141,7 +141,7 @@ state changes.
 _Avoid_: listener, watcher
 
 **Agent Panel**:
-The desktop surface listing every Agent the compositor can show — Super+A's
+The desktop surface listing every Agent the compositor can show — Ctrl+Alt+A's
 centred modal, and the floating window it can pop out into. Both hosts draw
 one shared pane (`AgentsView`), one Subscriber between them, so they cannot
 drift into two views of one thing. "Panel" is the surface, "pane" is the view

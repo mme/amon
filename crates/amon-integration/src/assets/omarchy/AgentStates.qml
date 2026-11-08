@@ -124,7 +124,9 @@ Item {
   }
   readonly property string blockedGlyph: root.glyph("blocked", String.fromCodePoint(0xF02D7))
   readonly property string doneGlyph: root.glyph("done", String.fromCodePoint(0xF05E0))
-  readonly property string focusedGlyph: root.glyph("focused", String.fromCodePoint(0xF14FB))
+  // Empty by default: the marker for the workspace you are on is the
+  // widget's own, upstream's layout glyph, and this only ever overrides it.
+  readonly property string focusedGlyph: root.glyph("focused", "")
 
   // One tick for the whole bar, so two working workspaces spin in step instead
   // of drifting out of phase with each other.

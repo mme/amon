@@ -447,6 +447,10 @@ pub struct PtySession {
     pub child: Box<dyn portable_pty::Child + Send + Sync>,
     writer: Box<dyn Write + Send>,
     output: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
+    /// The thread copying the PTY into `output`. It ends when the terminal
+    /// does — EOF, or EIO once every slave side is closed — which is after
+    /// the child's exit, not with it.
+    drain: Option<std::thread::JoinHandle<()>>,
 }
 
 impl PtySession {
@@ -504,7 +508,7 @@ impl PtySession {
         let writer = pty.master.take_writer().expect("writer");
         let output = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let sink = output.clone();
-        std::thread::spawn(move || {
+        let drain = std::thread::spawn(move || {
             let mut buffer = [0u8; 8192];
             while let Ok(read) = reader.read(&mut buffer) {
                 if read == 0 {
@@ -520,6 +524,7 @@ impl PtySession {
             child,
             writer,
             output,
+            drain: Some(drain),
         }
     }
 
@@ -533,14 +538,38 @@ impl PtySession {
         self.output.lock().expect("output").clone()
     }
 
-    /// Waits for amon itself to exit, which it does after the agent does.
+    /// Waits for amon itself to exit, which it does after the agent does —
+    /// and then for its last output to land, so `output()` right after this
+    /// is the whole transcript and not the whole transcript minus the tail
+    /// that was still in the kernel's buffer. That tail is what the
+    /// setup-screen tests read their verdict from, and it was lost on the
+    /// order of one CI run in ten.
     pub fn wait(&mut self) {
         let _ = self.child.wait();
+        self.settle();
     }
 
     pub fn kill(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        self.settle();
+    }
+
+    /// Lets the drain thread reach the terminal's end, within a bound: a
+    /// grandchild that kept the slave open would otherwise hold the PTY — and
+    /// the test — open indefinitely. On Linux the master reads EIO as soon as
+    /// the last slave closes, so the ordinary case takes a few milliseconds.
+    fn settle(&mut self) {
+        let Some(drain) = self.drain.take() else {
+            return;
+        };
+        let start = Instant::now();
+        while !drain.is_finished() && start.elapsed() < Duration::from_secs(2) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        if drain.is_finished() {
+            let _ = drain.join();
+        }
     }
 
     /// Waits for the agent's output to contain `needle`, so tests never race

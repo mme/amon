@@ -1,6 +1,6 @@
 // amon's own — no upstream counterpart.
 //
-// The pane Super+A opens: a centred card over a dimmed desktop, dismissed by
+// The pane Ctrl+Alt+A opens: a centred card over a dimmed desktop, dismissed by
 // the same key, by Escape, or by clicking away from it.
 //
 // Deliberately empty. What goes inside is the next piece of work, and getting
@@ -150,7 +150,7 @@ Item {
 
   // Leaving the modal for a real window. The modal closes on the way out, so
   // the list is in one place rather than two, and the shell is told — its idea
-  // of what is open has to stay in step or the next Super+A toggles nothing.
+  // of what is open has to stay in step or the next Ctrl+Alt+A toggles nothing.
   //
   // The plugin is `keepLoaded`, which is what makes this safe: shell.qml keeps
   // the Loader active regardless of whether the plugin is "open", so telling
@@ -160,7 +160,7 @@ Item {
     root.dismiss()
   }
 
-  // What Super+A reaches. The shell drives this directly: `shell.toggle` reads
+  // What Ctrl+Alt+A reaches. The shell drives this directly: `shell.toggle` reads
   // our `opened` and then calls `open()` or `close()` — the plugin's own
   // `toggle` is never invoked, so the decision has to live here.
   function open() {
@@ -187,7 +187,7 @@ Item {
   }
 
   // Closing on our own account: the shell still believes this is open, so it
-  // has to be told, or the next Super+A toggles it shut instead of open.
+  // has to be told, or the next Ctrl+Alt+A toggles it shut instead of open.
   function dismiss() {
     root.opened = false
     if (root.shell && typeof root.shell.hide === "function")

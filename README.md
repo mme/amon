@@ -37,7 +37,7 @@ ones, with the same states, and jumping to one lands on the right pane, not
 just the right window. Wrap an agent, or host it in a runtime - either way it
 is one keystroke away.
 
-`Super+A` opens the agent panel from wherever you are, over whatever you are
+`Ctrl+Alt+A` opens the agent panel from wherever you are, over whatever you are
 doing: every agent, grouped by the workspace it is on, each row leading with the
 project it is working in and the branch it is on, then what it is doing and how
 long it has been at it. Pick one and Enter puts you in front of it.
@@ -368,7 +368,10 @@ Font is installed, which on Omarchy is everywhere.
 - `done = "󰗠"` - the glyph for an agent that finished while you were not
   looking. An agent at rest has no glyph; its workspace keeps the number,
   underlined.
-- `focused = "󱓻"` - the marker for the workspace you are on.
+- `focused = ""` - the marker for the workspace you are on. Unset, it is
+  Omarchy's own layout glyph (a square tiles, a circle scrolls, a triangle
+  floats), and clicking it cycles the layout as Super+L does; set, your
+  character takes the glyph's place and its click.
 
 **`[sound]`**
 

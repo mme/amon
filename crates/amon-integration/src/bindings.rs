@@ -143,17 +143,18 @@ if binary then
   end
 end
 
--- Super+A opens the agent panel. Bound whether or not amon's binary is there:
--- the pane is a shell plugin, and the shell is what answers this — `amon remove`
--- takes the plugin and this file together, so there is no state where the key
--- outlives the thing it opens.
+-- Ctrl+Alt+A opens the agent panel. Bound whether or not amon's binary is
+-- there: the pane is a shell plugin, and the shell is what answers this —
+-- `amon remove` takes the plugin and this file together, so there is no state
+-- where the key outlives the thing it opens.
 --
--- The bare key, deliberately. Omarchy leaves A unbound while spending every
--- modified form of it — SHIFT+A is ChatGPT, SHIFT+ALT+A is Grok, SHIFT+CTRL+A
--- launches the default agent, CTRL+A is audio — so the unmodified one is the
--- slot left for the thing you reach for most.
-hl.unbind("SUPER + A")
-o.bind("SUPER + A", "Agents", "omarchy-shell shell toggle sh.amon.panel")
+-- Not a Super chord, deliberately. Omarchy has spent every form of Super+A:
+-- the bare key is Select all since 4.5, SHIFT+A is ChatGPT, SHIFT+ALT+A is
+-- Grok, SHIFT+CTRL+A launches the default agent, CTRL+A is audio. Taking the
+-- bare key, as amon once did, took Select all away with it. Ctrl+Alt is the
+-- modifier pair Omarchy uses for the desktop's own few keys (Delete, Tab) and
+-- leaves A free under, so nothing is unbound to make room.
+o.bind("CTRL + ALT + A", "Agents", "omarchy-shell shell toggle sh.amon.panel")
 
 -- Super+Alt+A opens the start agent panel: the agents you started, to start
 -- one again (ADR-0026). It lives in the same plugin as the agent panel and is
