@@ -8,7 +8,7 @@ the machinery, not decoration.
 
 <!-- next -->
 
-## Unreleased
+## v0.7.0
 
 - **The bar follows Omarchy 4.5**: that release redrew the bar's buttons and
   rewrote its workspaces widget, and amon's copy fell behind on both. The
